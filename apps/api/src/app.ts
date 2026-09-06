@@ -8,6 +8,7 @@ import {readConfig} from './config.js';
 import {DomainError} from './core.js';
 import {registerAuth} from './modules/auth.js';
 import {registerPeople} from './modules/resources.js';
+import {registerInternship,internshipAlerts} from './modules/internship.js';
 export async function createApp(db = new PrismaClient(),config=readConfig()) {
  const app = Fastify({logger:config.NODE_ENV==='test'?false:{redact:['req.headers.cookie','req.headers.authorization','res.headers.set-cookie']},disableRequestLogging:true,bodyLimit:1048576});
  await app.register(cookie);await app.register(helmet);await app.register(rateLimit,{global:false});
@@ -27,6 +28,8 @@ export async function createApp(db = new PrismaClient(),config=readConfig()) {
  await registerAuth(app,db,config);
  app.get('/health',async()=>{await db.$queryRaw`SELECT 1`;return {status:'ok'};});
  registerPeople(app,db);
+ registerInternship(app,db);
+ app.get('/api/alertas',()=>internshipAlerts(db));
  app.addHook('onClose',async()=>{await db.$disconnect();});
  return app;
 }
