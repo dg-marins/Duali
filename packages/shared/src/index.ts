@@ -4,3 +4,4 @@ export {z};
 export * from './schemas.js';
 export * from './internship.js';
 export * from './leave.js';
+export * from './benefits.js';

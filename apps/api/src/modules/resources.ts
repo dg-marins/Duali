@@ -4,7 +4,7 @@ import {z,listSchema,pessoaSchema,unidadeSchema,equipeSchema,vinculoSchema,usuar
 import argon2 from 'argon2';
 import {acquire} from './leave-domain.js';
 import {audit,dateData,DomainError,model,paramsId,transaction,type Row,type Tx} from '../core.js';
-export interface Resource {path:string;model:string;schema:z.ZodTypeAny;dates?:string[];search?:string;include?:Row;select?:Row;filters?:string[];before?:(tx:Tx,data:Row,previous:Row|null,userId:string)=>Promise<void>;after?:(tx:Tx,current:Row,previous:Row|null,userId:string)=>Promise<void>;}
+export interface Resource {path:string;model:string;schema:z.ZodTypeAny;dates?:string[];search?:string;include?:Row;select?:Row;filters?:string[];present?:(row:Row)=>Row;before?:(tx:Tx,data:Row,previous:Row|null,userId:string)=>Promise<void>;after?:(tx:Tx,current:Row,previous:Row|null,userId:string)=>Promise<void>;}
 export const resources:Resource[]=[
  {path:'pessoas',model:'pessoa',schema:pessoaSchema,dates:['dataNascimento'],search:'nomeCompleto'},
  {path:'unidades',model:'unidade',schema:unidadeSchema,search:'nome'},
@@ -43,8 +43,8 @@ export async function saveResource(tx:Tx,resource:Resource,input:unknown,userId:
  return current;
 }
 export function registerResource(app:FastifyInstance,db:PrismaClient,resource:Resource){
- app.get('/api/'+resource.path,async req=>{const query=listSchema.parse(req.query);const where=queryFor(resource,query);const delegate=model(db,resource.model);const [items,total]=await Promise.all([delegate.findMany({where,orderBy:{id:'asc'},skip:(query.page-1)*query.pageSize,take:query.pageSize,...(resource.include?{include:resource.include}:{}),...(resource.select?{select:resource.select}:{})}),delegate.count({where})]);return {items,total,page:query.page,pageSize:query.pageSize};});
- app.get('/api/'+resource.path+'/:id',async req=>{const {id}=paramsId.parse(req.params);const item=await model(db,resource.model).findUnique({where:{id},...(resource.include?{include:resource.include}:{}),...(resource.select?{select:resource.select}:{})});if(!item)throw new DomainError(404,'Registro não encontrado.');return item;});
+ app.get('/api/'+resource.path,async req=>{const query=listSchema.parse(req.query);const where=queryFor(resource,query);const delegate=model(db,resource.model);const [items,total]=await Promise.all([delegate.findMany({where,orderBy:{id:'asc'},skip:(query.page-1)*query.pageSize,take:query.pageSize,...(resource.include?{include:resource.include}:{}),...(resource.select?{select:resource.select}:{})}),delegate.count({where})]);return {items:resource.present?items.map(resource.present):items,total,page:query.page,pageSize:query.pageSize};});
+ app.get('/api/'+resource.path+'/:id',async req=>{const {id}=paramsId.parse(req.params);const item=await model(db,resource.model).findUnique({where:{id},...(resource.include?{include:resource.include}:{}),...(resource.select?{select:resource.select}:{})});if(!item)throw new DomainError(404,'Registro não encontrado.');return resource.present?resource.present(item):item;});
  app.post('/api/'+resource.path,async(req,reply)=>{const result=await transaction(db,tx=>saveResource(tx,resource,req.body,req.userId!));reply.code(201);return result;});
  app.put('/api/'+resource.path+'/:id',async req=>{const {id}=paramsId.parse(req.params);return transaction(db,tx=>saveResource(tx,resource,req.body,req.userId!,id));});
 }

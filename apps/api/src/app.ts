@@ -11,6 +11,7 @@ import {registerPeople} from './modules/resources.js';
 import {registerInternship,internshipAlerts} from './modules/internship.js';
 import {registerLeave,leaveAlerts} from './modules/leave.js';
 import {synchronize} from './modules/leave-domain.js';
+import {registerBenefits,benefitAlerts} from './modules/benefits.js';
 export async function createApp(db = new PrismaClient(),config=readConfig()) {
  const app = Fastify({logger:config.NODE_ENV==='test'?false:{redact:['req.headers.cookie','req.headers.authorization','res.headers.set-cookie']},disableRequestLogging:true,bodyLimit:1048576});
  await app.register(cookie);await app.register(helmet);await app.register(rateLimit,{global:false});
@@ -32,7 +33,8 @@ export async function createApp(db = new PrismaClient(),config=readConfig()) {
  registerPeople(app,db);
  registerInternship(app,db);
  registerLeave(app,db);
- app.get('/api/alertas',async()=>[...await internshipAlerts(db),...await leaveAlerts(db)]);
+ registerBenefits(app,db);
+ app.get('/api/alertas',async()=>[...await internshipAlerts(db),...await leaveAlerts(db),...await benefitAlerts(db)]);
  app.addHook('onClose',async()=>{await db.$disconnect();});
  if(config.NODE_ENV!=='test'){
   let timer:ReturnType<typeof setInterval>|undefined;
