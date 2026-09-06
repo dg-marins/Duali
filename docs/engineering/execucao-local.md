@@ -6,7 +6,17 @@ Requisitos: Node.js 22.12+ (validado também com 24), pnpm 9.15.4, Docker Compos
 2. Execute `pnpm install --frozen-lockfile`.
 3. Execute `docker compose up -d --wait`.
 4. Execute `pnpm db:generate`, `pnpm db:migrate` e `pnpm build`.
-5. Execute `pnpm dev`. Web: http://localhost:5173. API: http://127.0.0.1:3000/health.
+5. Execute `pnpm dev`. A Web usa exatamente a origem definida em `APP_ORIGIN`; a API usa `API_HOST` e `API_PORT`.
+
+Para usar a Web na porta 5001 e manter a API na porta 3000:
+
+```env
+APP_ORIGIN=http://localhost:5001
+API_HOST=127.0.0.1
+API_PORT=3000
+```
+
+`APP_ORIGIN` também é a origem permitida pela proteção CSRF, por isso deve coincidir com o endereço usado no navegador.
 
 No PowerShell com Execution Policy restrita, use pnpm.cmd em vez de pnpm.
 
