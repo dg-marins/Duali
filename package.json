@@ -8,7 +8,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "dev": "pnpm --parallel --filter @duali/api --filter @duali/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
