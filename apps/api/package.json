@@ -1,0 +1,28 @@
+{
+  "name": "@duali/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/server.js",
+    "admin:create": "tsx src/admin.ts create",
+    "admin:reset": "tsx src/admin.ts reset"
+  },
+  "dependencies": {
+    "@duali/database": "workspace:*",
+    "@duali/shared": "workspace:*",
+    "fastify": "^5.6.2",
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/helmet": "^13.0.2",
+    "@fastify/multipart": "^9.3.0",
+    "argon2": "^0.44.0",
+    "dotenv": "^16.6.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6"
+  }
+}

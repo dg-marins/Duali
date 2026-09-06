@@ -1,0 +1,81 @@
+generator client {
+ provider = "prisma-client-js"
+}
+datasource db {
+ provider = "postgresql"
+ url = env("DATABASE_URL")
+}
+model Usuario {
+ id String @id @default(uuid()) @db.Uuid
+ nome String @db.VarChar(180)
+ email String @unique @db.VarChar(180)
+ senhaHash String
+ ativo Boolean @default(true)
+ criadoEm DateTime @default(now())
+ atualizadoEm DateTime @updatedAt
+}
+model Pessoa {
+ id String @id @default(uuid()) @db.Uuid
+ nomeCompleto String @db.VarChar(180)
+ nomeSocial String? @db.VarChar(180)
+ cpf String? @unique @db.VarChar(11)
+ rg String? @db.VarChar(30)
+ dataNascimento DateTime? @db.Date
+ email String? @db.VarChar(180)
+ telefone String? @db.VarChar(30)
+ endereco String?
+ observacoes String?
+ ativa Boolean @default(true)
+ criadoEm DateTime @default(now())
+ atualizadoEm DateTime @updatedAt
+ vinculos Vinculo[]
+}
+model Unidade {
+ id String @id @default(uuid()) @db.Uuid
+ nome String
+ sigla String @unique
+ cidade String?
+ uf String @db.VarChar(2)
+ ativa Boolean @default(true)
+ diasAlerta Int @default(30)
+ vinculos Vinculo[]
+}
+model Equipe {
+ id String @id @default(uuid()) @db.Uuid
+ nome String @unique
+ ativa Boolean @default(true)
+ observacoes String?
+ vinculos Vinculo[]
+}
+enum TipoVinculo {
+ CLT
+ ESTAGIO
+}
+enum StatusVinculo {
+ ATIVO
+ AFASTADO
+ DESLIGADO
+}
+model Vinculo {
+ id String @id @default(uuid()) @db.Uuid
+ pessoaId String @db.Uuid
+ pessoa Pessoa @relation(fields:[pessoaId],references:[id])
+ unidadeId String @db.Uuid
+ unidade Unidade @relation(fields:[unidadeId],references:[id])
+ equipeId String? @db.Uuid
+ equipe Equipe? @relation(fields:[equipeId],references:[id])
+ tipo TipoVinculo
+ status StatusVinculo @default(ATIVO)
+ matricula String?
+ dataAdmissao DateTime @db.Date
+ dataDesligamento DateTime? @db.Date
+ cargoFuncao String?
+ gestor String?
+ observacoes String?
+ criadoEm DateTime @default(now())
+ atualizadoEm DateTime @updatedAt
+ @@index([pessoaId])
+ @@index([unidadeId,status])
+ @@index([equipeId])
+}
+
