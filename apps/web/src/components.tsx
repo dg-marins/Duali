@@ -1,23 +1,383 @@
-import {inclusiveDays} from '@duali/shared';
-import {useEffect,useState,type FormEvent} from 'react';
-import {api,ApiError,display,type Row} from './api';
-import {label,type Screen,type Field} from './resources';
-export function Notice({text,error=false}:{text:string;error?:boolean}){return text?<div role={error?'alert':'status'} className={error?'notice error':'notice'}>{text}</div>:null;}
-export function Lookup({field,value,onChange}:{field:Field;value:unknown;onChange:(value:unknown)=>void}){
- const [q,setQ]=useState(''),[items,setItems]=useState<Row[]>([]),[error,setError]=useState('');
- useEffect(()=>{let active=true;const timer=setTimeout(()=>{void api<{items:Row[]}>(field.resource+'?pageSize=100&q='+encodeURIComponent(q)).then(async result=>{if(value&&!result.items.some(r=>r.id===value)){const selected=await api(field.resource+'/'+String(value));result.items.unshift(selected);}if(active){setItems(result.items);setError('');}}).catch(()=>{if(active)setError('Falha ao carregar opções.');});},150);return()=>{active=false;clearTimeout(timer);};},[field.resource,q,value]);
- return <div className="lookup"><input aria-label={'Buscar '+field.label} placeholder="Buscar opções…" value={q} onChange={e=>setQ(e.target.value)}/><select aria-label={field.label} required={field.required??false} value={String(value??'')} onChange={e=>onChange(e.target.value)}><option value="">Selecione…</option>{items.map(row=><option key={String(row.id)} value={String(row.id)}>{row.pessoa?display(row.pessoa)+' · '+display(row.tipo):display(row)}</option>)}</select>{error&&<small>{error}</small>}</div>;
+import { inclusiveDays } from "@duali/shared";
+import { useEffect, useState, type FormEvent } from "react";
+import { api, ApiError, display, type Row } from "./api";
+import { label, type Screen, type Field } from "./resources";
+export function Notice({
+  text,
+  error = false,
+}: {
+  text: string;
+  error?: boolean;
+}) {
+  return text ? (
+    <div
+      role={error ? "alert" : "status"}
+      className={error ? "notice error" : "notice"}
+    >
+      {text}
+    </div>
+  ) : null;
 }
-export function RecordForm({screen,record,onClose,onSaved}:{screen:Screen;record:Row|null;onClose:()=>void;onSaved:()=>void}){
- const initial:Row={};for(const f of screen.fields){const value=record?.[f.key]??f.default??'';initial[f.key]=f.type==='date'&&typeof value==='string'?value.slice(0,10):value;}
- const [data,setData]=useState(initial),[error,setError]=useState(''),[fields,setFields]=useState<Record<string,string[]>>({}),[saving,setSaving]=useState(false);
- async function submit(e:FormEvent){e.preventDefault();setSaving(true);setError('');setFields({});const payload:Row={};
- for(const f of screen.fields){const value=data[f.key];if(f.type==='password'&&!value)continue;payload[f.key]=f.type==='checkbox'?Boolean(value):value===''?null:f.type==='number'?Number(value):value;}
- try{await api(screen.path+(record?'/'+String(record.id):''),record?'PUT':'POST',payload);onSaved();}catch(e){setError((e as Error).message);if(e instanceof ApiError)setFields(e.fields);}finally{setSaving(false);}}
- return <section className="panel form-panel"><div className="section-heading"><h2>{record?'Editar':'Novo registro'} · {screen.title}</h2><button type="button" className="secondary" onClick={onClose}>Fechar</button></div><form onSubmit={e=>void submit(e)}><Notice text={error} error/><div className="form-grid">{screen.fields.map(f=><label key={f.key} className={f.type==='textarea'?'wide':''}><span>{f.label}{f.required?' *':''}</span>{f.resource?<Lookup field={f} value={data[f.key]} onChange={v=>setData({...data,[f.key]:v})}/>:f.options?<select aria-label={f.label} required={f.required??false} value={String(data[f.key]??'')} onChange={e=>setData({...data,[f.key]:e.target.value})}><option value="">Selecione…</option>{f.options.map(v=><option key={v}>{v}</option>)}</select>:f.type==='textarea'?<textarea value={String(data[f.key]??'')} onChange={e=>setData({...data,[f.key]:e.target.value})}/>:<input type={f.type??'text'} required={f.required??false} step={f.type==='number'?'0.01':undefined} autoComplete={f.type==='password'?'new-password':undefined} {...(f.type==='checkbox'?{checked:Boolean(data[f.key])}:{value:String(data[f.key]??'')})} onChange={e=>setData({...data,[f.key]:f.type==='checkbox'?e.target.checked:e.target.value})}/>} {fields[f.key]?.map(message=><small className="field-error" key={message}>{message}</small>)}</label>)}</div>{screen.path==='periodos'&&data.dataInicio&&data.dataFim?<p>Dias corridos inclusivos: {inclusiveDays(String(data.dataInicio),String(data.dataFim))} <button type="button" className="secondary compact" onClick={()=>setData({...data,quantidadeDias:inclusiveDays(String(data.dataInicio),String(data.dataFim))})}>Usar sugest?o</button></p>:null}<div className="form-actions"><button disabled={saving}>{saving?'Salvando…':'Salvar'}</button><button type="button" className="secondary" onClick={onClose}>Cancelar</button></div></form></section>;
+export function Lookup({
+  field,
+  value,
+  onChange,
+}: {
+  field: Field;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const [q, setQ] = useState(""),
+    [items, setItems] = useState<Row[]>([]),
+    [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => {
+      void api<{ items: Row[] }>(
+        field.resource + "?pageSize=100&q=" + encodeURIComponent(q),
+      )
+        .then(async (result) => {
+          if (value && !result.items.some((r) => r.id === value)) {
+            const selected = await api(field.resource + "/" + String(value));
+            result.items.unshift(selected);
+          }
+          if (active) {
+            setItems(result.items);
+            setError("");
+          }
+        })
+        .catch(() => {
+          if (active) setError("Falha ao carregar opções.");
+        });
+    }, 150);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [field.resource, q, value]);
+  return (
+    <div className="lookup">
+      <input
+        aria-label={"Buscar " + field.label}
+        placeholder="Buscar opções…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+      <select
+        aria-label={field.label}
+        required={field.required ?? false}
+        value={String(value ?? "")}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">Selecione…</option>
+        {items.map((row) => (
+          <option key={String(row.id)} value={String(row.id)}>
+            {row.pessoa
+              ? display(row.pessoa) + " · " + display(row.tipo)
+              : display(row)}
+          </option>
+        ))}
+      </select>
+      {error && <small>{error}</small>}
+    </div>
+  );
 }
-export function Records({screen}:{screen:Screen}){
- const [rows,setRows]=useState<Row[]>([]),[q,setQ]=useState(''),[page,setPage]=useState(1),[total,setTotal]=useState(0),[editing,setEditing]=useState<Row|null|undefined>(),[error,setError]=useState(''),[notice,setNotice]=useState(''),[loading,setLoading]=useState(true),[version,setVersion]=useState(0);
- useEffect(()=>{let active=true;setLoading(true);void api<{items:Row[];total:number}>(screen.path+'?page='+page+'&q='+encodeURIComponent(q)).then(data=>{if(active){setRows(data.items);setTotal(data.total);setError('');}}).catch(e=>{if(active)setError((e as Error).message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[screen.path,page,q,version]);
- return <><div className="section-heading"><div><h1>{screen.title}</h1><p>{screen.description}</p></div><button onClick={()=>{setEditing(null);setNotice('');}}>Novo registro</button></div><Notice text={notice}/><Notice text={error} error/>{editing!==undefined&&<RecordForm key={String(editing?.id??'new')} screen={screen} record={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);setVersion(version+1);setNotice('Registro salvo com sucesso.');}}/>}<section className="panel"><div className="toolbar"><input aria-label="Buscar registros" placeholder="Buscar…" value={q} onChange={e=>{setQ(e.target.value);setPage(1);}}/><span>{total} registros</span></div>{loading?<p role="status">Carregando…</p>:<div className="table-scroll"><table><thead><tr>{screen.columns.map(k=><th key={k}>{label(k,screen)}</th>)}<th>Ações</th></tr></thead><tbody>{rows.map(row=><tr key={String(row.id)}>{screen.columns.map(k=><td key={k}>{display(row[k])}</td>)}<td><button className="secondary compact" onClick={()=>setEditing(row)}>Editar</button></td></tr>)}</tbody></table>{!rows.length&&<p className="empty">Nenhum registro encontrado. Cadastre o primeiro ou ajuste a busca.</p>}</div>}<div className="pagination"><button className="secondary" disabled={page===1} onClick={()=>setPage(page-1)}>Anterior</button><span>Página {page}</span><button className="secondary" disabled={page*25>=total} onClick={()=>setPage(page+1)}>Próxima</button></div></section></>;
+export function RecordForm({
+  screen,
+  record,
+  onClose,
+  onSaved,
+}: {
+  screen: Screen;
+  record: Row | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const initial: Row = {};
+  for (const f of screen.fields) {
+    const value = record?.[f.key] ?? f.default ?? "";
+    initial[f.key] =
+      f.type === "date" && typeof value === "string"
+        ? value.slice(0, 10)
+        : value;
+  }
+  const [data, setData] = useState(initial),
+    [error, setError] = useState(""),
+    [fields, setFields] = useState<Record<string, string[]>>({}),
+    [saving, setSaving] = useState(false);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    setFields({});
+    const payload: Row = {};
+    for (const f of screen.fields) {
+      const value = data[f.key];
+      if (f.type === "password" && !value) continue;
+      payload[f.key] =
+        f.type === "checkbox"
+          ? Boolean(value)
+          : value === ""
+            ? null
+            : f.type === "number"
+              ? Number(value)
+              : value;
+    }
+    try {
+      await api(
+        screen.path + (record ? "/" + String(record.id) : ""),
+        record ? "PUT" : "POST",
+        payload,
+      );
+      onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+      if (e instanceof ApiError) setFields(e.fields);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <section className="panel form-panel">
+      <div className="section-heading">
+        <h2>
+          {record ? "Editar" : "Novo registro"} · {screen.title}
+        </h2>
+        <button type="button" className="secondary" onClick={onClose}>
+          Fechar
+        </button>
+      </div>
+      <form onSubmit={(e) => void submit(e)}>
+        <Notice text={error} error />
+        <div className="form-grid">
+          {screen.fields.map((f) => (
+            <label key={f.key} className={f.type === "textarea" ? "wide" : ""}>
+              <span>
+                {f.label}
+                {f.required ? " *" : ""}
+              </span>
+              {f.resource ? (
+                <Lookup
+                  field={f}
+                  value={data[f.key]}
+                  onChange={(v) => setData({ ...data, [f.key]: v })}
+                />
+              ) : f.options ? (
+                <select
+                  aria-label={f.label}
+                  required={f.required ?? false}
+                  value={String(data[f.key] ?? "")}
+                  onChange={(e) =>
+                    setData({ ...data, [f.key]: e.target.value })
+                  }
+                >
+                  <option value="">Selecione…</option>
+                  {f.options.map((v) => (
+                    <option key={v}>{v}</option>
+                  ))}
+                </select>
+              ) : f.type === "textarea" ? (
+                <textarea
+                  value={String(data[f.key] ?? "")}
+                  onChange={(e) =>
+                    setData({ ...data, [f.key]: e.target.value })
+                  }
+                />
+              ) : (
+                <input
+                  type={f.type ?? "text"}
+                  required={f.required ?? false}
+                  step={f.type === "number" ? "0.01" : undefined}
+                  autoComplete={
+                    f.type === "password" ? "new-password" : undefined
+                  }
+                  {...(f.type === "checkbox"
+                    ? { checked: Boolean(data[f.key]) }
+                    : { value: String(data[f.key] ?? "") })}
+                  onChange={(e) =>
+                    setData({
+                      ...data,
+                      [f.key]:
+                        f.type === "checkbox"
+                          ? e.target.checked
+                          : e.target.value,
+                    })
+                  }
+                />
+              )}{" "}
+              {fields[f.key]?.map((message) => (
+                <small className="field-error" key={message}>
+                  {message}
+                </small>
+              ))}
+            </label>
+          ))}
+        </div>
+        {screen.path === "periodos" && data.dataInicio && data.dataFim ? (
+          <p>
+            Dias corridos inclusivos:{" "}
+            {inclusiveDays(String(data.dataInicio), String(data.dataFim))}{" "}
+            <button
+              type="button"
+              className="secondary compact"
+              onClick={() =>
+                setData({
+                  ...data,
+                  quantidadeDias: inclusiveDays(
+                    String(data.dataInicio),
+                    String(data.dataFim),
+                  ),
+                })
+              }
+            >
+              Usar sugestão
+            </button>
+          </p>
+        ) : null}
+        <div className="form-actions">
+          <button disabled={saving}>{saving ? "Salvando…" : "Salvar"}</button>
+          <button type="button" className="secondary" onClick={onClose}>
+            Cancelar
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+export function Records({ screen }: { screen: Screen }) {
+  const [rows, setRows] = useState<Row[]>([]),
+    [q, setQ] = useState(""),
+    [page, setPage] = useState(1),
+    [total, setTotal] = useState(0),
+    [editing, setEditing] = useState<Row | null | undefined>(),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
+    [loading, setLoading] = useState(true),
+    [version, setVersion] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    void api<{ items: Row[]; total: number }>(
+      screen.path + "?page=" + page + "&q=" + encodeURIComponent(q),
+    )
+      .then((data) => {
+        if (active) {
+          setRows(data.items);
+          setTotal(data.total);
+          setError("");
+        }
+      })
+      .catch((e) => {
+        if (active) setError((e as Error).message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [screen.path, page, q, version]);
+  return (
+    <>
+      <div className="section-heading">
+        <div>
+          <h1>{screen.title}</h1>
+          <p>{screen.description}</p>
+        </div>
+        <button
+          onClick={() => {
+            setEditing(null);
+            setNotice("");
+          }}
+        >
+          Novo registro
+        </button>
+      </div>
+      <Notice text={notice} />
+      <Notice text={error} error />
+      {editing !== undefined && (
+        <RecordForm
+          key={String(editing?.id ?? "new")}
+          screen={screen}
+          record={editing}
+          onClose={() => setEditing(undefined)}
+          onSaved={() => {
+            setEditing(undefined);
+            setVersion(version + 1);
+            setNotice("Registro salvo com sucesso.");
+          }}
+        />
+      )}
+      <section className="panel">
+        <div className="toolbar">
+          <input
+            aria-label="Buscar registros"
+            placeholder="Buscar…"
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(1);
+            }}
+          />
+          <span>{total} registros</span>
+        </div>
+        {loading ? (
+          <p role="status">Carregando…</p>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  {screen.columns.map((k) => (
+                    <th key={k}>{label(k, screen)}</th>
+                  ))}
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={String(row.id)}>
+                    {screen.columns.map((k) => (
+                      <td key={k}>{display(row[k])}</td>
+                    ))}
+                    <td>
+                      <button
+                        className="secondary compact"
+                        onClick={() => setEditing(row)}
+                      >
+                        Editar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!rows.length && (
+              <p className="empty">
+                Nenhum registro encontrado. Cadastre o primeiro ou ajuste a
+                busca.
+              </p>
+            )}
+          </div>
+        )}
+        <div className="pagination">
+          <button
+            className="secondary"
+            disabled={page === 1}
+            onClick={() => setPage(page - 1)}
+          >
+            Anterior
+          </button>
+          <span>Página {page}</span>
+          <button
+            className="secondary"
+            disabled={page * 25 >= total}
+            onClick={() => setPage(page + 1)}
+          >
+            Próxima
+          </button>
+        </div>
+      </section>
+    </>
+  );
 }

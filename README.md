@@ -39,4 +39,10 @@ A documentação do produto, arquitetura, modelo de dados e planejamento fica em
 
 ## Status
 
-Projeto em fase inicial de arquitetura, modelagem de dados e Sprint 0.
+Módulos do MVP implementados e validação local em andamento. Consulte [resultados e pendências](docs/planning/resultado-mvp.md).
+
+## Executar
+
+Consulte [execução local](docs/engineering/execucao-local.md), [importação assistida](docs/engineering/importacao.md) e [deploy e recuperação](docs/engineering/deploy.md).
+
+Após configurar o banco e executar migrations/build, crie o primeiro administrador com `pnpm admin:create` e inicie com `pnpm dev`.

@@ -1,10 +1,156 @@
-import type {Screen,Field} from './resources';
-const types=['TRANSPORTE','ALIMENTACAO','CESTA_BASICA','PREMIACAO','OUTRO'];
-const obs:Field={key:'observacoes',label:'Observações / apontamentos',type:'textarea'};
-export const benefitScreens:Screen[]=[
- {path:'fornecedores',title:'Fornecedores',description:'Meios e fornecedores configuráveis, sem regras fixas por estado.',columns:['nome','ativo'],fields:[{key:'nome',label:'Nome',required:true},{key:'ativo',label:'Ativo',type:'checkbox',default:true}]},
- {path:'configuracoes-beneficios',title:'Benefícios por unidade',description:'Associe tipos e fornecedores à unidade.',columns:['unidade','tipo','fornecedor','ativa'],fields:[{key:'unidadeId',label:'Unidade',resource:'unidades',required:true},{key:'tipo',label:'Tipo',options:types,required:true},{key:'fornecedorId',label:'Fornecedor',resource:'fornecedores',required:true},{key:'ativa',label:'Ativa',type:'checkbox',default:true},obs]},
- {path:'beneficios-vinculo',title:'Benefícios do vínculo',description:'Adesões e vigências de benefícios.',columns:['vinculo','tipo','inicioVigencia','status'],fields:[{key:'vinculoId',label:'Vínculo',resource:'vinculos',required:true},{key:'tipo',label:'Tipo',options:types,required:true},{key:'inicioVigencia',label:'Início da vigência',type:'date',required:true},{key:'fimVigencia',label:'Fim da vigência',type:'date'},{key:'status',label:'Status',options:['ATIVO','ENCERRADO'],default:'ATIVO'},obs]},
- {path:'competencias',title:'Competências de benefícios',description:'Um registro por componente mensal. Valores informados e calculados permanecem separados.',columns:['beneficioVinculo','componente','competencia','valorCalculado','valorInformado','divergencia','status'],fields:[{key:'beneficioVinculoId',label:'Benefício do vínculo',resource:'beneficios-vinculo',required:true},{key:'configuracaoId',label:'Configuração por unidade',resource:'configuracoes-beneficios',required:true},{key:'componente',label:'Componente',default:'Principal',required:true},{key:'competencia',label:'Competência (primeiro dia do mês)',type:'date',required:true},{key:'quantidadeDias',label:'Dias',type:'number'},{key:'quantidade',label:'Quantidade (alternativa a dias)',type:'number'},{key:'valorUnitario',label:'Valor unitário (R$)',type:'number'},{key:'valorInformado',label:'Valor informado (R$)',type:'number'},{key:'status',label:'Status',options:['PENDENTE','CONFERIDO','PAGO','CANCELADO'],default:'PENDENTE'},obs]},
- {path:'ajustes-beneficios',title:'Ajustes de benefícios',description:'Compensações com motivo e autoria preservados.',columns:['competencia','tipo','valor','motivo'],fields:[{key:'competenciaId',label:'Competência',resource:'competencias',required:true},{key:'tipo',label:'Tipo',options:['CREDITO','DEBITO'],required:true},{key:'valor',label:'Valor (R$)',type:'number',required:true},{key:'motivo',label:'Motivo',type:'textarea',required:true}]}
+import type { Screen, Field } from "./resources";
+const types = [
+  "TRANSPORTE",
+  "ALIMENTACAO",
+  "CESTA_BASICA",
+  "PREMIACAO",
+  "OUTRO",
+];
+const obs: Field = {
+  key: "observacoes",
+  label: "Observações / apontamentos",
+  type: "textarea",
+};
+export const benefitScreens: Screen[] = [
+  {
+    path: "fornecedores",
+    title: "Fornecedores",
+    description:
+      "Meios e fornecedores configuráveis, sem regras fixas por estado.",
+    columns: ["nome", "ativo"],
+    fields: [
+      { key: "nome", label: "Nome", required: true },
+      { key: "ativo", label: "Ativo", type: "checkbox", default: true },
+    ],
+  },
+  {
+    path: "configuracoes-beneficios",
+    title: "Benefícios por unidade",
+    description: "Associe tipos e fornecedores à unidade.",
+    columns: ["unidade", "tipo", "fornecedor", "ativa"],
+    fields: [
+      {
+        key: "unidadeId",
+        label: "Unidade",
+        resource: "unidades",
+        required: true,
+      },
+      { key: "tipo", label: "Tipo", options: types, required: true },
+      {
+        key: "fornecedorId",
+        label: "Fornecedor",
+        resource: "fornecedores",
+        required: true,
+      },
+      { key: "ativa", label: "Ativa", type: "checkbox", default: true },
+      obs,
+    ],
+  },
+  {
+    path: "beneficios-vinculo",
+    title: "Benefícios do vínculo",
+    description: "Adesões e vigências de benefícios.",
+    columns: ["vinculo", "tipo", "inicioVigencia", "status"],
+    fields: [
+      {
+        key: "vinculoId",
+        label: "Vínculo",
+        resource: "vinculos",
+        required: true,
+      },
+      { key: "tipo", label: "Tipo", options: types, required: true },
+      {
+        key: "inicioVigencia",
+        label: "Início da vigência",
+        type: "date",
+        required: true,
+      },
+      { key: "fimVigencia", label: "Fim da vigência", type: "date" },
+      {
+        key: "status",
+        label: "Status",
+        options: ["ATIVO", "ENCERRADO"],
+        default: "ATIVO",
+      },
+      obs,
+    ],
+  },
+  {
+    path: "competencias",
+    title: "Competências de benefícios",
+    description:
+      "Um registro por componente mensal. Valores informados e calculados permanecem separados.",
+    columns: [
+      "beneficioVinculo",
+      "componente",
+      "competencia",
+      "valorCalculado",
+      "valorInformado",
+      "divergencia",
+      "status",
+    ],
+    fields: [
+      {
+        key: "beneficioVinculoId",
+        label: "Benefício do vínculo",
+        resource: "beneficios-vinculo",
+        required: true,
+      },
+      {
+        key: "configuracaoId",
+        label: "Configuração por unidade",
+        resource: "configuracoes-beneficios",
+        required: true,
+      },
+      {
+        key: "componente",
+        label: "Componente",
+        default: "Principal",
+        required: true,
+      },
+      {
+        key: "competencia",
+        label: "Competência (primeiro dia do mês)",
+        type: "date",
+        required: true,
+      },
+      { key: "quantidadeDias", label: "Dias", type: "number" },
+      {
+        key: "quantidade",
+        label: "Quantidade (alternativa a dias)",
+        type: "number",
+      },
+      { key: "valorUnitario", label: "Valor unitário (R$)", type: "number" },
+      { key: "valorInformado", label: "Valor informado (R$)", type: "number" },
+      {
+        key: "status",
+        label: "Status",
+        options: ["PENDENTE", "CONFERIDO", "PAGO", "CANCELADO"],
+        default: "PENDENTE",
+      },
+      obs,
+    ],
+  },
+  {
+    path: "ajustes-beneficios",
+    title: "Ajustes de benefícios",
+    description: "Compensações com motivo e autoria preservados.",
+    columns: ["competencia", "tipo", "valor", "motivo"],
+    fields: [
+      {
+        key: "competenciaId",
+        label: "Competência",
+        resource: "competencias",
+        required: true,
+      },
+      {
+        key: "tipo",
+        label: "Tipo",
+        options: ["CREDITO", "DEBITO"],
+        required: true,
+      },
+      { key: "valor", label: "Valor (R$)", type: "number", required: true },
+      { key: "motivo", label: "Motivo", type: "textarea", required: true },
+    ],
+  },
 ];
