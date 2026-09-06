@@ -29,7 +29,7 @@ export function queryFor(resource:Resource,query:ReturnType<typeof listSchema.pa
  for(const key of resource.filters??[]){const value=query[key as keyof typeof query];if(value)where[key]=value;}
  return where;
 }
-export async function saveResource(tx:Tx,resource:Resource,input:unknown,userId:string,recordId?:string){
+export async function saveResource(tx:Tx,resource:Resource,input:unknown,userId:string,recordId?:string,generateRights=true){
  const data=dateData(resource.schema.parse(input) as Row,resource.dates??[]);
  const delegate=model(tx,resource.model);
  const previous=recordId?await delegate.findUnique({where:{id:recordId},...(resource.select?{select:resource.select}:{})}):null;
@@ -38,7 +38,7 @@ export async function saveResource(tx:Tx,resource:Resource,input:unknown,userId:
  const args={data,...(resource.select?{select:resource.select}:{})};
  const current=recordId?await delegate.update({...args,where:{id:recordId}}):await delegate.create(args);
  await resource.after?.(tx,current,previous,userId);
- if(resource.model==='vinculo')await acquire(tx,String(current.id),userId);
+ if(generateRights&&resource.model==='vinculo')await acquire(tx,String(current.id),userId);
  await audit(tx,userId,recordId?'ALTERAR':'CRIAR',resource.model,String(current.id),previous??undefined,current);
  return current;
 }

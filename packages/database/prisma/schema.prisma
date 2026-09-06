@@ -6,6 +6,7 @@ datasource db {
  url = env("DATABASE_URL")
 }
 model Usuario {
+ importacoes Importacao[]
  ajustesBeneficios BeneficioAjuste[]
  ajustes DescansoAjuste[]
  consumos DescansoConsumo[]
@@ -297,4 +298,43 @@ model BeneficioAjuste {
  usuario Usuario @relation(fields:[criadoPor],references:[id])
  criadoEm DateTime @default(now())
  @@index([competenciaId])
+}
+model Importacao {
+ id String @id @default(uuid()) @db.Uuid
+ usuarioId String @db.Uuid
+ usuario Usuario @relation(fields:[usuarioId],references:[id])
+ nomeArquivo String
+ arquivo Bytes
+ planilhas Json
+ mapeamento Json?
+ status String @default("UPLOAD")
+ criadoEm DateTime @default(now())
+ confirmadaEm DateTime?
+ itens ImportacaoItem[]
+ @@index([criadoEm])
+}
+model ImportacaoItem {
+ id String @id @default(uuid()) @db.Uuid
+ importacaoId String @db.Uuid
+ importacao Importacao @relation(fields:[importacaoId],references:[id])
+ ordem Int
+ grupo String
+ dominio String
+ aba String
+ numeroLinha Int
+ dadosOriginais Json
+ dadosNormalizados Json
+ referencias Json
+ dadosAnteriores Json?
+ status String
+ acao String @default("PENDENTE")
+ mensagens Json
+ candidatos Json
+ revisado Boolean @default(false)
+ motivo String?
+ destinoId String @db.Uuid
+ alvoId String? @db.Uuid
+ persistidoId String? @db.Uuid
+ @@unique([importacaoId,ordem])
+ @@index([importacaoId,status])
 }
