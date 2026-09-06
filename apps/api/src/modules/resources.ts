@@ -2,6 +2,7 @@ import type {FastifyInstance} from 'fastify';
 import type {PrismaClient} from '@duali/database';
 import {z,listSchema,pessoaSchema,unidadeSchema,equipeSchema,vinculoSchema,usuarioSchema} from '@duali/shared';
 import argon2 from 'argon2';
+import {acquire} from './leave-domain.js';
 import {audit,dateData,DomainError,model,paramsId,transaction,type Row,type Tx} from '../core.js';
 export interface Resource {path:string;model:string;schema:z.ZodTypeAny;dates?:string[];search?:string;include?:Row;select?:Row;filters?:string[];before?:(tx:Tx,data:Row,previous:Row|null,userId:string)=>Promise<void>;after?:(tx:Tx,current:Row,previous:Row|null,userId:string)=>Promise<void>;}
 export const resources:Resource[]=[
@@ -37,6 +38,7 @@ export async function saveResource(tx:Tx,resource:Resource,input:unknown,userId:
  const args={data,...(resource.select?{select:resource.select}:{})};
  const current=recordId?await delegate.update({...args,where:{id:recordId}}):await delegate.create(args);
  await resource.after?.(tx,current,previous,userId);
+ if(resource.model==='vinculo')await acquire(tx,String(current.id),userId);
  await audit(tx,userId,recordId?'ALTERAR':'CRIAR',resource.model,String(current.id),previous??undefined,current);
  return current;
 }

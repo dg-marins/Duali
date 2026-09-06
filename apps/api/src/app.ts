@@ -9,6 +9,8 @@ import {DomainError} from './core.js';
 import {registerAuth} from './modules/auth.js';
 import {registerPeople} from './modules/resources.js';
 import {registerInternship,internshipAlerts} from './modules/internship.js';
+import {registerLeave,leaveAlerts} from './modules/leave.js';
+import {synchronize} from './modules/leave-domain.js';
 export async function createApp(db = new PrismaClient(),config=readConfig()) {
  const app = Fastify({logger:config.NODE_ENV==='test'?false:{redact:['req.headers.cookie','req.headers.authorization','res.headers.set-cookie']},disableRequestLogging:true,bodyLimit:1048576});
  await app.register(cookie);await app.register(helmet);await app.register(rateLimit,{global:false});
@@ -29,7 +31,13 @@ export async function createApp(db = new PrismaClient(),config=readConfig()) {
  app.get('/health',async()=>{await db.$queryRaw`SELECT 1`;return {status:'ok'};});
  registerPeople(app,db);
  registerInternship(app,db);
- app.get('/api/alertas',()=>internshipAlerts(db));
+ registerLeave(app,db);
+ app.get('/api/alertas',async()=>[...await internshipAlerts(db),...await leaveAlerts(db)]);
  app.addHook('onClose',async()=>{await db.$disconnect();});
+ if(config.NODE_ENV!=='test'){
+  let timer:ReturnType<typeof setInterval>|undefined;
+  app.addHook('onReady',async()=>{await synchronize(db,null);timer=setInterval(()=>{void synchronize(db,null).catch(()=>app.log.error('Falha na aquisição periódica de direitos'));},3600000);timer.unref();});
+  app.addHook('onClose',async()=>{if(timer)clearInterval(timer);});
+ }
  return app;
 }

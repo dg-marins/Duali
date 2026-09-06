@@ -11,7 +11,7 @@ export async function api<T=Row>(path:string,method='GET',body?:unknown):Promise
 export function display(value:unknown):string {
  if(value===null||value===undefined||value==='')return '—';
  if(typeof value==='boolean')return value?'Sim':'Não';
- if(typeof value==='object'){const row=value as Row;return String(row.nomeCompleto??row.nome??row.sigla??row.id??'');}
+ if(typeof value==='object'){const row=value as Row;if(row.pessoa)return display(row.pessoa)+' · '+display(row.tipo);return String(row.nomeCompleto??row.nome??row.seguradora??(row.dataAquisicao?'Aquisição '+display(row.dataAquisicao):row.dataInicio?'Período '+display(row.dataInicio):row.sigla??row.id??''));}
  const text=String(value);
  if(/^\d{4}-\d{2}-\d{2}T/.test(text))return text.slice(0,10).split('-').reverse().join('/');
  return text;

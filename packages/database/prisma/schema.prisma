@@ -6,6 +6,8 @@ datasource db {
  url = env("DATABASE_URL")
 }
 model Usuario {
+ ajustes DescansoAjuste[]
+ consumos DescansoConsumo[]
  id String @id @default(uuid()) @db.Uuid
  nome String @db.VarChar(180)
  email String @unique @db.VarChar(180)
@@ -61,6 +63,9 @@ enum StatusVinculo {
  DESLIGADO
 }
 model Vinculo {
+ direitos DescansoDireito[]
+ periodos DescansoPeriodo[]
+ ajustes DescansoAjuste[]
  estagio Estagio?
  documentos DocumentoVinculo[]
  seguros SeguroEstagio[]
@@ -173,4 +178,60 @@ model SeguroMovimentacao {
  dataMovimentacao DateTime @db.Date
  observacoes String?
  @@index([seguroEstagioId,dataMovimentacao])
+}
+model DescansoDireito {
+ id String @id @default(uuid()) @db.Uuid
+ vinculoId String @db.Uuid
+ vinculo Vinculo @relation(fields:[vinculoId],references:[id])
+ dataAquisicao DateTime @db.Date
+ inicioAquisitivo DateTime? @db.Date
+ fimAquisitivo DateTime? @db.Date
+ quantidadeDias Decimal @db.Decimal(5,2)
+ origem String @default("AUTOMATICA")
+ prazoConcessivo DateTime? @db.Date
+ observacoes String?
+ consumos DescansoConsumo[]
+ @@unique([vinculoId,dataAquisicao])
+ @@index([prazoConcessivo])
+}
+model DescansoPeriodo {
+ id String @id @default(uuid()) @db.Uuid
+ vinculoId String @db.Uuid
+ vinculo Vinculo @relation(fields:[vinculoId],references:[id])
+ dataInicio DateTime @db.Date
+ dataFim DateTime @db.Date
+ quantidadeDias Decimal @db.Decimal(5,2)
+ tipo String
+ status String @default("PROGRAMADO")
+ motivo String?
+ observacoes String?
+ consumos DescansoConsumo[]
+ @@index([vinculoId,dataInicio,dataFim])
+}
+model DescansoAjuste {
+ id String @id @default(uuid()) @db.Uuid
+ vinculoId String @db.Uuid
+ vinculo Vinculo @relation(fields:[vinculoId],references:[id])
+ tipo String
+ quantidadeDias Decimal @db.Decimal(5,2)
+ dataReferencia DateTime? @db.Date
+ motivo String
+ criadoPor String @db.Uuid
+ usuario Usuario @relation(fields:[criadoPor],references:[id])
+ criadoEm DateTime @default(now())
+ @@index([vinculoId])
+}
+model DescansoConsumo {
+ id String @id @default(uuid()) @db.Uuid
+ periodoId String @db.Uuid
+ periodo DescansoPeriodo @relation(fields:[periodoId],references:[id])
+ direitoId String? @db.Uuid
+ direito DescansoDireito? @relation(fields:[direitoId],references:[id])
+ quantidadeDias Decimal @db.Decimal(5,2)
+ motivo String?
+ criadoPor String @db.Uuid
+ usuario Usuario @relation(fields:[criadoPor],references:[id])
+ criadoEm DateTime @default(now())
+ @@index([periodoId])
+ @@index([direitoId])
 }

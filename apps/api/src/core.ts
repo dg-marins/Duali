@@ -15,7 +15,7 @@ export async function audit(tx:Tx,userId:string|null,acao:string,entidade:string
  await tx.auditoria.create({data:{usuarioId:userId,acao,entidade,entidadeId,...(before===undefined?{}:{dadosAnteriores:clean(before)}),...(after===undefined?{}:{dadosNovos:clean(after)})}});
 }
 export async function transaction<T>(db:PrismaClient,work:(tx:Tx)=>Promise<T>):Promise<T>{
- for(let attempt=0;;attempt++){try{return await db.$transaction(work,{isolationLevel:Prisma.TransactionIsolationLevel.Serializable,timeout:20000});}catch(e){if(e instanceof Prisma.PrismaClientKnownRequestError&&e.code==='P2034'&&attempt<2)continue;throw e;}}
+ for(let attempt=0;;attempt++){try{return await db.$transaction(work,{isolationLevel:Prisma.TransactionIsolationLevel.Serializable,timeout:20000,maxWait:15000});}catch(e){if(e instanceof Prisma.PrismaClientKnownRequestError&&e.code==='P2034'&&attempt<2)continue;throw e;}}
 }
 export function dateData(data:Row,fields:string[]):Row {const result={...data};for(const key of fields){if(typeof result[key]==='string')result[key]=new Date(result[key] as string);}return result;}
 export const paramsId=z.object({id:z.string().uuid()});
