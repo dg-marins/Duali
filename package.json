@@ -19,6 +19,7 @@
     "admin:create": "pnpm --filter @duali/api admin:create",
     "admin:reset": "pnpm --filter @duali/api admin:reset",
     "verify:intern-import": "pnpm --filter @duali/api verify:intern-import",
+    "verify:audited-import": "pnpm --filter @duali/api verify:audited-import",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,json,css,html}\" \"packages/*/src/**/*.ts\" \"*.ts\" \"*.json\" \"*.js\" \"scripts/*.mjs\""
   },
   "devDependencies": {

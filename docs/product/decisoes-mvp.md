@@ -158,3 +158,9 @@ Estas decisões estão aprovadas para o MVP e podem ser utilizadas pelo desenvol
 A navegação operacional usa a pessoa como cadastro mestre e agrega seus vínculos, estágio, descanso, benefícios, documentos, seguros, alertas e histórico em um único perfil. As páginas globais de estágio, férias/descanso e benefícios são consultas especializadas com ações no contexto do domínio. Cadastros auxiliares permanecem separados e exibem seus relacionamentos.
 
 O endereço estruturado é opcional. O endereço legado importado continua preservado em campo próprio e não será interpretado automaticamente.
+
+## DP-015 — Revisão pós-auditoria
+
+`APRENDIZ` é um tipo de vínculo distinto e não recebe automaticamente descanso de estágio. Escala pertence ao vínculo; horário continua específico do estágio. Regras de instituições são informativas enquanto não forem homologadas.
+
+Benefícios fecham por competência mensal e unidade nos estados aberta, em revisão e fechada. Reabertura exige motivo e auditoria. A publicação parcial automática continua restrita a registros inequívocos.

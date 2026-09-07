@@ -10,7 +10,15 @@ import {
   fechamentoBeneficioSchema,
   reabrirBeneficioSchema,
 } from "@duali/shared";
-import { audit, dateData, DomainError, paramsId, transaction, type Row, type Tx } from "../core.js";
+import {
+  audit,
+  dateData,
+  DomainError,
+  paramsId,
+  transaction,
+  type Row,
+  type Tx,
+} from "../core.js";
 import { registerResource, type Resource } from "./resources.js";
 export function benefitCalculation(row: Row): Row {
   const quantity = row.quantidadeDias ?? row.quantidade;
@@ -37,9 +45,7 @@ export function benefitCalculation(row: Row): Row {
     valorFinal: final?.toFixed(2) ?? null,
     divergencia:
       final && row.valorInformado != null
-        ? new Prisma.Decimal(String(row.valorInformado))
-            .minus(final)
-            .toFixed(2)
+        ? new Prisma.Decimal(String(row.valorInformado)).minus(final).toFixed(2)
         : null,
   };
 }
@@ -48,7 +54,10 @@ async function ensureOpen(tx: Tx, unidadeId: string, competencia: Date) {
     where: { unidadeId_competencia: { unidadeId, competencia } },
   });
   if (closing?.status === "FECHADA")
-    throw new DomainError(409, "Reabra a competência antes de alterar lançamentos.");
+    throw new DomainError(
+      409,
+      "Reabra a competência antes de alterar lançamentos.",
+    );
 }
 export const benefitResources: Resource[] = [
   {
@@ -152,7 +161,11 @@ export const benefitResources: Resource[] = [
         where: { id: String(data.competenciaId) },
         include: { beneficioVinculo: { include: { vinculo: true } } },
       });
-      await ensureOpen(tx, competence.beneficioVinculo.vinculo.unidadeId, competence.competencia);
+      await ensureOpen(
+        tx,
+        competence.beneficioVinculo.vinculo.unidadeId,
+        competence.competencia,
+      );
       data.criadoPor = userId;
     },
   },
@@ -162,7 +175,9 @@ export const benefitResources: Resource[] = [
     schema: beneficioPeriodoSchema,
     dates: ["dataEvento"],
     filters: ["beneficioVinculoId", "status"],
-    include: { beneficioVinculo: { include: { vinculo: { include: { pessoa: true } } } } },
+    include: {
+      beneficioVinculo: { include: { vinculo: { include: { pessoa: true } } } },
+    },
   },
 ];
 export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
@@ -172,7 +187,9 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
     return db.fechamentoCompetenciaBeneficio.findMany({
       where: {
         ...(query.unidadeId ? { unidadeId: query.unidadeId } : {}),
-        ...(query.competencia ? { competencia: new Date(query.competencia) } : {}),
+        ...(query.competencia
+          ? { competencia: new Date(query.competencia) }
+          : {}),
       },
       include: { unidade: true },
       orderBy: [{ competencia: "desc" }, { unidade: { nome: "asc" } }],
@@ -180,7 +197,8 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
   });
   const detail = async (id: string) => {
     const closing = await db.fechamentoCompetenciaBeneficio.findUniqueOrThrow({
-      where: { id }, include: { unidade: true },
+      where: { id },
+      include: { unidade: true },
     });
     const rows = await db.beneficioCompetencia.findMany({
       where: {
@@ -195,31 +213,63 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
       },
     });
     const totals = Object.fromEntries(
-      ["TRANSPORTE", "ALIMENTACAO", "CESTA_BASICA", "PREMIACAO", "OUTRO"].map((type) => [
-        type,
-        rows.filter((r) => r.configuracao.tipo === type).reduce(
-          (sum, row) => sum.plus(String(benefitCalculation(row).valorFinal ?? 0)),
-          new Prisma.Decimal(0),
-        ).toFixed(2),
-      ]),
+      ["TRANSPORTE", "ALIMENTACAO", "CESTA_BASICA", "PREMIACAO", "OUTRO"].map(
+        (type) => [
+          type,
+          rows
+            .filter((r) => r.configuracao.tipo === type)
+            .reduce(
+              (sum, row) =>
+                sum.plus(String(benefitCalculation(row).valorFinal ?? 0)),
+              new Prisma.Decimal(0),
+            )
+            .toFixed(2),
+        ],
+      ),
     );
     return {
       ...closing,
-      pessoasCobertas: new Set(rows.map((r) => r.beneficioVinculo.vinculo.pessoaId)).size,
-      pendencias: rows.filter((r) => r.status === "PENDENTE" || Number(benefitCalculation(r).divergencia ?? 0) !== 0).length,
-      totais: { ...totals, total: Object.values(totals).reduce((s, v) => s.plus(v), new Prisma.Decimal(0)).toFixed(2) },
+      pessoasCobertas: new Set(
+        rows.map((r) => r.beneficioVinculo.vinculo.pessoaId),
+      ).size,
+      pendencias: rows.filter(
+        (r) =>
+          r.status === "PENDENTE" ||
+          Number(benefitCalculation(r).divergencia ?? 0) !== 0,
+      ).length,
+      totais: {
+        ...totals,
+        total: Object.values(totals)
+          .reduce((s, v) => s.plus(v), new Prisma.Decimal(0))
+          .toFixed(2),
+      },
     };
   };
-  app.get("/api/beneficios/fechamentos/:id", async (req) => detail(paramsId.parse(req.params).id));
+  app.get("/api/beneficios/fechamentos/:id", async (req) =>
+    detail(paramsId.parse(req.params).id),
+  );
   app.post("/api/beneficios/fechamentos", async (req, reply) => {
     const body = fechamentoBeneficioSchema.parse(req.body);
     const result = await transaction(db, async (tx) => {
       const row = await tx.fechamentoCompetenciaBeneficio.upsert({
-        where: { unidadeId_competencia: { unidadeId: body.unidadeId, competencia: new Date(body.competencia) } },
+        where: {
+          unidadeId_competencia: {
+            unidadeId: body.unidadeId,
+            competencia: new Date(body.competencia),
+          },
+        },
         create: dateData(body, ["competencia"]) as never,
         update: {},
       });
-      await audit(tx, req.userId, "CRIAR_FECHAMENTO_BENEFICIO", "fechamentoCompetenciaBeneficio", row.id, undefined, row);
+      await audit(
+        tx,
+        req.userId,
+        "CRIAR_FECHAMENTO_BENEFICIO",
+        "fechamentoCompetenciaBeneficio",
+        row.id,
+        undefined,
+        row,
+      );
       return row;
     });
     reply.code(201);
@@ -230,17 +280,41 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
       const { id } = paramsId.parse(req.params);
       reabrirBeneficioSchema.partial().parse(req.body);
       return transaction(db, async (tx) => {
-        const before = await tx.fechamentoCompetenciaBeneficio.findUniqueOrThrow({ where: { id } });
+        const before =
+          await tx.fechamentoCompetenciaBeneficio.findUniqueOrThrow({
+            where: { id },
+          });
         const status = path === "fechar" ? "FECHADA" : "EM_REVISAO";
         if (path === "fechar" && before.status !== "EM_REVISAO")
-          throw new DomainError(409, "Coloque a competência em revisão antes de fechar.");
+          throw new DomainError(
+            409,
+            "Coloque a competência em revisão antes de fechar.",
+          );
         if (path === "revisar" && before.status !== "ABERTA")
-          throw new DomainError(409, "Somente competência aberta pode entrar em revisão.");
+          throw new DomainError(
+            409,
+            "Somente competência aberta pode entrar em revisão.",
+          );
         const row = await tx.fechamentoCompetenciaBeneficio.update({
           where: { id },
-          data: { status, ...(status === "FECHADA" ? { fechadoEm: new Date(), fechadoPor: req.userId } : {}) },
+          data: {
+            status,
+            ...(status === "FECHADA"
+              ? { fechadoEm: new Date(), fechadoPor: req.userId }
+              : {}),
+          },
         });
-        await audit(tx, req.userId, status === "FECHADA" ? "FECHAR_COMPETENCIA_BENEFICIO" : "REVISAR_COMPETENCIA_BENEFICIO", "fechamentoCompetenciaBeneficio", id, before, row);
+        await audit(
+          tx,
+          req.userId,
+          status === "FECHADA"
+            ? "FECHAR_COMPETENCIA_BENEFICIO"
+            : "REVISAR_COMPETENCIA_BENEFICIO",
+          "fechamentoCompetenciaBeneficio",
+          id,
+          before,
+          row,
+        );
         return row;
       });
     });
@@ -250,10 +324,24 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
     const { id } = paramsId.parse(req.params);
     const { motivo } = reabrirBeneficioSchema.parse(req.body);
     return transaction(db, async (tx) => {
-      const before = await tx.fechamentoCompetenciaBeneficio.findUniqueOrThrow({ where: { id } });
-      if (before.status !== "FECHADA") throw new DomainError(409, "A competência não está fechada.");
-      const row = await tx.fechamentoCompetenciaBeneficio.update({ where: { id }, data: { status: "ABERTA", fechadoEm: null, fechadoPor: null } });
-      await audit(tx, req.userId, "REABRIR_COMPETENCIA_BENEFICIO", "fechamentoCompetenciaBeneficio", id, before, { ...row, motivo });
+      const before = await tx.fechamentoCompetenciaBeneficio.findUniqueOrThrow({
+        where: { id },
+      });
+      if (before.status !== "FECHADA")
+        throw new DomainError(409, "A competência não está fechada.");
+      const row = await tx.fechamentoCompetenciaBeneficio.update({
+        where: { id },
+        data: { status: "ABERTA", fechadoEm: null, fechadoPor: null },
+      });
+      await audit(
+        tx,
+        req.userId,
+        "REABRIR_COMPETENCIA_BENEFICIO",
+        "fechamentoCompetenciaBeneficio",
+        id,
+        before,
+        { ...row, motivo },
+      );
       return row;
     });
   });

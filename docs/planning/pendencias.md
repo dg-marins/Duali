@@ -45,3 +45,7 @@ Uma pendência deve ser registrada aqui quando:
 - não é necessário decidir para concluir a task atual.
 
 Pendências não autorizam o agente a inventar requisitos.
+
+## Revisão visual e planilha protegida
+
+Os padrões de interface estão em `docs/product/ux-ui-mvp.md`; refinamentos seguem de forma incremental. A amostra `Férias_Planilha Definitiva RJ` está protegida por senha e precisa ser exportada como XLSX sem senha para homologação completa das contagens.

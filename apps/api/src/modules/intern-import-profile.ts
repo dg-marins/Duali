@@ -1130,7 +1130,9 @@ async function createItem(
       status: review ? "REVISAO" : "VALIDO",
       acao: review ? "PENDENTE" : existing ? "VINCULAR" : "CRIAR",
       mensagens: json(messages),
-      inconsistencias: json(issuesFrom(messages, review ? "REVISAO" : "VALIDO")),
+      inconsistencias: json(
+        issuesFrom(messages, review ? "REVISAO" : "VALIDO"),
+      ),
       classificacoes: json(classifyNotes(input.data)),
       candidatos: json(
         (input.candidates ?? (existing ? [existing] : [])).map((c) => ({

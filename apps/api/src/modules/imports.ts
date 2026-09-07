@@ -26,6 +26,10 @@ import {
   stageGeneralInternList,
 } from "./intern-import-profile.js";
 import { classifyNotes, issuesFrom } from "./import-issues.js";
+import {
+  readAuditedWorkbook,
+  stageAuditedWorkbook,
+} from "./audited-import-profiles.js";
 export const importResources = [
   ...resources.filter((r) => r.path !== "usuarios"),
   ...internshipResources,
@@ -582,11 +586,15 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
       const file = await req.file();
       if (!file) throw new DomainError(422, "Selecione um arquivo.");
       const buffer = await file.toBuffer(),
-        profile = isGeneralInternList(file.filename)
-          ? await readGeneralInternList(buffer)
-          : null,
+        auditedProfile = readAuditedWorkbook(file.filename, buffer),
+        profile =
+          !auditedProfile && isGeneralInternList(file.filename)
+            ? await readGeneralInternList(buffer)
+            : null,
         sheets =
-          profile?.sheets ?? (await readSpreadsheet(file.filename, buffer));
+          auditedProfile?.sheets ??
+          profile?.sheets ??
+          (await readSpreadsheet(file.filename, buffer));
       const batch = await transaction(
         db,
         async (tx) => {
@@ -605,9 +613,21 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
             "importacao",
             result.id,
           );
-          const analysis = profile
-            ? await stageGeneralInternList(tx, result.id, req.userId!, profile)
-            : null;
+          const analysis = auditedProfile
+            ? await stageAuditedWorkbook(
+                tx,
+                result.id,
+                req.userId!,
+                auditedProfile,
+              )
+            : profile
+              ? await stageGeneralInternList(
+                  tx,
+                  result.id,
+                  req.userId!,
+                  profile,
+                )
+              : null;
           const publication = analysis
             ? await publishReady(tx, result.id, req.userId!)
             : null;
@@ -661,21 +681,42 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
         mapeamento: true,
       },
     });
-    const q = listSchema.extend({
-      situacao: z.enum(["TODOS", "DUPLICIDADE", "DATA", "REFERENCIA", "DEPENDENCIA", "REJEITADOS", "PRONTOS"]).default("TODOS"),
-      dominio: z.string().max(80).optional(),
-    }).parse(req.query);
+    const q = listSchema
+      .extend({
+        situacao: z
+          .enum([
+            "TODOS",
+            "DUPLICIDADE",
+            "DATA",
+            "REFERENCIA",
+            "DEPENDENCIA",
+            "REJEITADOS",
+            "PRONTOS",
+          ])
+          .default("TODOS"),
+        dominio: z.string().max(80).optional(),
+      })
+      .parse(req.query);
     const reviewing = ["REVISAO", "PARCIAL"].includes(batch.status);
     const itemWhere: Prisma.ImportacaoItemWhereInput = reviewing
       ? { importacaoId: id, acao: "PENDENTE" }
       : { importacaoId: id };
     if (q.dominio) itemWhere.dominio = q.dominio;
     if (q.situacao === "DUPLICIDADE") itemWhere.status = "DUPLICIDADE";
-    if (q.situacao === "DEPENDENCIA") itemWhere.status = "AGUARDANDO_DEPENDENCIA";
-    if (q.situacao === "REJEITADOS") { delete itemWhere.acao; itemWhere.status = "REJEITADO"; }
-    if (q.situacao === "PRONTOS") { delete itemWhere.acao; itemWhere.status = { in: ["VALIDO", "NORMALIZAVEL"] }; }
-    if (q.situacao === "DATA") itemWhere.mensagens = { array_contains: ["data"] };
-    if (q.situacao === "REFERENCIA") itemWhere.mensagens = { array_contains: ["refer"] };
+    if (q.situacao === "DEPENDENCIA")
+      itemWhere.status = "AGUARDANDO_DEPENDENCIA";
+    if (q.situacao === "REJEITADOS") {
+      delete itemWhere.acao;
+      itemWhere.status = "REJEITADO";
+    }
+    if (q.situacao === "PRONTOS") {
+      delete itemWhere.acao;
+      itemWhere.status = { in: ["VALIDO", "NORMALIZAVEL"] };
+    }
+    if (q.situacao === "DATA")
+      itemWhere.mensagens = { array_contains: ["data"] };
+    if (q.situacao === "REFERENCIA")
+      itemWhere.mensagens = { array_contains: ["refer"] };
     const [items, total, totalRegistros, summary] = await Promise.all([
       db.importacaoItem.findMany({
         where: itemWhere,

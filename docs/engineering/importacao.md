@@ -13,3 +13,9 @@ Na revisão, escolha criar, vincular sem alterar, atualizar com diferenças vis�
 O arquivo original e todas as linhas ficam no PostgreSQL. Fixtures são sintéticas. Compatibilidade operacional com as planilhas reais ainda exige homologação com amostras representativas.
 
 Para conferir o perfil real sem exibir dados pessoais, execute `pnpm verify:intern-import -- <arquivo.xlsx> [lote-id]`. O comando compara as abas com o staging, valida a existência de todos os destinos publicados e informa contagens por domínio, pendências e dependências bloqueadas.
+
+## Profiles pós-auditoria
+
+O importador reconhece Listagem de Estagiários, férias de funcionários, descanso de estagiários e benefícios de 2026. Fórmulas não são executadas. Observações recebem sugestões no staging, sem gerar eventos ou ajustes automaticamente. O arquivo original permanece no PostgreSQL no MVP, limitado a 10 MB.
+
+Arquivos XLS binários com extensão incorreta são identificados. Arquivos protegidos por senha devem ser exportados pelo responsável como XLSX sem senha; a aplicação não solicita nem armazena senhas de planilha.

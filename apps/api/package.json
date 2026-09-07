@@ -10,7 +10,8 @@
     "start": "node dist/server.js",
     "admin:create": "tsx src/admin.ts create",
     "admin:reset": "tsx src/admin.ts reset",
-    "verify:intern-import": "tsx src/verify-intern-import.ts"
+    "verify:intern-import": "tsx src/verify-intern-import.ts",
+    "verify:audited-import": "tsx src/verify-audited-import.ts"
   },
   "dependencies": {
     "@duali/database": "workspace:*",

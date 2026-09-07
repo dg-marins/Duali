@@ -59,3 +59,7 @@ O endpoint `GET /api/pessoas/:id/perfil` agrega vínculos, estágio, saldos reco
 A migration `202609070002_structured_person_address` adicionou endereço estruturado nullable e foi aplicada nos bancos `duali` e `duali_test`, mantendo o texto legado. O Prisma foi atualizado de 6.19.0 para 6.19.3 e o pnpm para 10.34.5; overrides transitivos corrigiram os avisos de segurança de `deepmerge-ts` e `uuid`.
 
 Validação desta entrega: instalação congelada reproduzível, migrations, build, lint, typecheck, 19 testes em 10 arquivos, E2E operacional completo, `format:check` e auditoria de dependências passaram. A planilha real foi novamente verificada: 1.369 itens publicados, 85 pendentes e 45 aguardando dependência, sem perda dos destinos já publicados.
+
+## Revisão pós-auditoria
+
+Foram adicionados vínculo aprendiz, escala, estados tipados, regras informativas de instituição, fechamento de benefícios por mês/unidade, períodos históricos de cesta básica, profiles especializados e Central de Pendências. A homologação humana segue o roteiro em `homologacao-dados.md`.

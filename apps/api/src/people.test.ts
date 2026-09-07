@@ -47,7 +47,10 @@ test("authentication, CSRF, people, team history, uniqueness and revocation", as
       escala: "Segunda a quinta (rodízio)",
       dataAdmissao: "2026-01-01",
     });
-    expect((await f.db.vinculo.findUniqueOrThrow({ where: { id: apprentice.id } })).escala).toBe("Segunda a quinta (rodízio)");
+    expect(
+      (await f.db.vinculo.findUniqueOrThrow({ where: { id: apprentice.id } }))
+        .escala,
+    ).toBe("Segunda a quinta (rodízio)");
     expect(
       await f.db.vinculoEquipeHistorico.count({
         where: { vinculoId: vinculo.id },
@@ -57,6 +60,7 @@ test("authentication, CSRF, people, team history, uniqueness and revocation", as
       where: { entidadeId: pessoa.id },
     });
     expect(audits).toHaveLength(1);
+    expect(audits[0]?.requestId).toBeTruthy();
     const duplicate = await f.app.inject({
       method: "POST",
       url: "/api/equipes",

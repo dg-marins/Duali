@@ -125,11 +125,13 @@ model Auditoria {
  acao String
  entidade String
  entidadeId String?
+ requestId String? @db.VarChar(100)
  dadosAnteriores Json?
  dadosNovos Json?
  criadoEm DateTime @default(now())
  @@index([entidade,entidadeId])
  @@index([criadoEm])
+ @@index([requestId])
 }
 model VinculoEquipeHistorico {
  id String @id @default(uuid()) @db.Uuid

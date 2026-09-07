@@ -1,5 +1,7 @@
 import { Prisma, type PrismaClient } from "@duali/database";
 import { z } from "@duali/shared";
+import { AsyncLocalStorage } from "node:async_hooks";
+export const requestContext = new AsyncLocalStorage<{ requestId: string }>();
 export class DomainError extends Error {
   constructor(
     public status: number,
@@ -40,6 +42,9 @@ export async function audit(
       acao,
       entidade,
       entidadeId,
+      ...(requestContext.getStore()?.requestId
+        ? { requestId: requestContext.getStore()!.requestId }
+        : {}),
       ...(before === undefined ? {} : { dadosAnteriores: clean(before) }),
       ...(after === undefined ? {} : { dadosNovos: clean(after) }),
     },

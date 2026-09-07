@@ -5,7 +5,7 @@ import rateLimit from "@fastify/rate-limit";
 import { PrismaClient, Prisma } from "@duali/database";
 import { z } from "@duali/shared";
 import { readConfig } from "./config.js";
-import { DomainError } from "./core.js";
+import { DomainError, requestContext } from "./core.js";
 import { registerAuth } from "./modules/auth.js";
 import { registerPeople } from "./modules/resources.js";
 import { registerInternship, internshipAlerts } from "./modules/internship.js";
@@ -38,6 +38,9 @@ export async function createApp(
   await app.register(cookie);
   await app.register(helmet);
   await app.register(rateLimit, { global: false });
+  app.addHook("onRequest", async (req) => {
+    requestContext.enterWith({ requestId: req.id });
+  });
   app.setErrorHandler((error, req, reply) => {
     if (error instanceof z.ZodError)
       return reply.code(422).send({

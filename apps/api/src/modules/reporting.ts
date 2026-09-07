@@ -211,8 +211,8 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
   app.get("/api/dashboard", async (req) => {
     const q = listSchema.parse(req.query),
       where = linkWhere(q);
-    const [pessoas, clt, estagios, aprendizes, alerts, recent, imports] = await Promise.all(
-      [
+    const [pessoas, clt, estagios, aprendizes, alerts, recent, imports] =
+      await Promise.all([
         db.pessoa.count({
           where: { vinculos: { some: { ...where, status: "ATIVO" } } },
         }),
@@ -238,8 +238,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
         db.importacao.count({
           where: { status: { in: ["UPLOAD", "REVISAO", "PARCIAL"] } },
         }),
-      ],
-    );
+      ]);
     const selected = (
         await db.vinculo.findMany({ where, select: { id: true } })
       ).map((v) => v.id),
