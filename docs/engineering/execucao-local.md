@@ -1,6 +1,6 @@
 # Execução local
 
-Requisitos: Node.js 22.12+ (validado também com 24), pnpm 9.15.4, Docker Compose.
+Requisitos: Node.js 22.12+ (validado também com 24), pnpm 10.34.5, Docker Compose. O Corepack usa automaticamente a versão registrada no `package.json`.
 
 1. Copie .env.example para .env e substitua os placeholders por uma senha local aleatória, igual na URL e em POSTGRES_PASSWORD.
 2. Execute `pnpm install --frozen-lockfile`.

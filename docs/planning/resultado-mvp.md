@@ -49,3 +49,13 @@ CI remoto, implantação Linux/Nginx, ensaio produtivo de recuperação e homolo
 O pnpm instalado emite aviso de compatibilidade sobre overrides no package.json, embora instalação congelada e auditoria tenham passado. Padronizar essa configuração antes de atualizar a versão do gerenciador.
 
 Continuam pendentes de produto/infraestrutura: domínio, dimensionamento, retenção de backup, RPO/RTO e regras especiais de férias. PDF, integrações e recuperação de senha por e-mail ficam fora do escopo aprovado.
+
+## Reformulação operacional — 2026-09-07
+
+A aplicação passou a usar rotas navegáveis e uma experiência orientada à pessoa. Foram entregues sidebar retrátil e drawer móvel, dashboard com primeiro uso, busca combinada de pessoas, perfil consolidado com abas e timelines, listagens especializadas de estagiários, férias/descanso e benefícios, ações contextuais, fluxo guiado de importação, relatórios e auditoria com filtros. Unidades, equipes, instituições e fornecedores possuem detalhe com relacionamentos operacionais.
+
+O endpoint `GET /api/pessoas/:id/perfil` agrega vínculos, estágio, saldos reconstruídos, benefícios, documentos, seguros, alertas e histórico. As listagens especializadas usam paginação, filtros validados e ordenação. O vínculo atual é o ativo mais recente e múltiplos vínculos ativos são sinalizados.
+
+A migration `202609070002_structured_person_address` adicionou endereço estruturado nullable e foi aplicada nos bancos `duali` e `duali_test`, mantendo o texto legado. O Prisma foi atualizado de 6.19.0 para 6.19.3 e o pnpm para 10.34.5; overrides transitivos corrigiram os avisos de segurança de `deepmerge-ts` e `uuid`.
+
+Validação desta entrega: instalação congelada reproduzível, migrations, build, lint, typecheck, 19 testes em 10 arquivos, E2E operacional completo, `format:check` e auditoria de dependências passaram. A planilha real foi novamente verificada: 1.369 itens publicados, 85 pendentes e 45 aguardando dependência, sem perda dos destinos já publicados.
