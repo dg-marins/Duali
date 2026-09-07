@@ -143,6 +143,10 @@ Regras operacionais que variam por localidade devem preferencialmente ser config
 
 A unidade possui cidade e UF, mas a UF não deve ser usada como única chave de regra quando uma configuração por unidade for mais precisa.
 
+## DP-013 — Perfil da Listagem Estagiários Geral
+
+O arquivo operacional `Listagem Estagiários Geral` possui um perfil de importação próprio. Todas as abas são preservadas e os dados preenchidos são transformados em pessoa, vínculo, estágio, instituição, documento, seguro e movimentação quando houver informação suficiente. Fórmulas não são executadas; resultados já armazenados no arquivo podem ser usados, mantendo fórmula e resultado no staging. Ausência ou ambiguidade em dados obrigatórios permanece para revisão.
+
 ## Status
 
 Estas decisões estão aprovadas para o MVP e podem ser utilizadas pelo desenvolvimento sem nova validação, salvo mudança explícita de produto.

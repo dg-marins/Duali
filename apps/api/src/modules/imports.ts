@@ -20,6 +20,11 @@ import { internshipResources } from "./internship.js";
 import { leaveResources } from "./leave.js";
 import { benefitResources } from "./benefits.js";
 import { readSpreadsheet, type Sheet } from "./import-files.js";
+import {
+  isGeneralInternList,
+  readGeneralInternList,
+  stageGeneralInternList,
+} from "./intern-import-profile.js";
 export const importResources = [
   ...resources.filter((r) => r.path !== "usuarios"),
   ...internshipResources,
@@ -526,7 +531,10 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
       const file = await req.file();
       if (!file) throw new DomainError(422, "Selecione um arquivo.");
       const buffer = await file.toBuffer(),
-        sheets = await readSpreadsheet(file.filename, buffer);
+        profile = isGeneralInternList(file.filename)
+          ? await readGeneralInternList(buffer)
+          : null,
+        sheets = profile?.sheets ?? (await readSpreadsheet(file.filename, buffer));
       const batch = await transaction(db, async (tx) => {
         const result = await tx.importacao.create({
           data: {
@@ -543,12 +551,17 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
           "importacao",
           result.id,
         );
-        return result;
-      });
+        const analysis = profile
+          ? await stageGeneralInternList(tx, result.id, req.userId!, profile)
+          : null;
+        return { ...result, analysis };
+      }, 120000);
       reply.code(201);
       return {
         id: batch.id,
         nomeArquivo: batch.nomeArquivo,
+        status: batch.analysis ? "REVISAO" : "UPLOAD",
+        ...(batch.analysis ?? {}),
         abas: sheets.map((s) => ({
           nome: s.nome,
           colunas: s.colunas,
@@ -589,13 +602,20 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
       },
     });
     const q = listSchema.parse(req.query);
-    const [items, total, summary] = await Promise.all([
+    const specialized =
+      (batch.mapeamento as Row | null)?.perfil ===
+      "LISTAGEM_ESTAGIARIOS_GERAL";
+    const itemWhere = specialized
+      ? { importacaoId: id, acao: "PENDENTE" }
+      : { importacaoId: id };
+    const [items, total, totalRegistros, summary] = await Promise.all([
       db.importacaoItem.findMany({
-        where: { importacaoId: id },
+        where: itemWhere,
         orderBy: { ordem: "asc" },
         take: q.pageSize,
         skip: (q.page - 1) * q.pageSize,
       }),
+      db.importacaoItem.count({ where: itemWhere }),
       db.importacaoItem.count({ where: { importacaoId: id } }),
       db.importacaoItem.groupBy({
         by: ["status", "acao"],
@@ -615,6 +635,7 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
       })),
       items,
       total,
+      totalRegistros,
       summary,
     };
   });

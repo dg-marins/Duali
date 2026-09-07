@@ -15,6 +15,7 @@ interface Batch {
   abas: { nome: string; colunas: string[]; linhas: number; previa: Row[] }[];
   items?: Row[];
   total?: number;
+  totalRegistros?: number;
   summary?: { status: string; acao: string; _count: number }[];
 }
 const domains = screens.filter((s) => s.path !== "usuarios");
@@ -248,8 +249,11 @@ export function Imports() {
       const form = new FormData();
       form.append("arquivo", file);
       const result = await api<Batch>("importacoes", "POST", form);
-      setBatch(result);
-      setAba(result.abas[0]?.nome ?? "");
+      if (result.status === "REVISAO") await load(result.id, 1);
+      else {
+        setBatch(result);
+        setAba(result.abas[0]?.nome ?? "");
+      }
       setPage(1);
       setReview(null);
       setConfirming(false);
@@ -527,7 +531,12 @@ export function Imports() {
             <h2>
               {batch.nomeArquivo} · {batch.status}
             </h2>
-            <p>{batch.total} registros encontrados</p>
+            <p>
+              {batch.totalRegistros ?? batch.total} registros encontrados
+              {batch.totalRegistros !== undefined &&
+                batch.totalRegistros !== batch.total &&
+                ` · ${batch.total} exigem revisão`}
+            </p>
             <div className="metrics">
               {batch.summary?.map((s) => (
                 <article key={s.status + s.acao}>
@@ -615,7 +624,7 @@ export function Imports() {
             <section className="panel">
               <h2>Confirmar gravação definitiva</h2>
               <p>
-                {batch.total} registros analisados. Itens rejeitados serão
+                {batch.totalRegistros ?? batch.total} registros analisados. Itens rejeitados serão
                 preservados no staging. As demais decisões serão aplicadas em
                 uma única transação.
               </p>
