@@ -38,10 +38,10 @@ export const pessoaSchema = z
       .refine(validCpf, "CPF inválido")
       .nullable()
       .optional(),
-    rg: z.string().max(30).nullable().optional(),
+    rg: z.string().max(120).nullable().optional(),
     dataNascimento: optionalDate,
     email: z.string().email().max(180).nullable().optional(),
-    telefone: z.string().max(30).nullable().optional(),
+    telefone: z.string().max(80).nullable().optional(),
     endereco: optionalText,
     observacoes: optionalText,
     ativa: z.boolean().default(true),

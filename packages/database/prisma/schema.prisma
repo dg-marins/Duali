@@ -26,10 +26,10 @@ model Pessoa {
  nomeCompleto String @db.VarChar(180)
  nomeSocial String? @db.VarChar(180)
  cpf String? @unique @db.VarChar(11)
- rg String? @db.VarChar(30)
+ rg String? @db.VarChar(120)
  dataNascimento DateTime? @db.Date
  email String? @db.VarChar(180)
- telefone String? @db.VarChar(30)
+ telefone String? @db.VarChar(80)
  endereco String?
  observacoes String?
  ativa Boolean @default(true)
@@ -147,6 +147,12 @@ model Estagio {
  curso String?
  periodoAcademico String?
  valorBolsa Decimal? @db.Decimal(12,2)
+ dataTerminoPrevista DateTime? @db.Date
+ horario String?
+ area String?
+ representanteTce String?
+ dadosBancarios String?
+ agenteIntegracao String?
  observacoes String?
 }
 model DocumentoVinculo {
@@ -155,6 +161,7 @@ model DocumentoVinculo {
  vinculo Vinculo @relation(fields:[vinculoId],references:[id])
  tipo String
  numero String?
+ dataReferencia DateTime? @db.Date
  inicioVigencia DateTime? @db.Date
  fimVigencia DateTime? @db.Date
  status String @default("PENDENTE")

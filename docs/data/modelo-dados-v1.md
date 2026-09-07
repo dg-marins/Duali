@@ -104,6 +104,8 @@ Na V1, a nomenclatura importada das planilhas deve ser preservada.
 - `curso`: opcional
 - `periodo_academico`: opcional
 - `valor_bolsa`: decimal(12,2), opcional
+- `data_termino_prevista`: date, opcional
+- `horario`, `area`, `representante_tce`, `dados_bancarios` e `agente_integracao`: opcionais, preservados das fontes operacionais
 - `observacoes`: opcional
 
 `instituicao_ensino`
@@ -124,6 +126,7 @@ Regras específicas por instituição, hoje presentes em observações de planil
 - `vinculo_id`
 - `tipo`: TCE | ADITIVO | RENOVACAO | DISTRATO | OUTRO
 - `numero`: opcional
+- `data_referencia`: opcional, para a data informada de renovação, aditivo ou distrato quando ela não representa uma vigência completa
 - `inicio_vigencia`: opcional
 - `fim_vigencia`: opcional
 - `status`: PENDENTE | VIGENTE | VENCIDO | CANCELADO

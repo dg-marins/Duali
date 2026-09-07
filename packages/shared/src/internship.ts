@@ -23,6 +23,12 @@ export const estagioSchema = z
     curso: optionalText,
     periodoAcademico: optionalText,
     valorBolsa: money.nullable().optional(),
+    dataTerminoPrevista: optionalDate,
+    horario: optionalText,
+    area: optionalText,
+    representanteTce: optionalText,
+    dadosBancarios: optionalText,
+    agenteIntegracao: optionalText,
     observacoes: optionalText,
   })
   .strict();
@@ -45,6 +51,7 @@ export const documentoSchema = z
     vinculoId: id,
     tipo: z.enum(["TCE", "ADITIVO", "RENOVACAO", "DISTRATO", "OUTRO"]),
     numero: optionalText,
+    dataReferencia: optionalDate,
     inicioVigencia: optionalDate,
     fimVigencia: optionalDate,
     status: z

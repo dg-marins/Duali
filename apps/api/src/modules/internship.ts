@@ -32,6 +32,7 @@ export const internshipResources: Resource[] = [
     path: "estagios",
     model: "estagio",
     schema: estagioSchema,
+    dates: ["dataTerminoPrevista"],
     filters: ["vinculoId"],
     include: {
       vinculo: { include: { pessoa: true } },
@@ -43,7 +44,7 @@ export const internshipResources: Resource[] = [
     path: "documentos",
     model: "documentoVinculo",
     schema: documentoSchema,
-    dates: ["inicioVigencia", "fimVigencia"],
+    dates: ["dataReferencia", "inicioVigencia", "fimVigencia"],
     filters: ["vinculoId", "tipo", "status"],
     include: { vinculo: { include: { pessoa: true } } },
     before: requireInternship,
