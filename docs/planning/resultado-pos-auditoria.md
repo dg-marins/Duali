@@ -60,7 +60,7 @@ Executados localmente:
 - `pnpm.cmd install --frozen-lockfile`: passou.
 - `pnpm.cmd lint`: passou.
 - `pnpm.cmd typecheck`: passou.
-- `pnpm.cmd test`: passou.
+- `pnpm.cmd test`: 26 testes em 13 arquivos passaram, incluindo inicialização não bloqueante da API.
 - `pnpm.cmd build`: passou; o Vite mantém um aviso não bloqueante de chunk principal acima de 500 kB.
 - `pnpm.cmd test:e2e`: passou para o fluxo operacional, incluindo Pendências e Fechamento de Benefícios.
 - `pnpm.cmd format:check`: passou.

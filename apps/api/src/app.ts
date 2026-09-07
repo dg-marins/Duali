@@ -130,15 +130,32 @@ export async function createApp(
     await db.$disconnect();
   });
   if (config.NODE_ENV !== "test") {
-    let timer: ReturnType<typeof setInterval> | undefined;
-    app.addHook("onReady", async () => {
-      await synchronize(db, null);
-      timer = setInterval(() => {
-        void synchronize(db, null).catch(() =>
-          app.log.error("Falha na aquisição periódica de direitos"),
+    let timer: ReturnType<typeof setInterval> | undefined,
+      synchronizing = false;
+    const runSynchronization = async () => {
+      if (synchronizing) return;
+      synchronizing = true;
+      try {
+        const result = await synchronize(db, null);
+        app.log.info(
+          { direitosCriados: result.created },
+          "Sincronização de direitos concluída",
         );
+      } catch (error) {
+        app.log.error(
+          { errorType: error instanceof Error ? error.name : "Unknown" },
+          "Falha na aquisição periódica de direitos",
+        );
+      } finally {
+        synchronizing = false;
+      }
+    };
+    app.addHook("onReady", async () => {
+      timer = setInterval(() => {
+        void runSynchronization();
       }, 3600000);
       timer.unref();
+      setImmediate(() => void runSynchronization());
     });
     app.addHook("onClose", async () => {
       if (timer) clearInterval(timer);

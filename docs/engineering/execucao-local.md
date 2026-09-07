@@ -18,6 +18,8 @@ API_PORT=3000
 
 `APP_ORIGIN` também é a origem permitida pela proteção CSRF, por isso deve coincidir com o endereço usado no navegador.
 
+A API começa a atender antes da sincronização periódica de direitos, que continua em segundo plano. A mensagem `Sincronização de direitos concluída` no terminal confirma o fim dessa rotina; ela não precisa terminar para abrir a tela de login.
+
 No PowerShell com Execution Policy restrita, use pnpm.cmd em vez de pnpm.
 
 Validação: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`.
