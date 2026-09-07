@@ -1209,8 +1209,17 @@ export const LeavePage = ({ navigate }: { navigate: Navigate }) => (
 );
 export const BenefitsPage = ({ navigate }: { navigate: Navigate }) => (
   <>
-    <div className="form-actions"><button onClick={() => navigate("/app/beneficios/fechamento")}>Fechamento por competência</button></div>
-    <OperationalList kind="beneficios" title="Benefícios" description="Competências, fornecedores, valores e pendências." navigate={navigate} />
+    <div className="form-actions">
+      <button onClick={() => navigate("/app/beneficios/fechamento")}>
+        Fechamento por competência
+      </button>
+    </div>
+    <OperationalList
+      kind="beneficios"
+      title="Benefícios"
+      description="Competências, fornecedores, valores e pendências."
+      navigate={navigate}
+    />
   </>
 );
 

@@ -25,6 +25,10 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     await expect(
       page.getByRole("heading", { name: "Visão geral" }),
     ).toBeVisible();
+    await page.getByRole("button", { name: "Pendências", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Pendências" }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Pessoas", exact: true }).click();
     await page.getByRole("button", { name: "+ Nova pessoa" }).click();
@@ -58,10 +62,12 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     });
     await page.getByRole("button", { name: "Novo vínculo" }).click();
     const linkForm = page.locator(".form-panel");
+    await linkForm.getByLabel("Buscar Pessoa").fill(suffix);
     await linkForm
       .getByLabel("Pessoa", { exact: true })
       .selectOption(person.id);
     await linkForm.getByLabel("Tipo", { exact: true }).selectOption("ESTAGIO");
+    await linkForm.getByLabel("Buscar Unidade").fill(suffix);
     await linkForm.getByLabel("Unidade", { exact: true }).selectOption(unit.id);
     await linkForm.getByLabel("Admissão").fill("2024-01-01");
     await linkForm.getByRole("button", { name: "Salvar", exact: true }).click();
@@ -166,6 +172,16 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       path: "artifacts/beneficios-desktop.png",
       fullPage: true,
     });
+    await page
+      .getByRole("button", { name: "Fechamento por competência" })
+      .click();
+    await page.getByLabel("Buscar unidade").fill(suffix);
+    await page.getByLabel("Unidade", { exact: true }).selectOption(unit.id);
+    await page.getByLabel("Competência").fill("2026-01");
+    await page.getByRole("button", { name: "Preparar competência" }).click();
+    await page.getByRole("button", { name: "Iniciar revisão" }).click();
+    await page.getByRole("button", { name: "Fechar competência" }).click();
+    await expect(page.getByText("FECHADA", { exact: true })).toBeVisible();
 
     await page
       .getByRole("button", { name: "Importações", exact: true })

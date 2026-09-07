@@ -3,6 +3,15 @@
   "style": "new-york",
   "rsc": false,
   "tsx": true,
-  "tailwind": { "css": "src/style.css", "baseColor": "slate", "cssVariables": false },
-  "aliases": { "components": "@/components", "utils": "@/lib/utils", "ui": "@/components/ui", "lib": "@/lib" }
+  "tailwind": {
+    "css": "src/style.css",
+    "baseColor": "slate",
+    "cssVariables": false
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib"
+  }
 }

@@ -62,7 +62,10 @@ const auxiliary: Record<string, string> = {
 function useRoute() {
   const location = useLocation();
   const routerNavigate = useNavigate();
-  const path = location.pathname === "/" || location.pathname === "/login" ? "/app" : location.pathname;
+  const path =
+    location.pathname === "/" || location.pathname === "/login"
+      ? "/app"
+      : location.pathname;
   const navigate = (next: string) => {
     routerNavigate(next);
     window.scrollTo({ top: 0 });
@@ -304,7 +307,8 @@ function RouteContent({
   if (path === "/app/estagiarios") return <InternsPage navigate={navigate} />;
   if (path === "/app/ferias") return <LeavePage navigate={navigate} />;
   if (path === "/app/beneficios") return <BenefitsPage navigate={navigate} />;
-  if (path === "/app/beneficios/fechamento") return <BenefitClosingPage navigate={navigate} />;
+  if (path === "/app/beneficios/fechamento")
+    return <BenefitClosingPage navigate={navigate} />;
   if (path === "/app/importacoes") return <Imports />;
   if (path === "/app/relatorios") return <Reporting />;
   if (path === "/app/admin/auditoria") return <Audit />;
