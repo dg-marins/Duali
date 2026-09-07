@@ -153,7 +153,7 @@ export function queryFor(
   if (resource.path === "vinculos") {
     if (query.status)
       z.enum(["ATIVO", "AFASTADO", "DESLIGADO"]).parse(query.status);
-    if (query.tipo) z.enum(["CLT", "ESTAGIO"]).parse(query.tipo);
+    if (query.tipo) z.enum(["CLT", "ESTAGIO", "APRENDIZ"]).parse(query.tipo);
   }
   if (query.q && !resource.search) {
     if (resource.model === "vinculo")

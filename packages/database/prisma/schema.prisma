@@ -10,6 +10,7 @@ model Usuario {
  ajustesBeneficios BeneficioAjuste[]
  ajustes DescansoAjuste[]
  consumos DescansoConsumo[]
+ fechamentosBeneficios FechamentoCompetenciaBeneficio[]
  id String @id @default(uuid()) @db.Uuid
  nome String @db.VarChar(180)
  email String @unique @db.VarChar(180)
@@ -46,6 +47,8 @@ model Pessoa {
 }
 model Unidade {
  configuracoesBeneficios ConfiguracaoBeneficio[]
+ fechamentosBeneficios FechamentoCompetenciaBeneficio[]
+ regrasEstagio InstituicaoRegraEstagio[]
  id String @id @default(uuid()) @db.Uuid
  nome String
  sigla String @unique
@@ -66,6 +69,7 @@ model Equipe {
 enum TipoVinculo {
  CLT
  ESTAGIO
+ APRENDIZ
 }
 enum StatusVinculo {
  ATIVO
@@ -95,6 +99,7 @@ model Vinculo {
  dataDesligamento DateTime? @db.Date
  cargoFuncao String?
  gestor String?
+ escala String?
  observacoes String?
  criadoEm DateTime @default(now())
  atualizadoEm DateTime @updatedAt
@@ -143,6 +148,111 @@ model InstituicaoEnsino {
  ativa Boolean @default(true)
  observacoes String?
  estagios Estagio[]
+ regras InstituicaoRegraEstagio[]
+}
+model InstituicaoRegraEstagio {
+ id String @id @default(uuid()) @db.Uuid
+ instituicaoId String @db.Uuid
+ instituicao InstituicaoEnsino @relation(fields:[instituicaoId], references:[id])
+ unidadeId String? @db.Uuid
+ unidade Unidade? @relation(fields:[unidadeId], references:[id])
+ tipoRegra String @db.VarChar(120)
+ periodicidadeMeses Int?
+ duracaoMaximaMeses Int?
+ observacoes String?
+ ativa Boolean @default(true)
+ criadoEm DateTime @default(now())
+ atualizadoEm DateTime @updatedAt
+ @@index([instituicaoId, unidadeId, ativa])
+}
+enum TipoDocumentoVinculo {
+ TCE
+ ADITIVO
+ RENOVACAO
+ DISTRATO
+ OUTRO
+}
+enum StatusDocumentoVinculo {
+ PENDENTE
+ VIGENTE
+ VENCIDO
+ CANCELADO
+}
+enum StatusSeguroEstagio {
+ ATIVO
+ ENCERRADO
+ PENDENTE
+}
+enum TipoSeguroMovimentacao {
+ INCLUSAO
+ EXCLUSAO
+ ALTERACAO
+}
+enum TipoDescansoPeriodo {
+ FERIAS
+ DESCANSO_ESTAGIO
+}
+enum StatusDescansoPeriodo {
+ PROGRAMADO
+ EM_GOZO
+ CONCLUIDO
+ CANCELADO
+}
+enum TipoAjuste {
+ CREDITO
+ DEBITO
+}
+enum TipoBeneficio {
+ TRANSPORTE
+ ALIMENTACAO
+ CESTA_BASICA
+ PREMIACAO
+ OUTRO
+}
+enum StatusBeneficioVinculo {
+ ATIVO
+ ENCERRADO
+}
+enum StatusLancamentoBeneficio {
+ PENDENTE
+ CONFERIDO
+ PAGO
+ CANCELADO
+}
+enum StatusFechamentoBeneficio {
+ ABERTA
+ EM_REVISAO
+ FECHADA
+}
+enum StatusBeneficioPeriodo {
+ PENDENTE
+ PREVISTO
+ PAGO
+ ATUALIZADO
+ CANCELADO
+}
+enum StatusImportacao {
+ UPLOAD
+ REVISAO
+ PARCIAL
+ CONFIRMADA
+}
+enum StatusItemImportacao {
+ VALIDO
+ NORMALIZAVEL
+ REVISAO
+ DUPLICIDADE
+ REJEITADO
+ AGUARDANDO_DEPENDENCIA
+ IMPORTADO
+}
+enum AcaoItemImportacao {
+ PENDENTE
+ CRIAR
+ ATUALIZAR
+ VINCULAR
+ REJEITAR
+ IMPORTADO
 }
 model Estagio {
  id String @id @default(uuid()) @db.Uuid
@@ -166,12 +276,12 @@ model DocumentoVinculo {
  id String @id @default(uuid()) @db.Uuid
  vinculoId String @db.Uuid
  vinculo Vinculo @relation(fields:[vinculoId],references:[id])
- tipo String
+ tipo TipoDocumentoVinculo
  numero String?
  dataReferencia DateTime? @db.Date
  inicioVigencia DateTime? @db.Date
  fimVigencia DateTime? @db.Date
- status String @default("PENDENTE")
+ status StatusDocumentoVinculo @default(PENDENTE)
  observacoes String?
  @@index([vinculoId,fimVigencia])
 }
@@ -183,7 +293,7 @@ model SeguroEstagio {
  numeroApolice String?
  inicioVigencia DateTime? @db.Date
  fimVigencia DateTime? @db.Date
- status String @default("PENDENTE")
+ status StatusSeguroEstagio @default(PENDENTE)
  observacoes String?
  movimentacoes SeguroMovimentacao[]
  @@index([vinculoId,fimVigencia])
@@ -192,7 +302,7 @@ model SeguroMovimentacao {
  id String @id @default(uuid()) @db.Uuid
  seguroEstagioId String @db.Uuid
  seguroEstagio SeguroEstagio @relation(fields:[seguroEstagioId],references:[id])
- tipo String
+ tipo TipoSeguroMovimentacao
  dataMovimentacao DateTime @db.Date
  observacoes String?
  @@index([seguroEstagioId,dataMovimentacao])
@@ -219,8 +329,8 @@ model DescansoPeriodo {
  dataInicio DateTime @db.Date
  dataFim DateTime @db.Date
  quantidadeDias Decimal @db.Decimal(5,2)
- tipo String
- status String @default("PROGRAMADO")
+ tipo TipoDescansoPeriodo
+ status StatusDescansoPeriodo @default(PROGRAMADO)
  motivo String?
  observacoes String?
  consumos DescansoConsumo[]
@@ -230,7 +340,7 @@ model DescansoAjuste {
  id String @id @default(uuid()) @db.Uuid
  vinculoId String @db.Uuid
  vinculo Vinculo @relation(fields:[vinculoId],references:[id])
- tipo String
+ tipo TipoAjuste
  quantidadeDias Decimal @db.Decimal(5,2)
  dataReferencia DateTime? @db.Date
  motivo String
@@ -263,7 +373,7 @@ model ConfiguracaoBeneficio {
  id String @id @default(uuid()) @db.Uuid
  unidadeId String @db.Uuid
  unidade Unidade @relation(fields:[unidadeId],references:[id])
- tipo String
+ tipo TipoBeneficio
  fornecedorId String @db.Uuid
  fornecedor Fornecedor @relation(fields:[fornecedorId],references:[id])
  ativa Boolean @default(true)
@@ -275,12 +385,13 @@ model BeneficioVinculo {
  id String @id @default(uuid()) @db.Uuid
  vinculoId String @db.Uuid
  vinculo Vinculo @relation(fields:[vinculoId],references:[id])
- tipo String
+ tipo TipoBeneficio
  inicioVigencia DateTime @db.Date
  fimVigencia DateTime? @db.Date
- status String @default("ATIVO")
+ status StatusBeneficioVinculo @default(ATIVO)
  observacoes String?
  competencias BeneficioCompetencia[]
+ periodosHistoricos BeneficioPeriodoHistorico[]
  @@index([vinculoId,tipo])
 }
 model BeneficioCompetencia {
@@ -295,7 +406,7 @@ model BeneficioCompetencia {
  quantidade Decimal? @db.Decimal(7,2)
  valorUnitario Decimal? @db.Decimal(12,2)
  valorInformado Decimal? @db.Decimal(12,2)
- status String @default("PENDENTE")
+ status StatusLancamentoBeneficio @default(PENDENTE)
  observacoes String?
  ajustes BeneficioAjuste[]
  @@unique([beneficioVinculoId,configuracaoId,competencia,componente])
@@ -305,13 +416,42 @@ model BeneficioAjuste {
  id String @id @default(uuid()) @db.Uuid
  competenciaId String @db.Uuid
  competencia BeneficioCompetencia @relation(fields:[competenciaId],references:[id])
- tipo String
+ tipo TipoAjuste
  valor Decimal @db.Decimal(12,2)
  motivo String
  criadoPor String @db.Uuid
  usuario Usuario @relation(fields:[criadoPor],references:[id])
  criadoEm DateTime @default(now())
  @@index([competenciaId])
+}
+model FechamentoCompetenciaBeneficio {
+ id String @id @default(uuid()) @db.Uuid
+ unidadeId String @db.Uuid
+ unidade Unidade @relation(fields:[unidadeId], references:[id])
+ competencia DateTime @db.Date
+ status StatusFechamentoBeneficio @default(ABERTA)
+ fechadoEm DateTime?
+ fechadoPor String? @db.Uuid
+ fechadoPorUsuario Usuario? @relation(fields:[fechadoPor], references:[id])
+ criadoEm DateTime @default(now())
+ atualizadoEm DateTime @updatedAt
+ @@unique([unidadeId, competencia])
+ @@index([competencia, status])
+}
+model BeneficioPeriodoHistorico {
+ id String @id @default(uuid()) @db.Uuid
+ beneficioVinculoId String @db.Uuid
+ beneficioVinculo BeneficioVinculo @relation(fields:[beneficioVinculoId], references:[id])
+ anoInicio Int?
+ anoFim Int?
+ referenciaOriginal String
+ valor Decimal? @db.Decimal(12,2)
+ status StatusBeneficioPeriodo @default(PENDENTE)
+ dataEvento DateTime? @db.Date
+ textoOriginal String
+ observacoes String?
+ criadoEm DateTime @default(now())
+ @@index([beneficioVinculoId, anoInicio, anoFim])
 }
 model Importacao {
  id String @id @default(uuid()) @db.Uuid
@@ -321,7 +461,7 @@ model Importacao {
  arquivo Bytes
  planilhas Json
  mapeamento Json?
- status String @default("UPLOAD")
+ status StatusImportacao @default(UPLOAD)
  criadoEm DateTime @default(now())
  confirmadaEm DateTime?
  itens ImportacaoItem[]
@@ -340,9 +480,11 @@ model ImportacaoItem {
  dadosNormalizados Json
  referencias Json
  dadosAnteriores Json?
- status String
- acao String @default("PENDENTE")
+ status StatusItemImportacao
+ acao AcaoItemImportacao @default(PENDENTE)
  mensagens Json
+ inconsistencias Json @default("[]")
+ classificacoes Json @default("[]")
  candidatos Json
  revisado Boolean @default(false)
  motivo String?

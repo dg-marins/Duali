@@ -13,6 +13,7 @@ import {
 } from "@duali/shared";
 import { audit, json, type Row, type Tx } from "../core.js";
 import type { Sheet } from "./import-files.js";
+import { classifyNotes, issuesFrom } from "./import-issues.js";
 
 type SourceRow = { aba: string; linha: number; values: unknown[] };
 type PersonRecord = {
@@ -1129,6 +1130,8 @@ async function createItem(
       status: review ? "REVISAO" : "VALIDO",
       acao: review ? "PENDENTE" : existing ? "VINCULAR" : "CRIAR",
       mensagens: json(messages),
+      inconsistencias: json(issuesFrom(messages, review ? "REVISAO" : "VALIDO")),
+      classificacoes: json(classifyNotes(input.data)),
       candidatos: json(
         (input.candidates ?? (existing ? [existing] : [])).map((c) => ({
           id: c.id,

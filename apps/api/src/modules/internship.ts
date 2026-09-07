@@ -6,6 +6,7 @@ import {
   documentoSchema,
   seguroSchema,
   movimentacaoSchema,
+  instituicaoRegraSchema,
 } from "@duali/shared";
 import { DomainError, type Tx, type Row } from "../core.js";
 import { registerResource, type Resource } from "./resources.js";
@@ -22,6 +23,13 @@ async function requireInternship(tx: Tx, data: Row, previous: Row | null) {
     throw new DomainError(422, "Selecione um vínculo de estágio.");
 }
 export const internshipResources: Resource[] = [
+  {
+    path: "regras-estagio-instituicoes",
+    model: "instituicaoRegraEstagio",
+    schema: instituicaoRegraSchema,
+    filters: ["instituicaoId", "unidadeId"],
+    include: { instituicao: true, unidade: true },
+  },
   {
     path: "instituicoes",
     model: "instituicaoEnsino",

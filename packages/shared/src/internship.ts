@@ -15,6 +15,17 @@ export const instituicaoSchema = z
     observacoes: optionalText,
   })
   .strict();
+export const instituicaoRegraSchema = z
+  .object({
+    instituicaoId: id,
+    unidadeId: id.nullable().optional(),
+    tipoRegra: shortText,
+    periodicidadeMeses: z.coerce.number().int().positive().max(120).nullable().optional(),
+    duracaoMaximaMeses: z.coerce.number().int().positive().max(240).nullable().optional(),
+    observacoes: optionalText,
+    ativa: z.boolean().default(true),
+  })
+  .strict();
 export const estagioSchema = z
   .object({
     vinculoId: id,

@@ -86,3 +86,27 @@ export const beneficioAjusteSchema = z
     motivo: shortText,
   })
   .strict();
+export const fechamentoBeneficioSchema = z
+  .object({
+    unidadeId: id,
+    competencia: date.refine((v) => v.endsWith("-01"), "Informe o primeiro dia do mês."),
+  })
+  .strict();
+export const reabrirBeneficioSchema = z.object({ motivo: shortText }).strict();
+export const beneficioPeriodoSchema = z
+  .object({
+    beneficioVinculoId: id,
+    anoInicio: z.coerce.number().int().min(1900).max(2200).nullable().optional(),
+    anoFim: z.coerce.number().int().min(1900).max(2200).nullable().optional(),
+    referenciaOriginal: shortText,
+    valor: money.nullable().optional(),
+    status: z.enum(["PENDENTE", "PREVISTO", "PAGO", "ATUALIZADO", "CANCELADO"]).default("PENDENTE"),
+    dataEvento: optionalDate,
+    textoOriginal: shortText,
+    observacoes: optionalText,
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.anoInicio && v.anoFim && v.anoFim < v.anoInicio)
+      ctx.addIssue({ code: "custom", path: ["anoFim"], message: "Ano final anterior ao inicial." });
+  });

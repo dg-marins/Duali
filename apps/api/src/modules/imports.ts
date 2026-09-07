@@ -25,6 +25,7 @@ import {
   readGeneralInternList,
   stageGeneralInternList,
 } from "./intern-import-profile.js";
+import { classifyNotes, issuesFrom } from "./import-issues.js";
 export const importResources = [
   ...resources.filter((r) => r.path !== "usuarios"),
   ...internshipResources,
@@ -302,6 +303,8 @@ export async function analyze(
           referencias: json(refs),
           status,
           mensagens: json(messages),
+          inconsistencias: json(issuesFrom(messages, status)),
+          classificacoes: json(classifyNotes(data)),
           candidatos: json([
             ...candidates,
             ...internal.map((c) => ({
@@ -660,7 +663,7 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
     });
     const q = listSchema.parse(req.query);
     const reviewing = ["REVISAO", "PARCIAL"].includes(batch.status);
-    const itemWhere = reviewing
+    const itemWhere: Prisma.ImportacaoItemWhereInput = reviewing
       ? { importacaoId: id, acao: "PENDENTE" }
       : { importacaoId: id };
     const [items, total, totalRegistros, summary] = await Promise.all([

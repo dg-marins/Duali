@@ -24,7 +24,9 @@ function linkWhere(q: Query): Prisma.VinculoWhereInput {
     ...(q.status
       ? { status: z.enum(["ATIVO", "AFASTADO", "DESLIGADO"]).parse(q.status) }
       : {}),
-    ...(q.tipo ? { tipo: z.enum(["CLT", "ESTAGIO"]).parse(q.tipo) } : {}),
+    ...(q.tipo
+      ? { tipo: z.enum(["CLT", "ESTAGIO", "APRENDIZ"]).parse(q.tipo) }
+      : {}),
     ...(q.q
       ? { pessoa: { nomeCompleto: { contains: q.q, mode: "insensitive" } } }
       : {}),

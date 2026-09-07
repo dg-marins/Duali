@@ -12,10 +12,11 @@ export function addMonthsClamped(start: Date, months: number): Date {
 }
 export function entitlements(
   admission: Date,
-  type: "CLT" | "ESTAGIO",
+  type: "CLT" | "ESTAGIO" | "APRENDIZ",
   until: Date,
   termination: Date | null = null,
 ) {
+  if (type === "APRENDIZ") return [];
   const end = termination && termination < until ? termination : until,
     months = type === "CLT" ? 12 : 6,
     days = type === "CLT" ? 30 : 15;

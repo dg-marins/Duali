@@ -15,6 +15,7 @@ import { registerBenefits, benefitAlerts } from "./modules/benefits.js";
 import { registerImports } from "./modules/imports.js";
 import { registerReporting } from "./modules/reporting.js";
 import { registerOperational } from "./modules/operational.js";
+import { registerPendings } from "./modules/pendings.js";
 export async function createApp(
   db = new PrismaClient(),
   config = readConfig(),
@@ -116,6 +117,7 @@ export async function createApp(
   await registerImports(app, db);
   registerReporting(app, db);
   registerOperational(app, db);
+  registerPendings(app, db);
   app.get("/api/alertas", async () => [
     ...(await internshipAlerts(db)),
     ...(await leaveAlerts(db)),

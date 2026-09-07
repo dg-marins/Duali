@@ -80,13 +80,14 @@ export const vinculoSchema = z
     pessoaId: id,
     unidadeId: id,
     equipeId: id.nullable().optional(),
-    tipo: z.enum(["CLT", "ESTAGIO"]),
+    tipo: z.enum(["CLT", "ESTAGIO", "APRENDIZ"]),
     status: z.enum(["ATIVO", "AFASTADO", "DESLIGADO"]).default("ATIVO"),
     matricula: optionalText,
     dataAdmissao: date,
     dataDesligamento: optionalDate,
     cargoFuncao: optionalText,
     gestor: optionalText,
+    escala: optionalText,
     observacoes: optionalText,
   })
   .strict()

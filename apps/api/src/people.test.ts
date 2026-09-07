@@ -40,6 +40,14 @@ test("authentication, CSRF, people, team history, uniqueness and revocation", as
       tipo: "CLT",
       dataAdmissao: "2020-02-29",
     });
+    const apprentice = await create("vinculos", {
+      pessoaId: pessoa.id,
+      unidadeId: unit.id,
+      tipo: "APRENDIZ",
+      escala: "Segunda a quinta (rodízio)",
+      dataAdmissao: "2026-01-01",
+    });
+    expect((await f.db.vinculo.findUniqueOrThrow({ where: { id: apprentice.id } })).escala).toBe("Segunda a quinta (rodízio)");
     expect(
       await f.db.vinculoEquipeHistorico.count({
         where: { vinculoId: vinculo.id },
