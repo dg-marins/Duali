@@ -49,7 +49,7 @@ export const benefitResources: Resource[] = [
     path: "configuracoes-beneficios",
     model: "configuracaoBeneficio",
     schema: configuracaoBeneficioSchema,
-    filters: ["unidadeId", "tipo"],
+    filters: ["unidadeId", "fornecedorId", "tipo"],
     include: { unidade: true, fornecedor: true },
   },
   {

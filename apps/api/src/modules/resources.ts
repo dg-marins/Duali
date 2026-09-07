@@ -44,6 +44,11 @@ export interface Resource {
     userId: string,
   ) => Promise<void>;
 }
+const auditListSchema = listSchema.extend({
+  entidade: z.string().trim().max(80).optional(),
+  acao: z.string().trim().max(80).optional(),
+  usuarioId: z.string().uuid().optional(),
+});
 export const resources: Resource[] = [
   {
     path: "pessoas",
@@ -281,15 +286,53 @@ export function registerPeople(app: FastifyInstance, db: PrismaClient) {
     });
   });
   app.get("/api/auditoria", async (req) => {
-    const query = listSchema.parse(req.query);
+    const query = auditListSchema.parse(req.query);
+    const where = {
+      ...(query.entidade
+        ? {
+            entidade: {
+              contains: query.entidade,
+              mode: "insensitive" as const,
+            },
+          }
+        : {}),
+      ...(query.acao
+        ? { acao: { contains: query.acao, mode: "insensitive" as const } }
+        : {}),
+      ...(query.usuarioId ? { usuarioId: query.usuarioId } : {}),
+      ...(query.q
+        ? {
+            OR: [
+              { entidade: { contains: query.q, mode: "insensitive" as const } },
+              { acao: { contains: query.q, mode: "insensitive" as const } },
+              {
+                usuario: {
+                  nome: { contains: query.q, mode: "insensitive" as const },
+                },
+              },
+            ],
+          }
+        : {}),
+      ...(query.inicio || query.fim
+        ? {
+            criadoEm: {
+              ...(query.inicio ? { gte: new Date(query.inicio) } : {}),
+              ...(query.fim
+                ? { lt: new Date(`${query.fim}T23:59:59.999Z`) }
+                : {}),
+            },
+          }
+        : {}),
+    };
     const [items, total] = await Promise.all([
       db.auditoria.findMany({
+        where,
         orderBy: { criadoEm: "desc" },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
         include: { usuario: { select: { nome: true } } },
       }),
-      db.auditoria.count(),
+      db.auditoria.count({ where }),
     ]);
     return { items, total, page: query.page, pageSize: query.pageSize };
   });

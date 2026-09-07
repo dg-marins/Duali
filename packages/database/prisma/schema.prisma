@@ -31,6 +31,13 @@ model Pessoa {
  email String? @db.VarChar(180)
  telefone String? @db.VarChar(80)
  endereco String?
+ cep String? @db.VarChar(9)
+ logradouro String?
+ numeroEndereco String? @db.VarChar(30)
+ complemento String?
+ bairro String?
+ cidadeEndereco String?
+ ufEndereco String? @db.VarChar(2)
  observacoes String?
  ativa Boolean @default(true)
  criadoEm DateTime @default(now())

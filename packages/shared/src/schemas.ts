@@ -43,6 +43,17 @@ export const pessoaSchema = z
     email: z.string().email().max(180).nullable().optional(),
     telefone: z.string().max(80).nullable().optional(),
     endereco: optionalText,
+    cep: z.string().trim().max(9).nullable().optional(),
+    logradouro: optionalText,
+    numeroEndereco: z.string().trim().max(30).nullable().optional(),
+    complemento: optionalText,
+    bairro: optionalText,
+    cidadeEndereco: optionalText,
+    ufEndereco: z
+      .string()
+      .regex(/^[A-Z]{2}$/)
+      .nullable()
+      .optional(),
     observacoes: optionalText,
     ativa: z.boolean().default(true),
   })

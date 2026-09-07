@@ -29,6 +29,7 @@ Nginx / HTTPS
 ## 3. Stack
 
 ### Frontend
+
 - React
 - TypeScript
 - Vite
@@ -37,6 +38,7 @@ Nginx / HTTPS
 - Zod para schemas compartilháveis quando adequado
 
 ### Backend
+
 - Node.js
 - TypeScript
 - Fastify
@@ -44,16 +46,20 @@ Nginx / HTTPS
 - Prisma como ORM e ferramenta de migrations
 
 ### Banco
+
 - PostgreSQL
 
 ### Testes
+
 - Vitest para testes unitários e de integração adequados ao projeto
 - Playwright para fluxos E2E críticos
 
 ### Workspace
+
 - pnpm workspaces
 
 ### Produção
+
 - VPS Linux
 - Nginx
 - HTTPS
@@ -168,3 +174,9 @@ Desde a Sprint 0, a API deve possuir health check. Logs de aplicação devem ser
 - Sem abstrações genéricas antes de existir necessidade concreta.
 
 Essas decisões podem ser revisitadas com evidência de necessidade, não por antecipação.
+
+## 12. Consultas operacionais
+
+O módulo `operational` concentra consultas agregadas somente de leitura para a experiência orientada à pessoa. Ele expõe listagens paginadas de pessoas, estagiários, férias/descanso e benefícios, além do perfil consolidado em `GET /api/pessoas/:id/perfil`.
+
+Os comandos continuam nos módulos de domínio existentes e preservam validação, transação e auditoria. Essa separação evita replicar regras de gravação nas telas agregadas.

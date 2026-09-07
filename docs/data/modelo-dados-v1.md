@@ -335,3 +335,9 @@ Persistidos:
 - valores efetivamente informados/pagos quando forem fatos de negócio;
 - ajustes e justificativas;
 - dados originais de importação necessários para rastreabilidade.
+
+## 19. Endereço estruturado da pessoa
+
+`pessoa` possui os campos opcionais `cep`, `logradouro`, `numero_endereco`, `complemento`, `bairro`, `cidade_endereco` e `uf_endereco`. O campo `endereco` permanece como texto legado para preservar importações anteriores sem inferir uma divisão potencialmente incorreta.
+
+A migration `202609070002_structured_person_address` adiciona esses campos sem alterar os valores já armazenados.

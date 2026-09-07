@@ -33,7 +33,7 @@ export const internshipResources: Resource[] = [
     model: "estagio",
     schema: estagioSchema,
     dates: ["dataTerminoPrevista"],
-    filters: ["vinculoId"],
+    filters: ["vinculoId", "instituicaoEnsinoId"],
     include: {
       vinculo: { include: { pessoa: true } },
       instituicaoEnsino: true,
