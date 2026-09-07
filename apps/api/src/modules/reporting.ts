@@ -209,27 +209,32 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
   app.get("/api/dashboard", async (req) => {
     const q = listSchema.parse(req.query),
       where = linkWhere(q);
-    const [pessoas, clt, estagios, alerts, recent] = await Promise.all([
-      db.pessoa.count({
-        where: { vinculos: { some: { ...where, status: "ATIVO" } } },
-      }),
-      db.vinculo.count({ where: { ...where, tipo: "CLT", status: "ATIVO" } }),
-      db.vinculo.count({
-        where: { ...where, tipo: "ESTAGIO", status: "ATIVO" },
-      }),
-      operationalAlerts(db),
-      db.auditoria.findMany({
-        orderBy: { criadoEm: "desc" },
-        take: 10,
-        select: {
-          id: true,
-          acao: true,
-          entidade: true,
-          criadoEm: true,
-          usuario: { select: { nome: true } },
-        },
-      }),
-    ]);
+    const [pessoas, clt, estagios, alerts, recent, imports] = await Promise.all(
+      [
+        db.pessoa.count({
+          where: { vinculos: { some: { ...where, status: "ATIVO" } } },
+        }),
+        db.vinculo.count({ where: { ...where, tipo: "CLT", status: "ATIVO" } }),
+        db.vinculo.count({
+          where: { ...where, tipo: "ESTAGIO", status: "ATIVO" },
+        }),
+        operationalAlerts(db),
+        db.auditoria.findMany({
+          orderBy: { criadoEm: "desc" },
+          take: 10,
+          select: {
+            id: true,
+            acao: true,
+            entidade: true,
+            criadoEm: true,
+            usuario: { select: { nome: true } },
+          },
+        }),
+        db.importacao.count({
+          where: { status: { in: ["UPLOAD", "REVISAO", "PARCIAL"] } },
+        }),
+      ],
+    );
     const selected = (
         await db.vinculo.findMany({ where, select: { id: true } })
       ).map((v) => v.id),
@@ -254,6 +259,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       beneficiosPendentes: filtered.filter((a) => a.tipo === "BENEFICIO")
         .length,
       inconsistencias: filtered.length,
+      importacoesPendentes: imports,
       alertas: filtered.slice(0, 100),
       atividades: recent,
     };

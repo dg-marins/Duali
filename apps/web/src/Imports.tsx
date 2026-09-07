@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, display, type Row } from "./api";
 import { screens, type Field } from "./resources";
 import { Lookup, Notice } from "./components";
+import { MetricCard, PageHeader, StatusBadge } from "./ui";
 type Rule = {
   coluna?: string;
   valor?: string | number | boolean | null;
@@ -21,6 +22,31 @@ interface Batch {
 const domains = screens.filter((s) => s.path !== "usuarios");
 const canReview = (status?: string) =>
   status === "REVISAO" || status === "PARCIAL";
+const importProfiles = [
+  ["AUTO", "Detectar automaticamente"],
+  ["PESSOAS", "Pessoas e vínculos"],
+  ["ESTAGIOS", "Estágios"],
+  ["DESCANSOS", "Férias e descanso"],
+  ["BENEFICIOS", "Benefícios"],
+] as const;
+function initialGroups(profile: string): Group[] {
+  const domain =
+    profile === "ESTAGIOS"
+      ? "estagios"
+      : profile === "DESCANSOS"
+        ? "periodos"
+        : profile === "BENEFICIOS"
+          ? "competencias"
+          : "pessoas";
+  return [
+    {
+      nome:
+        domains.find((screen) => screen.path === domain)?.title ?? "Pessoas",
+      dominio: domain,
+      campos: {},
+    },
+  ];
+}
 function Review({ item, onSaved }: { item: Row; onSaved: () => void }) {
   const screen = domains.find((s) => s.path === item.dominio)!;
   const [data, setData] = useState<Row>(item.dadosNormalizados as Row),
@@ -223,10 +249,9 @@ function Review({ item, onSaved }: { item: Row; onSaved: () => void }) {
 export function Imports() {
   const [batch, setBatch] = useState<Batch | null>(null),
     [history, setHistory] = useState<Row[]>([]),
+    [profile, setProfile] = useState("AUTO"),
     [aba, setAba] = useState(""),
-    [groups, setGroups] = useState<Group[]>([
-      { nome: "Pessoas", dominio: "pessoas", campos: {} },
-    ]),
+    [groups, setGroups] = useState<Group[]>(initialGroups("AUTO")),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
@@ -259,7 +284,7 @@ export function Imports() {
       setPage(1);
       setReview(null);
       setConfirming(false);
-      setGroups([{ nome: "Pessoas", dominio: "pessoas", campos: {} }]);
+      setGroups(initialGroups(profile));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -290,26 +315,69 @@ export function Imports() {
   }
   return (
     <>
-      <h1>Importação assistida</h1>
-      <p>
-        Arquivo → validação → publicação dos dados válidos → revisão das
-        pendências. Os registros seguros aparecem imediatamente nos cadastros.
-      </p>
+      <PageHeader
+        title="Importações"
+        description="Analise a planilha, publique os dados seguros e trate somente as pendências."
+      />
+      <ol className="stepper" aria-label="Etapas da importação">
+        {[
+          ["1", "Tipo"],
+          ["2", "Arquivo"],
+          ["3", "Análise"],
+          ["4", "Revisão"],
+        ].map(([number, label], index) => {
+          const active = batch
+            ? batch.status === "UPLOAD"
+              ? 2
+              : 3
+            : profile
+              ? 1
+              : 0;
+          return (
+            <li className={index <= active ? "active" : ""} key={number}>
+              <span>{number}</span>
+              {label}
+            </li>
+          );
+        })}
+      </ol>
       <Notice text={error} error />
       <Notice text={notice} />
       <section className="panel">
-        <label>
-          Arquivo XLSX ou CSV UTF-8 (até 10 MB)
-          <input
-            type="file"
-            accept=".xlsx,.csv"
-            disabled={busy}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void upload(file);
-            }}
-          />
-        </label>
+        <div className="form-grid">
+          <label>
+            Tipo de importação
+            <select
+              value={profile}
+              onChange={(event) => {
+                setProfile(event.target.value);
+                setGroups(initialGroups(event.target.value));
+              }}
+            >
+              {importProfiles.map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Arquivo XLSX ou CSV UTF-8 (até 10 MB)
+            <input
+              type="file"
+              accept=".xlsx,.csv"
+              disabled={busy}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void upload(file);
+              }}
+            />
+          </label>
+        </div>
+        <p className="helper-text">
+          A Listagem de Estagiários Geral é reconhecida automaticamente,
+          incluindo suas abas e históricos.
+        </p>
         {busy && <p role="status">Processando…</p>}
         <label>
           Retomar importação
@@ -531,7 +599,7 @@ export function Imports() {
         <>
           <section className="panel">
             <h2>
-              {batch.nomeArquivo} · {batch.status}
+              {batch.nomeArquivo} · <StatusBadge value={batch.status} />
             </h2>
             <p>
               {batch.totalRegistros ?? batch.total} registros encontrados
@@ -539,14 +607,16 @@ export function Imports() {
                 batch.totalRegistros !== batch.total &&
                 ` · ${batch.total} exigem revisão`}
             </p>
-            <div className="metrics">
+            <div className="metrics import-summary">
               {batch.summary?.map((s) => (
-                <article key={s.status + s.acao}>
-                  <span>
-                    {s.status} · {s.acao}
-                  </span>
-                  <strong>{s._count}</strong>
-                </article>
+                <MetricCard
+                  key={s.status + s.acao}
+                  label={`${s.status} · ${s.acao}`}
+                  value={s._count}
+                  {...(/PENDENTE|AGUARDANDO/i.test(s.status)
+                    ? { tone: "warning" }
+                    : {})}
+                />
               ))}
             </div>
             <div className="table-scroll">

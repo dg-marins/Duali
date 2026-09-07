@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { api, display, type Row } from "./api";
 import { Lookup, Notice } from "./components";
-export function Dashboard() {
+import {
+  EmptyState,
+  MetricCard,
+  PageHeader,
+  Pagination,
+  StatusBadge,
+  formatDate,
+} from "./ui";
+export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
   const [data, setData] = useState<Row | null>(null),
     [error, setError] = useState("");
   useEffect(() => {
@@ -19,29 +27,59 @@ export function Dashboard() {
     documentosProximos: "Documentos / seguros",
     beneficiosPendentes: "Benefícios pendentes",
     inconsistencias: "Alertas operacionais",
+    importacoesPendentes: "Importações em revisão",
   };
   return (
     <>
-      <h1>Visão da operação</h1>
-      <p>Pessoas, prazos e pendências que precisam de atenção.</p>
+      <PageHeader
+        title="Visão geral"
+        description="Acompanhe pessoas, prazos e pendências que precisam de atenção."
+      />
       <Notice text={error} error />
       {!data && !error ? (
         <p role="status">Carregando indicadores…</p>
       ) : (
         data && (
           <>
+            {Number(data.pessoasAtivas) === 0 && (
+              <section className="panel onboarding">
+                <h2>Bem-vindo ao Duali</h2>
+                <p>Configure as unidades e importe sua base para começar.</p>
+                <div className="form-actions">
+                  <button onClick={() => navigate?.("/app/cadastros/unidades")}>
+                    Configurar unidades
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => navigate?.("/app/importacoes")}
+                  >
+                    Importar planilhas
+                  </button>
+                </div>
+              </section>
+            )}
             <div className="metrics dashboard-metrics">
-              {Object.entries(metrics).map(([key, title]) => (
-                <article key={key}>
-                  <span>{title}</span>
-                  <strong>{display(data[key])}</strong>
-                </article>
-              ))}
+              {Object.entries(metrics).map(([key, title]) => {
+                const warning =
+                  Number(data[key]) > 0 &&
+                  /Pendentes|Alertas|vencidas/i.test(title);
+                return (
+                  <MetricCard
+                    key={key}
+                    label={title}
+                    value={display(data[key])}
+                    {...(warning ? { tone: "warning" } : {})}
+                  />
+                );
+              })}
             </div>
             <section className="panel">
-              <h2>Atenção aos próximos passos</h2>
+              <h2>Atenção necessária</h2>
               {!(data.alertas as Row[]).length ? (
-                <p className="empty">Nenhuma pendência identificada.</p>
+                <EmptyState
+                  title="Nenhuma pendência encontrada"
+                  description="Tudo certo por aqui."
+                />
               ) : (
                 <div className="table-scroll">
                   <table>
@@ -57,9 +95,11 @@ export function Dashboard() {
                       {(data.alertas as Row[]).map((row) => (
                         <tr key={String(row.id)}>
                           <td>{display(row.pessoa)}</td>
-                          <td>{display(row.tipo)}</td>
+                          <td>
+                            <StatusBadge value={row.tipo} />
+                          </td>
                           <td className="wrap">{display(row.mensagem)}</td>
-                          <td>{display(row.prazo)}</td>
+                          <td>{formatDate(row.prazo)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -155,12 +195,15 @@ export function Reporting() {
   }
   return (
     <>
-      <h1>Relatórios e exportação</h1>
-      <p>
-        O período filtra admissão em pessoas/estágios, aquisição em descanso,
-        competência em benefícios e prazo nas inconsistências.
-      </p>
+      <PageHeader
+        title="Relatórios"
+        description="Filtre a operação e exporte os resultados em Excel ou CSV."
+      />
       <section className="panel">
+        <p>
+          O período filtra admissão em pessoas/estágios, aquisição em descanso,
+          competência em benefícios e prazo nas inconsistências.
+        </p>
         <div className="form-grid">
           <label>
             Relatório
@@ -299,7 +342,10 @@ export function Reporting() {
               </tbody>
             </table>
             {!rows.length && (
-              <p className="empty">Nenhum resultado para estes filtros.</p>
+              <EmptyState
+                title="Nenhum resultado"
+                description="Não há registros para os filtros selecionados."
+              />
             )}
           </div>
         )}
@@ -329,20 +375,86 @@ export function Audit() {
     [page, setPage] = useState(1),
     [total, setTotal] = useState(0),
     [error, setError] = useState(""),
-    [selected, setSelected] = useState<Row | null>(null);
+    [selected, setSelected] = useState<Row | null>(null),
+    [q, setQ] = useState(""),
+    [entity, setEntity] = useState(""),
+    [action, setAction] = useState(""),
+    [start, setStart] = useState(""),
+    [end, setEnd] = useState("");
+  const query = new URLSearchParams({
+    page: String(page),
+    ...(q ? { q } : {}),
+    ...(entity ? { entidade: entity } : {}),
+    ...(action ? { acao: action } : {}),
+    ...(start ? { inicio: start } : {}),
+    ...(end ? { fim: end } : {}),
+  }).toString();
   useEffect(() => {
-    void api<{ items: Row[]; total: number }>("auditoria?page=" + page)
-      .then((r) => {
-        setRows(r.items);
-        setTotal(r.total);
-      })
-      .catch((e) => setError((e as Error).message));
-  }, [page]);
+    const timer = setTimeout(
+      () =>
+        void api<{ items: Row[]; total: number }>("auditoria?" + query)
+          .then((r) => {
+            setRows(r.items);
+            setTotal(r.total);
+          })
+          .catch((e) => setError((e as Error).message)),
+      180,
+    );
+    return () => clearTimeout(timer);
+  }, [query]);
+  const resetPage = (setter: (value: string) => void, value: string) => {
+    setter(value);
+    setPage(1);
+  };
   return (
     <>
-      <h1>Auditoria</h1>
-      <p>Histórico de alterações e operações relevantes.</p>
+      <PageHeader
+        title="Auditoria"
+        description="Consulte alterações e compare os valores preservados antes e depois."
+      />
       <Notice text={error} error />
+      <section className="panel filter-panel">
+        <div className="filter-grid">
+          <label>
+            <span>Buscar</span>
+            <input
+              value={q}
+              onChange={(e) => resetPage(setQ, e.target.value)}
+              placeholder="Usuário, entidade ou ação"
+            />
+          </label>
+          <label>
+            <span>Entidade</span>
+            <input
+              value={entity}
+              onChange={(e) => resetPage(setEntity, e.target.value)}
+            />
+          </label>
+          <label>
+            <span>Ação</span>
+            <input
+              value={action}
+              onChange={(e) => resetPage(setAction, e.target.value)}
+            />
+          </label>
+          <label>
+            <span>De</span>
+            <input
+              type="date"
+              value={start}
+              onChange={(e) => resetPage(setStart, e.target.value)}
+            />
+          </label>
+          <label>
+            <span>Até</span>
+            <input
+              type="date"
+              value={end}
+              onChange={(e) => resetPage(setEnd, e.target.value)}
+            />
+          </label>
+        </div>
+      </section>
       <section className="panel">
         <div className="table-scroll">
           <table>
@@ -358,7 +470,7 @@ export function Audit() {
             <tbody>
               {rows.map((row) => (
                 <tr key={String(row.id)}>
-                  <td>{display(row.criadoEm)}</td>
+                  <td>{formatDate(row.criadoEm)}</td>
                   <td>{display(row.usuario)}</td>
                   <td>{display(row.acao)}</td>
                   <td>{display(row.entidade)}</td>
@@ -375,23 +487,13 @@ export function Audit() {
             </tbody>
           </table>
         </div>
-        <div className="pagination">
-          <button
-            className="secondary"
-            disabled={page === 1}
-            onClick={() => setPage(page - 1)}
-          >
-            Anterior
-          </button>
-          <span>Página {page}</span>
-          <button
-            className="secondary"
-            disabled={page * 25 >= total}
-            onClick={() => setPage(page + 1)}
-          >
-            Próxima
-          </button>
-        </div>
+        {!rows.length && (
+          <EmptyState
+            title="Nenhum evento"
+            description="Não há eventos para os filtros selecionados."
+          />
+        )}
+        <Pagination page={page} total={total} onChange={setPage} />
       </section>
       {selected && (
         <section className="panel">

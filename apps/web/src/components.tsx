@@ -85,17 +85,19 @@ export function Lookup({
 export function RecordForm({
   screen,
   record,
+  defaults,
   onClose,
   onSaved,
 }: {
   screen: Screen;
   record: Row | null;
+  defaults?: Row;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const initial: Row = {};
   for (const f of screen.fields) {
-    const value = record?.[f.key] ?? f.default ?? "";
+    const value = record?.[f.key] ?? defaults?.[f.key] ?? f.default ?? "";
     initial[f.key] =
       f.type === "date" && typeof value === "string"
         ? value.slice(0, 10)
@@ -244,7 +246,13 @@ export function RecordForm({
     </section>
   );
 }
-export function Records({ screen }: { screen: Screen }) {
+export function Records({
+  screen,
+  onOpen,
+}: {
+  screen: Screen;
+  onOpen?: (row: Row) => void;
+}) {
   const [rows, setRows] = useState<Row[]>([]),
     [q, setQ] = useState(""),
     [page, setPage] = useState(1),
@@ -341,6 +349,14 @@ export function Records({ screen }: { screen: Screen }) {
                       <td key={k}>{display(row[k])}</td>
                     ))}
                     <td>
+                      {onOpen && (
+                        <button
+                          className="secondary compact"
+                          onClick={() => onOpen(row)}
+                        >
+                          Ver detalhes
+                        </button>
+                      )}{" "}
                       <button
                         className="secondary compact"
                         onClick={() => setEditing(row)}

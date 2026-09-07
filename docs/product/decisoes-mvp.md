@@ -152,3 +152,9 @@ Registros válidos são publicados automaticamente e ficam disponíveis nos cada
 ## Status
 
 Estas decisões estão aprovadas para o MVP e podem ser utilizadas pelo desenvolvimento sem nova validação, salvo mudança explícita de produto.
+
+## DP-014 — Experiência orientada à pessoa
+
+A navegação operacional usa a pessoa como cadastro mestre e agrega seus vínculos, estágio, descanso, benefícios, documentos, seguros, alertas e histórico em um único perfil. As páginas globais de estágio, férias/descanso e benefícios são consultas especializadas com ações no contexto do domínio. Cadastros auxiliares permanecem separados e exibem seus relacionamentos.
+
+O endereço estruturado é opcional. O endereço legado importado continua preservado em campo próprio e não será interpretado automaticamente.
