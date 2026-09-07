@@ -29,17 +29,18 @@ export async function fixture() {
       senhaHash: await argon2.hash(senha),
     },
   });
-  const app = await createApp(db, { ...readConfig(), NODE_ENV: "test" });
+  const config = { ...readConfig(), NODE_ENV: "test" as const };
+  const app = await createApp(db, config);
   const login = await app.inject({
     method: "POST",
     url: "/api/auth/login",
-    headers: { origin: "http://localhost:5173" },
+    headers: { origin: config.APP_ORIGIN },
     payload: { email: user.email, senha },
   });
   const cookie = login.cookies[0]!;
   const headers = {
     "content-type": "application/json",
-    origin: "http://localhost:5173",
+    origin: config.APP_ORIGIN,
     cookie: cookie.name + "=" + cookie.value,
     "x-csrf-token": login.json<{ csrf: string }>().csrf,
   };
