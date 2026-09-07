@@ -6,6 +6,7 @@ import { readSpreadsheet } from "./modules/import-files.js";
 import {
   analyze,
   confirm,
+  publishReady,
   review,
   normalizeInput,
   similarName,
@@ -32,7 +33,7 @@ test("spreadsheet reader supports sheets and preserves formulas without executio
     readSpreadsheet("dados.xlsx", Buffer.from("invalid")),
   ).rejects.toThrow();
 });
-test("staging does not write live rows, resolves parent groups and confirms exactly once", async () => {
+test("partial publisher resolves parent groups and is idempotent under concurrency", async () => {
   const f = await fixture();
   try {
     const unit = await f.db.unidade.create({
@@ -88,10 +89,17 @@ test("staging does not write live rows, resolves parent groups and confirms exac
       0,
     );
     const results = await Promise.allSettled([
-      transaction(f.db, (tx) => confirm(tx, batch.id, f.user.id)),
-      transaction(f.db, (tx) => confirm(tx, batch.id, f.user.id)),
+      transaction(f.db, (tx) => publishReady(tx, batch.id, f.user.id)),
+      transaction(f.db, (tx) => publishReady(tx, batch.id, f.user.id)),
     ]);
-    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(2);
+    expect(
+      results.reduce(
+        (sum, result) =>
+          sum + (result.status === "fulfilled" ? result.value.publicados : 0),
+        0,
+      ),
+    ).toBe(3);
     expect(await f.db.pessoa.count({ where: { nomeCompleto: f.suffix } })).toBe(
       1,
     );
@@ -108,6 +116,108 @@ test("staging does not write live rows, resolves parent groups and confirms exac
       },
     });
     expect(right.origem).toBe("IMPORTACAO");
+  } finally {
+    await f.app.close();
+  }
+});
+test("partial publisher keeps invalid parents pending and releases or rejects their children", async () => {
+  const f = await fixture();
+  try {
+    const unit = await f.db.unidade.create({
+      data: { nome: "Unidade parcial", sigla: f.suffix, uf: "SP" },
+    });
+    const sheets = await readSpreadsheet(
+      "parcial.csv",
+      Buffer.from(
+        `Nome;Admissao\nVálida ${f.suffix};2024-01-01\n;2024-02-01\n;2024-03-01`,
+      ),
+    );
+    const batch = await f.db.importacao.create({
+      data: {
+        usuarioId: f.user.id,
+        nomeArquivo: "parcial.csv",
+        arquivo: new Uint8Array([1]),
+        planilhas: json(sheets),
+      },
+    });
+    await transaction(f.db, (tx) =>
+      analyze(
+        tx,
+        batch.id,
+        {
+          aba: "CSV",
+          grupos: [
+            {
+              nome: "pessoa",
+              dominio: "pessoas",
+              campos: {
+                nomeCompleto: { coluna: "Nome" },
+                observacoes: { coluna: "Admissao" },
+              },
+            },
+            {
+              nome: "vinculo",
+              dominio: "vinculos",
+              campos: {
+                pessoaId: { grupo: "pessoa" },
+                unidadeId: { valor: unit.id },
+                tipo: { valor: "ESTAGIO" },
+                dataAdmissao: { coluna: "Admissao" },
+              },
+            },
+          ],
+        },
+        f.user.id,
+      ),
+    );
+    const first = await transaction(f.db, (tx) =>
+      publishReady(tx, batch.id, f.user.id),
+    );
+    expect(first).toMatchObject({ publicados: 2, status: "PARCIAL" });
+    expect(
+      await f.db.importacaoItem.count({
+        where: { importacaoId: batch.id, status: "AGUARDANDO_DEPENDENCIA" },
+      }),
+    ).toBe(2);
+    const pending = await f.db.importacaoItem.findMany({
+      where: { importacaoId: batch.id, acao: "PENDENTE" },
+      orderBy: { ordem: "asc" },
+    });
+    await transaction(f.db, (tx) =>
+      review(
+        tx,
+        pending[0]!.id,
+        {
+          dados: { nomeCompleto: `Corrigida ${f.suffix}` },
+          acao: "CRIAR",
+          motivo: "Nome informado",
+        },
+        f.user.id,
+      ),
+    );
+    expect(
+      await transaction(f.db, (tx) => publishReady(tx, batch.id, f.user.id)),
+    ).toMatchObject({ publicados: 2, status: "PARCIAL" });
+    await transaction(f.db, (tx) =>
+      review(
+        tx,
+        pending[1]!.id,
+        {
+          dados: pending[1]!.dadosNormalizados,
+          acao: "REJEITAR",
+          motivo: "Linha sem identificação",
+        },
+        f.user.id,
+      ),
+    );
+    expect(
+      await transaction(f.db, (tx) => publishReady(tx, batch.id, f.user.id)),
+    ).toMatchObject({ publicados: 0, status: "CONFIRMADA" });
+    expect(
+      await f.db.importacaoItem.count({
+        where: { importacaoId: batch.id, acao: "REJEITAR" },
+      }),
+    ).toBe(2);
   } finally {
     await f.app.close();
   }

@@ -6,6 +6,10 @@ Selecione aba e domínio. Mapeie cada campo para coluna, valor fixo ou registro 
 
 Normalização inequívoca preserva o original. Datas ambíguas e fórmulas exigem revisão explícita. CPF igual, nomes semelhantes e contatos auxiliam a detecção de duplicidade. Não existe fusão automática.
 
-Na revisão, escolha criar, vincular sem alterar, atualizar com diferenças visíveis ou rejeitar. Informe motivo. A confirmação revalida duplicidades e alterações concorrentes e grava em transação. Uma importação confirmada não pode ser confirmada novamente.
+Depois da análise, registros válidos são publicados automaticamente em transação e aparecem nos cadastros. Itens inválidos permanecem pendentes; filhos válidos aguardam a dependência sem exigir uma segunda revisão. Cada correção tenta publicar os registros desbloqueados. O processamento é idempotente e revalida duplicidades e alterações concorrentes.
+
+Na revisão, escolha criar, vincular sem alterar, atualizar com diferenças visíveis ou rejeitar e informe o motivo. O lote fica `PARCIAL` enquanto houver pendências e passa a `CONFIRMADA` quando todos os itens estiverem importados ou explicitamente rejeitados. Rejeitar um registro também rejeita filhos que não podem existir sem ele, preservando o staging.
 
 O arquivo original e todas as linhas ficam no PostgreSQL. Fixtures são sintéticas. Compatibilidade operacional com as planilhas reais ainda exige homologação com amostras representativas.
+
+Para conferir o perfil real sem exibir dados pessoais, execute `pnpm verify:intern-import -- <arquivo.xlsx> [lote-id]`. O comando compara as abas com o staging, valida a existência de todos os destinos publicados e informa contagens por domínio, pendências e dependências bloqueadas.

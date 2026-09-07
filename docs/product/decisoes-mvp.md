@@ -147,6 +147,8 @@ A unidade possui cidade e UF, mas a UF não deve ser usada como única chave de 
 
 O arquivo operacional `Listagem Estagiários Geral` possui um perfil de importação próprio. Todas as abas são preservadas e os dados preenchidos são transformados em pessoa, vínculo, estágio, instituição, documento, seguro e movimentação quando houver informação suficiente. Fórmulas não são executadas; resultados já armazenados no arquivo podem ser usados, mantendo fórmula e resultado no staging. Ausência ou ambiguidade em dados obrigatórios permanece para revisão.
 
+Registros válidos são publicados automaticamente e ficam disponíveis nos cadastros enquanto o lote permanece parcial. Registros inválidos e seus dependentes continuam no staging até correção ou rejeição explícita. Reprocessamentos devem ser idempotentes.
+
 ## Status
 
 Estas decisões estão aprovadas para o MVP e podem ser utilizadas pelo desenvolvimento sem nova validação, salvo mudança explícita de produto.

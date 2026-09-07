@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "start": "node dist/server.js",
     "admin:create": "tsx src/admin.ts create",
-    "admin:reset": "tsx src/admin.ts reset"
+    "admin:reset": "tsx src/admin.ts reset",
+    "verify:intern-import": "tsx src/verify-intern-import.ts"
   },
   "dependencies": {
     "@duali/database": "workspace:*",

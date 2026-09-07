@@ -25,8 +25,8 @@ As alterações finais de segurança, apresentação, testes e documentação es
 - pnpm install --frozen-lockfile: passou.
 - pnpm build, pnpm lint, pnpm typecheck: passaram.
 - pnpm format:check: passou após formatação.
-- pnpm test: 15 testes em 8 arquivos passaram.
-- pnpm test:e2e: fluxo de login, criação/edição de pessoa, upload/mapeamento/confirmação de CSV, exportação e logout passou.
+- pnpm test: 18 testes em 9 arquivos passaram.
+- pnpm test:e2e: login, pessoa, vínculo, estágio, descanso, benefício, menu agrupado, importação parcial, exportação e logout passaram.
 - pnpm audit --prod: nenhuma vulnerabilidade conhecida encontrada.
 - GET /health consultando PostgreSQL: respondeu 200.
 - pg_dump custom e pg_restore --exit-on-error: passaram em banco novo duali_restore_20260906182708; seis migrations recuperadas.
@@ -40,9 +40,11 @@ Configuração: DATABASE_URL, NODE_ENV, API_HOST, API_PORT, APP_ORIGIN, SESSION_
 
 ## Pendências e limites de cobertura
 
-O MVP ainda não deve ser declarado totalmente homologado. Faltam E2E específicos de vínculo, estágio, férias e benefícios, além da revisão manual de duplicidade no navegador (coberta em integração). Os testes atuais não substituem homologação funcional completa.
+O perfil real `Listagem Estagiários Geral` foi validado em staging e recebeu publicação parcial idempotente. No lote operacional de 2026-09-07, 1.369 itens foram publicados, 85 ficaram para revisão e 45 aguardam dependências; uma segunda execução publicou zero itens, comprovando a idempotência. As contagens definitivas após a publicação foram 273 pessoas, 246 vínculos, 235 estágios, 44 instituições, 314 documentos, 195 seguros e 59 movimentações.
 
-CI remoto, implantação Linux/Nginx, ensaio produtivo de recuperação e homologação com planilhas reais não foram executados. O restore local comprovou execução e migrations; comparação integral de dados/auditoria/arquivos entre origem e destino ainda precisa ser automatizada.
+O MVP ainda não deve ser declarado totalmente homologado. Os fluxos principais possuem E2E, mas a revisão manual de duplicidade no navegador continua coberta apenas por integração. Os testes atuais não substituem homologação funcional completa.
+
+CI remoto, implantação Linux/Nginx, ensaio produtivo de recuperação e homologação pelo RH não foram executados. O restore local comprovou execução e migrations. A conferência automatizada da planilha real valida abas, staging e existência dos destinos; uma comparação semântica integral de cada célula ainda depende da homologação operacional.
 
 O pnpm instalado emite aviso de compatibilidade sobre overrides no package.json, embora instalação congelada e auditoria tenham passado. Padronizar essa configuração antes de atualizar a versão do gerenciador.
 

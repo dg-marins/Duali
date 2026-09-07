@@ -19,6 +19,8 @@ interface Batch {
   summary?: { status: string; acao: string; _count: number }[];
 }
 const domains = screens.filter((s) => s.path !== "usuarios");
+const canReview = (status?: string) =>
+  status === "REVISAO" || status === "PARCIAL";
 function Review({ item, onSaved }: { item: Row; onSaved: () => void }) {
   const screen = domains.find((s) => s.path === item.dominio)!;
   const [data, setData] = useState<Row>(item.dadosNormalizados as Row),
@@ -249,7 +251,7 @@ export function Imports() {
       const form = new FormData();
       form.append("arquivo", file);
       const result = await api<Batch>("importacoes", "POST", form);
-      if (result.status === "REVISAO") await load(result.id, 1);
+      if (result.status && result.status !== "UPLOAD") await load(result.id, 1);
       else {
         setBatch(result);
         setAba(result.abas[0]?.nome ?? "");
@@ -290,8 +292,8 @@ export function Imports() {
     <>
       <h1>Importação assistida</h1>
       <p>
-        Arquivo → mapeamento → validação → revisão → confirmação. Os cadastros
-        só mudam após a confirmação.
+        Arquivo → validação → publicação dos dados válidos → revisão das
+        pendências. Os registros seguros aparecem imediatamente nos cadastros.
       </p>
       <Notice text={error} error />
       <Notice text={notice} />
@@ -570,7 +572,7 @@ export function Imports() {
                         {(item.mensagens as string[]).join(" · ")}
                       </td>
                       <td>
-                        {batch.status === "REVISAO" && (
+                        {canReview(batch.status) && (
                           <button
                             className="secondary compact"
                             onClick={() => setReview(item)}
@@ -601,15 +603,15 @@ export function Imports() {
                 Próxima
               </button>
             </div>
-            {batch.status === "REVISAO" && (
+            {canReview(batch.status) && (
               <div className="form-actions">
                 <button onClick={() => setConfirming(true)}>
-                  Confirmar importação…
+                  Tentar publicar itens disponíveis…
                 </button>
               </div>
             )}
           </section>
-          {review && batch.status === "REVISAO" && (
+          {review && canReview(batch.status) && (
             <Review
               key={String(review.id)}
               item={review}
@@ -620,13 +622,13 @@ export function Imports() {
               }}
             />
           )}
-          {confirming && batch.status === "REVISAO" && (
+          {confirming && canReview(batch.status) && (
             <section className="panel">
-              <h2>Confirmar gravação definitiva</h2>
+              <h2>Publicar itens disponíveis</h2>
               <p>
-                {batch.totalRegistros ?? batch.total} registros analisados. Itens rejeitados serão
-                preservados no staging. As demais decisões serão aplicadas em
-                uma única transação.
+                O sistema publicará somente registros válidos cujas dependências
+                estejam resolvidas. Pendências e valores originais continuarão
+                preservados no staging.
               </p>
               <div className="form-actions">
                 <button
@@ -635,26 +637,26 @@ export function Imports() {
                     setBusy(true);
                     setError("");
                     void api(
-                      "importacoes/" + batch.id + "/confirmar",
+                      "importacoes/" + batch.id + "/publicar-validos",
                       "POST",
                       {},
                     )
                       .then(() => {
                         setConfirming(false);
-                        setNotice("Importação confirmada com sucesso.");
+                        setNotice("Itens disponíveis processados com sucesso.");
                         return load(batch.id);
                       })
                       .catch((e) => setError((e as Error).message))
                       .finally(() => setBusy(false));
                   }}
                 >
-                  Gravar registros revisados
+                  Publicar agora
                 </button>
                 <button
                   className="secondary"
                   onClick={() => setConfirming(false)}
                 >
-                  Voltar à revisão
+                  Voltar
                 </button>
               </div>
             </section>

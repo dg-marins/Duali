@@ -352,8 +352,10 @@ export async function review(
       where: { id: itemId },
       include: { importacao: true },
     });
-  if (item.importacao.status !== "REVISAO")
+  if (!["REVISAO", "PARCIAL"].includes(item.importacao.status))
     throw new DomainError(409, "Importação não está em revisão.");
+  if (item.persistidoId)
+    throw new DomainError(409, "Este item já foi importado.");
   const resource = importResource(item.dominio);
   let data = body.dados,
     before: Row | null = null;
@@ -415,60 +417,82 @@ export async function review(
   );
   return { ok: true };
 }
-export async function confirm(tx: Tx, importId: string, userId: string) {
+export async function publishReady(tx: Tx, importId: string, userId: string) {
   const batch = await tx.importacao.findUniqueOrThrow({
     where: { id: importId },
     include: { itens: { orderBy: { ordem: "asc" } } },
   });
-  if (batch.status !== "REVISAO")
-    throw new DomainError(409, "Importação já confirmada ou indisponível.");
-  if (
-    batch.itens.some(
-      (i) =>
-        i.acao === "PENDENTE" ||
-        (!["VALIDO", "NORMALIZAVEL"].includes(i.status) &&
-          i.acao !== "REJEITAR"),
-    )
-  )
-    throw new DomainError(
-      422,
-      "Revise todos os itens pendentes ou rejeite-os explicitamente.",
-    );
-  const valid = batch.itens.filter((i) => i.acao !== "REJEITAR");
-  if (!valid.length) throw new DomainError(422, "Nenhum registro selecionado.");
-  await tx.importacao.update({
-    where: { id: importId },
-    data: { status: "CONFIRMANDO" },
-  });
-  const resolved = new Map<string, string>();
+  if (batch.status === "UPLOAD")
+    throw new DomainError(409, "Analise a importação antes de publicar.");
+  const resolved = new Map(
+      batch.itens
+        .filter((item) => item.persistidoId)
+        .map((item) => [item.destinoId, item.persistidoId!] as const),
+    ),
+    rejected = new Set(
+      batch.itens
+        .filter((item) => item.acao === "REJEITAR")
+        .map((item) => item.destinoId),
+    ),
+    publishedLinks: string[] = [];
   let persisted = 0;
-  for (const item of valid) {
+  for (const item of batch.itens) {
+    if (
+      item.persistidoId ||
+      item.acao === "PENDENTE" ||
+      item.acao === "REJEITAR"
+    )
+      continue;
+    const references = Object.values(item.referencias as Row).map(String);
+    if (references.some((target) => rejected.has(target))) {
+      rejected.add(item.destinoId);
+      await tx.importacaoItem.update({
+        where: { id: item.id },
+        data: {
+          status: "REJEITADO",
+          acao: "REJEITAR",
+          revisado: true,
+          motivo: "Dependência rejeitada durante a revisão.",
+        },
+      });
+      continue;
+    }
+    if (references.some((target) => !resolved.has(target))) {
+      if (item.status !== "AGUARDANDO_DEPENDENCIA")
+        await tx.importacaoItem.update({
+          where: { id: item.id },
+          data: { status: "AGUARDANDO_DEPENDENCIA" },
+        });
+      continue;
+    }
     const resource = importResource(item.dominio),
       data = { ...(item.dadosNormalizados as Row) };
     for (const [key, target] of Object.entries(item.referencias as Row)) {
       if (data[key] !== target) continue;
       const actual = resolved.get(String(target));
-      if (!actual)
-        throw new DomainError(
-          422,
-          "Grupo relacionado foi rejeitado ou não resolvido.",
-        );
-      data[key] = actual;
+      if (actual) data[key] = actual;
     }
     const candidates = await duplicates(tx, resource, data),
       known = (item.candidatos as unknown as { id: string }[]).map(
         (c) => resolved.get(c.id) ?? c.id,
       );
-    if (
-      candidates.some((c) => !known.includes(c.id)) &&
-      !resolved.has(item.destinoId)
-    )
-      throw new DomainError(
-        409,
-        "Novas duplicidades encontradas. Revise a linha " +
-          item.numeroLinha +
-          ".",
-      );
+    const unexpected = candidates.filter((c) => !known.includes(c.id));
+    if (unexpected.length) {
+      await tx.importacaoItem.update({
+        where: { id: item.id },
+        data: {
+          status: "DUPLICIDADE",
+          acao: "PENDENTE",
+          revisado: false,
+          candidatos: json(unexpected),
+          mensagens: json([
+            ...(item.mensagens as string[]),
+            "Nova duplicidade encontrada durante a publicação.",
+          ]),
+        },
+      });
+      continue;
+    }
     if (item.acao === "ATUALIZAR" || item.acao === "VINCULAR") {
       const current = await model(tx, resource.model).findUnique({
         where: { id: resolved.get(item.alvoId!) ?? item.alvoId! },
@@ -498,27 +522,51 @@ export async function confirm(tx: Tx, importId: string, userId: string) {
     persisted++;
     await tx.importacaoItem.update({
       where: { id: item.id },
-      data: { persistidoId: String(record.id) },
+      data: {
+        persistidoId: String(record.id),
+        status: "IMPORTADO",
+        acao: "IMPORTADO",
+        revisado: true,
+      },
     });
+    if (item.dominio === "vinculos") publishedLinks.push(String(record.id));
   }
-  for (const item of valid.filter((i) => i.dominio === "vinculos")) {
-    const link = resolved.get(item.destinoId);
-    if (link) await acquire(tx, link, userId);
-  }
+  for (const link of publishedLinks) await acquire(tx, link, userId);
+  const remaining = await tx.importacaoItem.groupBy({
+    by: ["status", "acao"],
+    where: { importacaoId: importId, persistidoId: null },
+    _count: true,
+  });
+  const unfinished = remaining.some(
+    (row) => row.acao !== "REJEITAR" && row.status !== "REJEITADO",
+  );
   await tx.importacao.update({
     where: { id: importId },
-    data: { status: "CONFIRMADA", confirmadaEm: new Date() },
+    data: {
+      status: unfinished ? "PARCIAL" : "CONFIRMADA",
+      confirmadaEm: unfinished ? null : new Date(),
+    },
   });
-  await audit(
-    tx,
-    userId,
-    "CONFIRMAR_IMPORTACAO",
-    "importacao",
-    importId,
-    undefined,
-    { registros: persisted },
-  );
-  return { registros: persisted };
+  if (persisted)
+    await audit(
+      tx,
+      userId,
+      "PUBLICAR_IMPORTACAO_PARCIAL",
+      "importacao",
+      importId,
+      undefined,
+      { registros: persisted },
+    );
+  return {
+    publicados: persisted,
+    status: unfinished ? "PARCIAL" : "CONFIRMADA",
+  };
+}
+export async function confirm(tx: Tx, importId: string, userId: string) {
+  const result = await publishReady(tx, importId, userId);
+  if (result.status !== "CONFIRMADA")
+    throw new DomainError(422, "Ainda existem itens pendentes na importação.");
+  return { registros: result.publicados, status: result.status };
 }
 export async function registerImports(app: FastifyInstance, db: PrismaClient) {
   await app.register(multipart, {
@@ -534,34 +582,43 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
         profile = isGeneralInternList(file.filename)
           ? await readGeneralInternList(buffer)
           : null,
-        sheets = profile?.sheets ?? (await readSpreadsheet(file.filename, buffer));
-      const batch = await transaction(db, async (tx) => {
-        const result = await tx.importacao.create({
-          data: {
-            usuarioId: req.userId!,
-            nomeArquivo: file.filename.slice(0, 200),
-            arquivo: new Uint8Array(buffer),
-            planilhas: json(sheets),
-          },
-        });
-        await audit(
-          tx,
-          req.userId,
-          "UPLOAD_IMPORTACAO",
-          "importacao",
-          result.id,
-        );
-        const analysis = profile
-          ? await stageGeneralInternList(tx, result.id, req.userId!, profile)
-          : null;
-        return { ...result, analysis };
-      }, 120000);
+        sheets =
+          profile?.sheets ?? (await readSpreadsheet(file.filename, buffer));
+      const batch = await transaction(
+        db,
+        async (tx) => {
+          const result = await tx.importacao.create({
+            data: {
+              usuarioId: req.userId!,
+              nomeArquivo: file.filename.slice(0, 200),
+              arquivo: new Uint8Array(buffer),
+              planilhas: json(sheets),
+            },
+          });
+          await audit(
+            tx,
+            req.userId,
+            "UPLOAD_IMPORTACAO",
+            "importacao",
+            result.id,
+          );
+          const analysis = profile
+            ? await stageGeneralInternList(tx, result.id, req.userId!, profile)
+            : null;
+          const publication = analysis
+            ? await publishReady(tx, result.id, req.userId!)
+            : null;
+          return { ...result, analysis, publication };
+        },
+        120000,
+      );
       reply.code(201);
       return {
         id: batch.id,
         nomeArquivo: batch.nomeArquivo,
-        status: batch.analysis ? "REVISAO" : "UPLOAD",
+        status: batch.publication?.status ?? "UPLOAD",
         ...(batch.analysis ?? {}),
+        ...(batch.publication ?? {}),
         abas: sheets.map((s) => ({
           nome: s.nome,
           colunas: s.colunas,
@@ -602,10 +659,8 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
       },
     });
     const q = listSchema.parse(req.query);
-    const specialized =
-      (batch.mapeamento as Row | null)?.perfil ===
-      "LISTAGEM_ESTAGIARIOS_GERAL";
-    const itemWhere = specialized
+    const reviewing = ["REVISAO", "PARCIAL"].includes(batch.status);
+    const itemWhere = reviewing
       ? { importacaoId: id, acao: "PENDENTE" }
       : { importacaoId: id };
     const [items, total, totalRegistros, summary] = await Promise.all([
@@ -643,13 +698,38 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
     const { id } = paramsId.parse(req.params);
     return transaction(
       db,
-      (tx) => analyze(tx, id, req.body, req.userId!),
+      async (tx) => {
+        const analysis = await analyze(tx, id, req.body, req.userId!);
+        const publication = await publishReady(tx, id, req.userId!);
+        return { ...analysis, ...publication };
+      },
       120000,
     );
   });
   app.put("/api/importacao-itens/:id", async (req) => {
     const { id } = paramsId.parse(req.params);
-    return transaction(db, (tx) => review(tx, id, req.body, req.userId!));
+    return transaction(
+      db,
+      async (tx) => {
+        const result = await review(tx, id, req.body, req.userId!);
+        const item = await tx.importacaoItem.findUniqueOrThrow({
+          where: { id },
+          select: { importacaoId: true },
+        });
+        const publication = await publishReady(
+          tx,
+          item.importacaoId,
+          req.userId!,
+        );
+        return { ...result, ...publication };
+      },
+      120000,
+    );
+  });
+  app.post("/api/importacoes/:id/publicar-validos", async (req) => {
+    const { id } = paramsId.parse(req.params);
+    z.object({}).strict().parse(req.body);
+    return transaction(db, (tx) => publishReady(tx, id, req.userId!), 120000);
   });
   app.post("/api/importacoes/:id/confirmar", async (req) => {
     const { id } = paramsId.parse(req.params);
