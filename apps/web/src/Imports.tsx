@@ -248,6 +248,8 @@ function Review({ item, onSaved }: { item: Row; onSaved: () => void }) {
 }
 export function Imports() {
   const [batch, setBatch] = useState<Batch | null>(null),
+    [situation, setSituation] = useState("TODOS"),
+    [domainFilter, setDomainFilter] = useState(""),
     [history, setHistory] = useState<Row[]>([]),
     [profile, setProfile] = useState("AUTO"),
     [aba, setAba] = useState(""),
@@ -264,11 +266,15 @@ export function Imports() {
       .catch((e) => setError((e as Error).message));
   }, []);
   async function load(id: string, nextPage = page) {
-    const result = await api<Batch>("importacoes/" + id + "?page=" + nextPage);
+    const query = new URLSearchParams({ page: String(nextPage), situacao: situation, ...(domainFilter ? { dominio: domainFilter } : {}) });
+    const result = await api<Batch>("importacoes/" + id + "?" + query);
     setBatch(result);
     setAba(result.abas[0]?.nome ?? "");
     setPage(nextPage);
   }
+  useEffect(() => {
+    if (batch?.id) void load(batch.id, 1);
+  }, [situation, domainFilter]);
   async function upload(file: File) {
     setBusy(true);
     setError("");
@@ -618,6 +624,10 @@ export function Imports() {
                     : {})}
                 />
               ))}
+            </div>
+            <div className="filter-grid">
+              <label><span>Situação</span><select value={situation} onChange={(e) => setSituation(e.target.value)}><option>TODOS</option><option value="DUPLICIDADE">Possível duplicidade</option><option value="DATA">Data inválida</option><option value="REFERENCIA">Referência</option><option value="DEPENDENCIA">Dependência</option><option value="REJEITADOS">Rejeitados</option><option value="PRONTOS">Prontos</option></select></label>
+              <label><span>Domínio</span><select value={domainFilter} onChange={(e) => setDomainFilter(e.target.value)}><option value="">Todos</option>{domains.map((d) => <option key={d.path} value={d.path}>{d.title}</option>)}</select></label>
             </div>
             <div className="table-scroll">
               <table>

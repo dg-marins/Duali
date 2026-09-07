@@ -661,11 +661,21 @@ export async function registerImports(app: FastifyInstance, db: PrismaClient) {
         mapeamento: true,
       },
     });
-    const q = listSchema.parse(req.query);
+    const q = listSchema.extend({
+      situacao: z.enum(["TODOS", "DUPLICIDADE", "DATA", "REFERENCIA", "DEPENDENCIA", "REJEITADOS", "PRONTOS"]).default("TODOS"),
+      dominio: z.string().max(80).optional(),
+    }).parse(req.query);
     const reviewing = ["REVISAO", "PARCIAL"].includes(batch.status);
     const itemWhere: Prisma.ImportacaoItemWhereInput = reviewing
       ? { importacaoId: id, acao: "PENDENTE" }
       : { importacaoId: id };
+    if (q.dominio) itemWhere.dominio = q.dominio;
+    if (q.situacao === "DUPLICIDADE") itemWhere.status = "DUPLICIDADE";
+    if (q.situacao === "DEPENDENCIA") itemWhere.status = "AGUARDANDO_DEPENDENCIA";
+    if (q.situacao === "REJEITADOS") { delete itemWhere.acao; itemWhere.status = "REJEITADO"; }
+    if (q.situacao === "PRONTOS") { delete itemWhere.acao; itemWhere.status = { in: ["VALIDO", "NORMALIZAVEL"] }; }
+    if (q.situacao === "DATA") itemWhere.mensagens = { array_contains: ["data"] };
+    if (q.situacao === "REFERENCIA") itemWhere.mensagens = { array_contains: ["refer"] };
     const [items, total, totalRegistros, summary] = await Promise.all([
       db.importacaoItem.findMany({
         where: itemWhere,
