@@ -114,6 +114,46 @@ test("benefits profile keeps name-only match for review and releases its childre
   }
 });
 
+test("benefits profile does not create a person from a name alone", async () => {
+  const f = await fixture();
+  try {
+    const batch = await f.db.importacao.create({
+      data: {
+        usuarioId: f.user.id,
+        nomeArquivo: "Benefícios - 2026.xlsx",
+        arquivo: new Uint8Array([1]),
+        planilhas: [],
+      },
+    });
+    const name = `Pessoa sem cadastro ${f.suffix}`;
+    await transaction(f.db, (tx) =>
+      stageAuditedWorkbook(tx, batch.id, f.user.id, {
+        profile: "BENEFICIOS_2026",
+        sheets: [],
+        raw: [
+          {
+            nome: "RJ - CLT",
+            rows: [
+              ["", "", "", "", "JANEIRO"],
+              ["CLT", name, "Área", "Escala", "", 20, "RIOCARD/dia", 10],
+            ],
+          },
+        ],
+      }),
+    );
+
+    const personItem = await f.db.importacaoItem.findFirstOrThrow({
+      where: { importacaoId: batch.id, dominio: "pessoas" },
+    });
+    expect(personItem.acao).toBe("PENDENTE");
+    expect(personItem.status).toBe("REVISAO");
+    await transaction(f.db, (tx) => publishReady(tx, batch.id, f.user.id));
+    expect(await f.db.pessoa.count({ where: { nomeCompleto: name } })).toBe(0);
+  } finally {
+    await f.app.close();
+  }
+});
+
 test("employee leave profile publishes valid parents and historical periods idempotently", async () => {
   const f = await fixture();
   try {

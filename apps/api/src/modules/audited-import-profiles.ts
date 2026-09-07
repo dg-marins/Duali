@@ -237,6 +237,7 @@ async function personAndLink(
   name: string,
   admission: unknown,
   scale?: string,
+  requireExisting = false,
 ) {
   const candidates = await tx.pessoa.findMany({
     where: { nomeCompleto: { equals: name, mode: "insensitive" } },
@@ -255,7 +256,16 @@ async function personAndLink(
             "Pessoa encontrada apenas por nome; confirme a correspondência.",
         },
       ]
-    : [];
+    : requireExisting
+      ? [
+          {
+            codigo: "PESSOA_NAO_IDENTIFICADA",
+            severidade: "REVISAO",
+            mensagem:
+              "O arquivo não contém identificadores suficientes para criar a pessoa com segurança.",
+          },
+        ]
+      : [];
   const personTarget = await item(tx, {
     importId,
     order: order.value++,
@@ -265,7 +275,7 @@ async function personAndLink(
     line,
     original: row,
     data: personExisting ?? { nomeCompleto: name },
-    action: personExisting ? "PENDENTE" : "CRIAR",
+    action: candidates.length || requireExisting ? "PENDENTE" : "CRIAR",
     existing: personExisting,
     issues: personIssues,
   });
@@ -542,6 +552,7 @@ async function stageBenefits(
           name,
           "",
           text(row[3]),
+          true,
         );
         people.set(personKey, base);
       }
