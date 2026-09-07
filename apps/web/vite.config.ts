@@ -8,15 +8,16 @@ export default defineConfig(({ mode }) => {
   );
   const apiHost = process.env.API_HOST ?? fileEnv.API_HOST ?? "127.0.0.1";
   const apiPort = process.env.API_PORT ?? fileEnv.API_PORT ?? "3000";
-  const target =
-    process.env.API_PROXY_TARGET ?? `http://${apiHost}:${apiPort}`;
+  const target = process.env.API_PROXY_TARGET ?? `http://${apiHost}:${apiPort}`;
 
   return {
     envDir: "../../",
     plugins: [react(), tailwind()],
     server: {
       host: appOrigin.hostname,
-      port: Number(appOrigin.port || (appOrigin.protocol === "https:" ? 443 : 80)),
+      port: Number(
+        appOrigin.port || (appOrigin.protocol === "https:" ? 443 : 80),
+      ),
       strictPort: true,
       proxy: { "/api": target, "/health": target },
     },

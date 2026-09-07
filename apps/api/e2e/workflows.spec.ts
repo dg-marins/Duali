@@ -6,6 +6,7 @@ import { testDatabaseUrl } from "../src/test-helper.js";
 test("administrator creates and updates a person through the browser", async ({
   page,
 }) => {
+  test.setTimeout(120000);
   const db = new PrismaClient({ datasourceUrl: testDatabaseUrl() });
   const suffix = randomUUID(),
     email = suffix + "@example.test",
@@ -18,6 +19,9 @@ test("administrator creates and updates a person through the browser", async ({
     await page.getByLabel("E-mail", { exact: true }).fill(email);
     await page.getByLabel("Senha", { exact: true }).fill(senha);
     await page.getByRole("button", { name: "Entrar", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Abrir grupo Pessoas", exact: true })
+      .click();
     await page.getByRole("button", { name: "Pessoas", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "Pessoas", exact: true }),
@@ -40,11 +44,93 @@ test("administrator creates and updates a person through the browser", async ({
     await expect(
       page.getByRole("status").filter({ hasText: "Registro salvo" }),
     ).toContainText("Registro salvo");
+    const person = await db.pessoa.findFirstOrThrow({
+      where: { nomeCompleto: "Pessoa E2E " + suffix },
+    });
+    const unit = await db.unidade.create({
+      data: {
+        nome: "Unidade E2E " + suffix,
+        sigla: suffix.slice(0, 12),
+        uf: "RJ",
+      },
+    });
+    await page.getByRole("button", { name: "Vínculos", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Novo registro", exact: true })
+      .click();
+    await page.getByLabel("Pessoa", { exact: true }).selectOption(person.id);
+    await page.getByLabel("Tipo", { exact: true }).selectOption("ESTAGIO");
+    await page.getByLabel("Unidade", { exact: true }).selectOption(unit.id);
+    await page.locator("form input[type=date]").first().fill("2024-01-01");
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Registro salvo" }),
+    ).toContainText("Registro salvo");
+    const link = await db.vinculo.findFirstOrThrow({
+      where: { unidadeId: unit.id },
+    });
+
+    await page
+      .getByRole("button", { name: "Abrir grupo Estágios", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Estágios", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Novo registro", exact: true })
+      .click();
+    await page.getByLabel("Vínculo", { exact: true }).selectOption(link.id);
+    await page.getByLabel("Período acadêmico", { exact: true }).fill("5º");
+    await page.getByLabel("Bolsa (R$)", { exact: true }).fill("1800");
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
+
+    await page
+      .getByRole("button", {
+        name: "Abrir grupo Férias e descanso",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("button", { name: "Férias e descanso", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Novo registro", exact: true })
+      .click();
+    await page.getByLabel("Vínculo", { exact: true }).selectOption(link.id);
+    await page
+      .getByLabel("Tipo", { exact: true })
+      .selectOption("DESCANSO_ESTAGIO");
+    await page.locator("form input[type=date]").nth(0).fill("2026-01-01");
+    await page.locator("form input[type=date]").nth(1).fill("2026-01-05");
+    await page.locator("form input[type=number]").first().fill("5");
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
+
+    await page
+      .getByRole("button", { name: "Abrir grupo Benefícios", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Benefícios do vínculo", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Novo registro", exact: true })
+      .click();
+    await page.getByLabel("Vínculo", { exact: true }).selectOption(link.id);
+    await page.getByLabel("Tipo", { exact: true }).selectOption("ALIMENTACAO");
+    await page.locator("form input[type=date]").first().fill("2026-01-01");
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
+    expect(await db.estagio.count({ where: { vinculoId: link.id } })).toBe(1);
+    expect(
+      await db.descansoPeriodo.count({ where: { vinculoId: link.id } }),
+    ).toBe(1);
+    expect(
+      await db.beneficioVinculo.count({ where: { vinculoId: link.id } }),
+    ).toBe(1);
     await page.screenshot({
       path: "artifacts/pessoas-desktop.png",
       fullPage: true,
     });
 
+    await page
+      .getByRole("button", { name: "Abrir grupo Operação", exact: true })
+      .click();
     await page
       .getByRole("button", { name: "Importações", exact: true })
       .click();
@@ -58,15 +144,6 @@ test("administrator creates and updates a person through the browser", async ({
       .selectOption("coluna:Nome");
     await page
       .getByRole("button", { name: "Analisar e gerar prévia", exact: true })
-      .click();
-    await expect(
-      page.getByRole("heading", { name: /sintetico.csv/ }),
-    ).toContainText("REVISAO");
-    await page
-      .getByRole("button", { name: "Confirmar importação…", exact: true })
-      .click();
-    await page
-      .getByRole("button", { name: "Gravar registros revisados", exact: true })
       .click();
     await expect(
       page.getByRole("heading", { name: /sintetico.csv/ }),

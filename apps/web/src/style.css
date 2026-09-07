@@ -115,13 +115,35 @@ p {
 nav {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
 }
 nav button {
   text-align: left;
   background: transparent;
   color: #c4d9d1;
   font-weight: 500;
+}
+.nav-group {
+  display: grid;
+  gap: 4px;
+}
+.nav-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.nav-items {
+  display: grid;
+  gap: 3px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+}
+.nav-items button {
+  padding: 9px 12px;
 }
 nav button.active {
   background: #28604f;
@@ -285,13 +307,14 @@ th {
     font-size: 28px;
   }
   nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 2px;
+    gap: 5px;
   }
   nav button {
     padding: 8px;
     font-size: 12px;
+  }
+  .nav-items {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .account {
     flex-direction: row;

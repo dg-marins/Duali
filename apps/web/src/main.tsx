@@ -7,11 +7,63 @@ import { api, setCsrf, type Row } from "./api";
 import { screens } from "./resources";
 import { Notice, Records } from "./components";
 import "./style.css";
+const menuGroups = [
+  { title: "Geral", items: [["dashboard", "Visão geral"]] },
+  {
+    title: "Pessoas",
+    items: [
+      ["pessoas", "Pessoas"],
+      ["vinculos", "Vínculos"],
+      ["equipes", "Equipes"],
+      ["unidades", "Unidades"],
+    ],
+  },
+  {
+    title: "Estágios",
+    items: [
+      ["estagios", "Estágios"],
+      ["instituicoes", "Instituições"],
+      ["documentos", "Documentos"],
+      ["seguros", "Seguros"],
+      ["seguro-movimentacoes", "Movimentações"],
+    ],
+  },
+  {
+    title: "Férias e descanso",
+    items: [
+      ["saldos", "Saldos e histórico"],
+      ["direitos", "Direitos adquiridos"],
+      ["periodos", "Férias e descanso"],
+      ["consumos", "Consumos"],
+      ["ajustes-descanso", "Ajustes"],
+    ],
+  },
+  {
+    title: "Benefícios",
+    items: [
+      ["beneficios-vinculo", "Benefícios do vínculo"],
+      ["competencias", "Competências"],
+      ["ajustes-beneficios", "Ajustes"],
+      ["configuracoes-beneficios", "Configurações"],
+      ["fornecedores", "Fornecedores"],
+    ],
+  },
+  {
+    title: "Operação",
+    items: [
+      ["importacoes", "Importações"],
+      ["relatorios", "Relatórios"],
+      ["auditoria", "Auditoria"],
+    ],
+  },
+  { title: "Administração", items: [["usuarios", "Administradores"]] },
+] as const;
 function App() {
   const [user, setUser] = useState<Row | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [screen, setScreen] = useState("dashboard"),
+    [openGroup, setOpenGroup] = useState("Geral"),
     [email, setEmail] = useState(""),
     [senha, setSenha] = useState("");
   useEffect(() => {
@@ -84,40 +136,38 @@ function App() {
           duali<span>GESTÃO DE PESSOAS</span>
         </div>
         <nav>
-          {[
-            ["dashboard", "Visão geral"],
-            ["relatorios", "Relatórios"],
-            ["auditoria", "Auditoria"],
-          ].map(([key, title]) => (
-            <button
-              key={key}
-              className={screen === key ? "active" : ""}
-              onClick={() => setScreen(key!)}
-            >
-              {title}
-            </button>
-          ))}
-          <button
-            className={screen === "importacoes" ? "active" : ""}
-            onClick={() => setScreen("importacoes")}
-          >
-            Importações
-          </button>
-          <button
-            className={screen === "saldos" ? "active" : ""}
-            onClick={() => setScreen("saldos")}
-          >
-            Saldo e histórico
-          </button>
-          {screens.map((s) => (
-            <button
-              className={s.path === screen ? "active" : ""}
-              key={s.path}
-              onClick={() => setScreen(s.path)}
-            >
-              {s.title}
-            </button>
-          ))}
+          {menuGroups.map((group) => {
+            const expanded = openGroup === group.title;
+            return (
+              <section className="nav-group" key={group.title}>
+                <button
+                  className="nav-group-toggle"
+                  aria-expanded={expanded}
+                  aria-label={`${expanded ? "Recolher" : "Abrir"} grupo ${group.title}`}
+                  onClick={() => setOpenGroup(expanded ? "" : group.title)}
+                >
+                  <span>{group.title}</span>
+                  <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                </button>
+                {expanded && (
+                  <div className="nav-items">
+                    {group.items.map(([key, title]) => (
+                      <button
+                        key={key}
+                        className={screen === key ? "active" : ""}
+                        onClick={() => {
+                          setScreen(key);
+                          setOpenGroup(group.title);
+                        }}
+                      >
+                        {title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </nav>
         <div className="account">
           <strong>{String(user.nome)}</strong>
