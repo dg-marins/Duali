@@ -72,7 +72,7 @@ export const screens: Screen[] = [
       {
         key: "tipo",
         label: "Tipo",
-        options: ["CLT", "ESTAGIO"],
+        options: ["CLT", "ESTAGIO", "APRENDIZ"],
         required: true,
       },
       {

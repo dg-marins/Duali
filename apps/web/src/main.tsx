@@ -1,5 +1,6 @@
 import React, { useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
+import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
 import { api, setCsrf, type Row } from "./api";
 import { Notice, Records } from "./components";
 import { screens } from "./resources";
@@ -13,10 +14,14 @@ import {
   BenefitsPage,
   RegistryDetail,
 } from "./Operational";
+import { PendingsPage } from "./features/pendings/PendingsPage";
+import { BenefitClosingPage } from "./features/benefits/BenefitClosingPage";
+import { Toaster } from "sonner";
 import "./style.css";
 
 const primary = [
   ["/app", "Visão geral", "⌂"],
+  ["/app/pendencias", "Pendências", "!"],
   ["/app/pessoas", "Pessoas", "●"],
   ["/app/estagiarios", "Estagiários", "◇"],
   ["/app/ferias", "Férias e descanso", "◷"],
@@ -55,19 +60,11 @@ const auxiliary: Record<string, string> = {
   "/app/admin/usuarios": "usuarios",
 };
 function useRoute() {
-  const initial =
-    location.pathname === "/" || location.pathname === "/login"
-      ? "/app"
-      : location.pathname;
-  const [path, setPath] = useState(initial);
-  useEffect(() => {
-    const handler = () => setPath(location.pathname);
-    addEventListener("popstate", handler);
-    return () => removeEventListener("popstate", handler);
-  }, []);
+  const location = useLocation();
+  const routerNavigate = useNavigate();
+  const path = location.pathname === "/" || location.pathname === "/login" ? "/app" : location.pathname;
   const navigate = (next: string) => {
-    history.pushState({}, "", next);
-    setPath(next);
+    routerNavigate(next);
     window.scrollTo({ top: 0 });
   };
   return { path, navigate };
@@ -265,6 +262,7 @@ function App() {
         </header>
         <Notice text={error} error />
         <RouteContent path={path} navigate={navigate} />
+        <Toaster richColors position="top-right" />
       </main>
     </div>
   );
@@ -301,10 +299,12 @@ function RouteContent({
       />
     );
   if (path === "/app") return <Dashboard navigate={navigate} />;
+  if (path === "/app/pendencias") return <PendingsPage navigate={navigate} />;
   if (path === "/app/pessoas") return <PeoplePage navigate={navigate} />;
   if (path === "/app/estagiarios") return <InternsPage navigate={navigate} />;
   if (path === "/app/ferias") return <LeavePage navigate={navigate} />;
   if (path === "/app/beneficios") return <BenefitsPage navigate={navigate} />;
+  if (path === "/app/beneficios/fechamento") return <BenefitClosingPage navigate={navigate} />;
   if (path === "/app/importacoes") return <Imports />;
   if (path === "/app/relatorios") return <Reporting />;
   if (path === "/app/admin/auditoria") return <Audit />;
@@ -332,6 +332,8 @@ function RouteContent({
 }
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
   </React.StrictMode>,
 );

@@ -21,6 +21,7 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
     pessoasAtivas: "Pessoas ativas",
     cltsAtivos: "CLTs ativos",
     estagiariosAtivos: "Estagiários ativos",
+    aprendizesAtivos: "Aprendizes ativos",
     feriasProximas: "Férias próximas do prazo",
     feriasPendentes: "Férias vencidas / pendentes",
     descansosProximos: "Descansos próximos",
@@ -269,6 +270,7 @@ export function Reporting() {
               <option value="">Todos</option>
               <option>CLT</option>
               <option>ESTAGIO</option>
+              <option>APRENDIZ</option>
             </select>
           </label>
           <label>

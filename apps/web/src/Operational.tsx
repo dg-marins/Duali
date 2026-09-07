@@ -176,6 +176,7 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
           >
             <option value="CLT">CLT</option>
             <option value="ESTAGIO">Estágio</option>
+            <option value="APRENDIZ">Aprendiz</option>
           </FilterSelect>
           <FilterSelect
             label="Unidade"
@@ -444,7 +445,7 @@ export function PersonProfile({
     <>
       <PageHeader
         title={String(person.nomeCompleto)}
-        description={`${current?.tipo === "ESTAGIO" ? "Estagiário(a)" : (current?.tipo ?? "Sem vínculo")} · ${display(current?.unidade)}`}
+        description={`${current?.tipo === "ESTAGIO" ? "Estagiário(a)" : current?.tipo === "APRENDIZ" ? "Aprendiz" : (current?.tipo ?? "Sem vínculo")} · ${display(current?.unidade)}`}
         breadcrumb={
           <button
             className="link-button"
@@ -1112,6 +1113,7 @@ function OperationalList({
             >
               <option value="CLT">CLT</option>
               <option value="ESTAGIO">Estágio</option>
+              <option value="APRENDIZ">Aprendiz</option>
             </FilterSelect>
           )}
           <FilterSelect
@@ -1206,12 +1208,10 @@ export const LeavePage = ({ navigate }: { navigate: Navigate }) => (
   />
 );
 export const BenefitsPage = ({ navigate }: { navigate: Navigate }) => (
-  <OperationalList
-    kind="beneficios"
-    title="Benefícios"
-    description="Competências, fornecedores, valores e pendências."
-    navigate={navigate}
-  />
+  <>
+    <div className="form-actions"><button onClick={() => navigate("/app/beneficios/fechamento")}>Fechamento por competência</button></div>
+    <OperationalList kind="beneficios" title="Benefícios" description="Competências, fornecedores, valores e pendências." navigate={navigate} />
+  </>
 );
 
 const registryRelations: Record<

@@ -211,7 +211,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
   app.get("/api/dashboard", async (req) => {
     const q = listSchema.parse(req.query),
       where = linkWhere(q);
-    const [pessoas, clt, estagios, alerts, recent, imports] = await Promise.all(
+    const [pessoas, clt, estagios, aprendizes, alerts, recent, imports] = await Promise.all(
       [
         db.pessoa.count({
           where: { vinculos: { some: { ...where, status: "ATIVO" } } },
@@ -219,6 +219,9 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
         db.vinculo.count({ where: { ...where, tipo: "CLT", status: "ATIVO" } }),
         db.vinculo.count({
           where: { ...where, tipo: "ESTAGIO", status: "ATIVO" },
+        }),
+        db.vinculo.count({
+          where: { ...where, tipo: "APRENDIZ", status: "ATIVO" },
         }),
         operationalAlerts(db),
         db.auditoria.findMany({
@@ -246,6 +249,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       pessoasAtivas: pessoas,
       cltsAtivos: clt,
       estagiariosAtivos: estagios,
+      aprendizesAtivos: aprendizes,
       feriasProximas: filtered.filter(
         (a) => a.mensagem === "Prazo de férias próximo.",
       ).length,
