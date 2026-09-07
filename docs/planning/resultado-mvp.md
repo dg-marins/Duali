@@ -63,3 +63,5 @@ Validação desta entrega: instalação congelada reproduzível, migrations, bui
 ## Revisão pós-auditoria
 
 Foram adicionados vínculo aprendiz, escala, estados tipados, regras informativas de instituição, fechamento de benefícios por mês/unidade, períodos históricos de cesta básica, profiles especializados e Central de Pendências. A homologação humana segue o roteiro em `homologacao-dados.md`.
+
+As evidências, contagens preservadas, limitações dos arquivos reais e pendências operacionais estão consolidadas em `resultado-pos-auditoria.md`.
