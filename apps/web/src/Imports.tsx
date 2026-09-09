@@ -2,7 +2,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, display, type Row } from "./api";
 import { screens, type Field } from "./resources";
 import { Lookup, Notice } from "./components";
-import { MetricCard, PageHeader, StatusBadge } from "./ui";
+import {
+  LoadingSkeleton,
+  MetricCard,
+  PageHeader,
+  RefreshingContent,
+  StatusBadge,
+} from "./ui";
 type Rule = {
   coluna?: string;
   valor?: string | number | boolean | null;
@@ -257,27 +263,39 @@ export function Imports() {
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
+    [historyLoading, setHistoryLoading] = useState(true),
+    [batchLoading, setBatchLoading] = useState(false),
     [review, setReview] = useState<Row | null>(null),
     [page, setPage] = useState(1),
     [confirming, setConfirming] = useState(false);
   useEffect(() => {
     void api<{ items: Row[] }>("importacoes")
       .then((r) => setHistory(r.items))
-      .catch((e) => setError((e as Error).message));
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setHistoryLoading(false));
   }, []);
   async function load(id: string, nextPage = page) {
-    const query = new URLSearchParams({
-      page: String(nextPage),
-      situacao: situation,
-      ...(domainFilter ? { dominio: domainFilter } : {}),
-    });
-    const result = await api<Batch>("importacoes/" + id + "?" + query);
-    setBatch(result);
-    setAba(result.abas[0]?.nome ?? "");
-    setPage(nextPage);
+    setBatchLoading(true);
+    try {
+      const query = new URLSearchParams({
+        page: String(nextPage),
+        situacao: situation,
+        ...(domainFilter ? { dominio: domainFilter } : {}),
+      });
+      const result = await api<Batch>("importacoes/" + id + "?" + query);
+      setBatch(result);
+      setAba(result.abas[0]?.nome ?? "");
+      setPage(nextPage);
+      setError("");
+    } finally {
+      setBatchLoading(false);
+    }
   }
   useEffect(() => {
-    if (batch?.id) void load(batch.id, 1);
+    if (batch?.id)
+      void load(batch.id, 1).catch((reason) =>
+        setError((reason as Error).message),
+      );
   }, [situation, domainFilter]);
   async function upload(file: File) {
     setBusy(true);
@@ -392,6 +410,7 @@ export function Imports() {
         <label>
           Retomar importação
           <select
+            aria-busy={historyLoading}
             value={batch?.id ?? ""}
             onChange={(e) => {
               if (e.target.value)
@@ -400,7 +419,9 @@ export function Imports() {
                 );
             }}
           >
-            <option value="">Selecione…</option>
+            <option value="">
+              {historyLoading ? "Carregando histórico…" : "Selecione…"}
+            </option>
             {history.map((row) => (
               <option key={String(row.id)} value={String(row.id)}>
                 {String(row.nomeArquivo)} · {String(row.status)}
@@ -409,370 +430,385 @@ export function Imports() {
           </select>
         </label>
       </section>
-      {batch && (!batch.status || batch.status === "UPLOAD") && (
+      {batchLoading && !batch && (
         <section className="panel">
-          <h2>Mapear {batch.nomeArquivo}</h2>
-          <label>
-            Aba
-            <select value={aba} onChange={(e) => setAba(e.target.value)}>
-              {batch.abas.map((s) => (
-                <option key={s.nome}>{s.nome}</option>
-              ))}
-            </select>
-          </label>
-          <p>
-            {sheet?.linhas} linhas. Adicione grupos para documentos numerados ou
-            componentes mensais. Relacione filhos a grupos anteriores ou
-            selecione um cadastro existente como valor fixo.
-          </p>
-          {groups.map((group, index) => (
-            <section className="mapping-group" key={index}>
-              <div className="form-grid">
-                <label>
-                  Nome do grupo
-                  <input
-                    value={group.nome}
-                    onChange={(e) =>
-                      setGroups(
-                        groups.map((g, i) =>
-                          i === index ? { ...g, nome: e.target.value } : g,
-                        ),
-                      )
-                    }
+          <LoadingSkeleton variant="detail" label="Carregando importação…" />
+        </section>
+      )}
+      {batch && (!batch.status || batch.status === "UPLOAD") && (
+        <RefreshingContent refreshing={batchLoading}>
+          <section className="panel">
+            <h2>Mapear {batch.nomeArquivo}</h2>
+            <label>
+              Aba
+              <select value={aba} onChange={(e) => setAba(e.target.value)}>
+                {batch.abas.map((s) => (
+                  <option key={s.nome}>{s.nome}</option>
+                ))}
+              </select>
+            </label>
+            <p>
+              {sheet?.linhas} linhas. Adicione grupos para documentos numerados
+              ou componentes mensais. Relacione filhos a grupos anteriores ou
+              selecione um cadastro existente como valor fixo.
+            </p>
+            {groups.map((group, index) => (
+              <section className="mapping-group" key={index}>
+                <div className="form-grid">
+                  <label>
+                    Nome do grupo
+                    <input
+                      value={group.nome}
+                      onChange={(e) =>
+                        setGroups(
+                          groups.map((g, i) =>
+                            i === index ? { ...g, nome: e.target.value } : g,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                  <label>
+                    Domínio
+                    <select
+                      value={group.dominio}
+                      onChange={(e) =>
+                        setGroups(
+                          groups.map((g, i) =>
+                            i === index
+                              ? { ...g, dominio: e.target.value, campos: {} }
+                              : g,
+                          ),
+                        )
+                      }
+                    >
+                      {domains.map((s) => (
+                        <option key={s.path} value={s.path}>
+                          {s.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {domains
+                  .find((s) => s.path === group.dominio)!
+                  .fields.map((field) => {
+                    const current = group.campos[field.key];
+                    return (
+                      <div className="mapping-row" key={field.key}>
+                        <strong>
+                          {field.label}
+                          {field.required ? " *" : ""}
+                        </strong>
+                        <select
+                          aria-label={
+                            "Origem " + group.nome + " " + field.label
+                          }
+                          value={
+                            current?.coluna
+                              ? "coluna:" + current.coluna
+                              : current?.grupo
+                                ? "grupo:" + current.grupo
+                                : current?.valor !== undefined
+                                  ? "fixo"
+                                  : ""
+                          }
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            rule(
+                              index,
+                              field.key,
+                              v.startsWith("coluna:")
+                                ? { coluna: v.slice(7) }
+                                : v.startsWith("grupo:")
+                                  ? { grupo: v.slice(6) }
+                                  : v === "fixo"
+                                    ? { valor: "" }
+                                    : undefined,
+                            );
+                          }}
+                        >
+                          <option value="">Não importar</option>
+                          {sheet?.colunas.map((c) => (
+                            <option key={c} value={"coluna:" + c}>
+                              Coluna: {c}
+                            </option>
+                          ))}
+                          <option value="fixo">Valor fixo</option>
+                          {groups.slice(0, index).map((g) => (
+                            <option key={g.nome} value={"grupo:" + g.nome}>
+                              Registro do grupo: {g.nome}
+                            </option>
+                          ))}
+                        </select>
+                        {current?.valor !== undefined &&
+                          (field.resource ? (
+                            <Lookup
+                              field={field}
+                              value={current.valor}
+                              onChange={(v) =>
+                                rule(index, field.key, { valor: String(v) })
+                              }
+                            />
+                          ) : field.options || field.type === "checkbox" ? (
+                            <select
+                              aria-label={"Valor fixo " + field.label}
+                              value={String(current.valor)}
+                              onChange={(e) =>
+                                rule(
+                                  index,
+                                  field.key,
+                                  fixed(field, e.target.value),
+                                )
+                              }
+                            >
+                              <option value="">Selecione…</option>
+                              {(field.options ?? ["true", "false"]).map((v) => (
+                                <option key={v}>{v}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              aria-label={"Valor fixo " + field.label}
+                              type={
+                                field.type === "date"
+                                  ? "date"
+                                  : field.type === "number"
+                                    ? "number"
+                                    : "text"
+                              }
+                              value={String(current.valor ?? "")}
+                              onChange={(e) =>
+                                rule(
+                                  index,
+                                  field.key,
+                                  fixed(field, e.target.value),
+                                )
+                              }
+                            />
+                          ))}
+                      </div>
+                    );
+                  })}
+                <button
+                  className="secondary compact"
+                  disabled={groups.length === 1}
+                  onClick={() =>
+                    setGroups(groups.filter((_, i) => i !== index))
+                  }
+                >
+                  Remover grupo
+                </button>
+              </section>
+            ))}
+            <div className="form-actions">
+              <button
+                className="secondary"
+                onClick={() =>
+                  setGroups([
+                    ...groups,
+                    {
+                      nome: "Grupo " + (groups.length + 1),
+                      dominio: "documentos",
+                      campos: {},
+                    },
+                  ])
+                }
+              >
+                Adicionar grupo
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  setError("");
+                  void api("importacoes/" + batch.id + "/analisar", "POST", {
+                    aba,
+                    grupos: groups,
+                  })
+                    .then(() => load(batch.id, 1))
+                    .catch((e) => setError((e as Error).message))
+                    .finally(() => setBusy(false));
+                }}
+              >
+                Analisar e gerar prévia
+              </button>
+            </div>
+          </section>
+        </RefreshingContent>
+      )}
+      {batch?.status && batch.status !== "UPLOAD" && (
+        <RefreshingContent refreshing={batchLoading}>
+          <>
+            <section className="panel">
+              <h2>
+                {batch.nomeArquivo} · <StatusBadge value={batch.status} />
+              </h2>
+              <p>
+                {batch.totalRegistros ?? batch.total} registros encontrados
+                {batch.totalRegistros !== undefined &&
+                  batch.totalRegistros !== batch.total &&
+                  ` · ${batch.total} exigem revisão`}
+              </p>
+              <div className="metrics import-summary">
+                {batch.summary?.map((s) => (
+                  <MetricCard
+                    key={s.status + s.acao}
+                    label={`${s.status} · ${s.acao}`}
+                    value={s._count}
+                    {...(/PENDENTE|AGUARDANDO/i.test(s.status)
+                      ? { tone: "warning" }
+                      : {})}
                   />
+                ))}
+              </div>
+              <div className="filter-grid">
+                <label>
+                  <span>Situação</span>
+                  <select
+                    value={situation}
+                    onChange={(e) => setSituation(e.target.value)}
+                  >
+                    <option>TODOS</option>
+                    <option value="DUPLICIDADE">Possível duplicidade</option>
+                    <option value="DATA">Data inválida</option>
+                    <option value="REFERENCIA">Referência</option>
+                    <option value="DEPENDENCIA">Dependência</option>
+                    <option value="REJEITADOS">Rejeitados</option>
+                    <option value="PRONTOS">Prontos</option>
+                  </select>
                 </label>
                 <label>
-                  Domínio
+                  <span>Domínio</span>
                   <select
-                    value={group.dominio}
-                    onChange={(e) =>
-                      setGroups(
-                        groups.map((g, i) =>
-                          i === index
-                            ? { ...g, dominio: e.target.value, campos: {} }
-                            : g,
-                        ),
-                      )
-                    }
+                    value={domainFilter}
+                    onChange={(e) => setDomainFilter(e.target.value)}
                   >
-                    {domains.map((s) => (
-                      <option key={s.path} value={s.path}>
-                        {s.title}
+                    <option value="">Todos</option>
+                    {domains.map((d) => (
+                      <option key={d.path} value={d.path}>
+                        {d.title}
                       </option>
                     ))}
                   </select>
                 </label>
               </div>
-              {domains
-                .find((s) => s.path === group.dominio)!
-                .fields.map((field) => {
-                  const current = group.campos[field.key];
-                  return (
-                    <div className="mapping-row" key={field.key}>
-                      <strong>
-                        {field.label}
-                        {field.required ? " *" : ""}
-                      </strong>
-                      <select
-                        aria-label={"Origem " + group.nome + " " + field.label}
-                        value={
-                          current?.coluna
-                            ? "coluna:" + current.coluna
-                            : current?.grupo
-                              ? "grupo:" + current.grupo
-                              : current?.valor !== undefined
-                                ? "fixo"
-                                : ""
-                        }
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          rule(
-                            index,
-                            field.key,
-                            v.startsWith("coluna:")
-                              ? { coluna: v.slice(7) }
-                              : v.startsWith("grupo:")
-                                ? { grupo: v.slice(6) }
-                                : v === "fixo"
-                                  ? { valor: "" }
-                                  : undefined,
-                          );
-                        }}
-                      >
-                        <option value="">Não importar</option>
-                        {sheet?.colunas.map((c) => (
-                          <option key={c} value={"coluna:" + c}>
-                            Coluna: {c}
-                          </option>
-                        ))}
-                        <option value="fixo">Valor fixo</option>
-                        {groups.slice(0, index).map((g) => (
-                          <option key={g.nome} value={"grupo:" + g.nome}>
-                            Registro do grupo: {g.nome}
-                          </option>
-                        ))}
-                      </select>
-                      {current?.valor !== undefined &&
-                        (field.resource ? (
-                          <Lookup
-                            field={field}
-                            value={current.valor}
-                            onChange={(v) =>
-                              rule(index, field.key, { valor: String(v) })
-                            }
-                          />
-                        ) : field.options || field.type === "checkbox" ? (
-                          <select
-                            aria-label={"Valor fixo " + field.label}
-                            value={String(current.valor)}
-                            onChange={(e) =>
-                              rule(
-                                index,
-                                field.key,
-                                fixed(field, e.target.value),
-                              )
-                            }
-                          >
-                            <option value="">Selecione…</option>
-                            {(field.options ?? ["true", "false"]).map((v) => (
-                              <option key={v}>{v}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            aria-label={"Valor fixo " + field.label}
-                            type={
-                              field.type === "date"
-                                ? "date"
-                                : field.type === "number"
-                                  ? "number"
-                                  : "text"
-                            }
-                            value={String(current.valor ?? "")}
-                            onChange={(e) =>
-                              rule(
-                                index,
-                                field.key,
-                                fixed(field, e.target.value),
-                              )
-                            }
-                          />
-                        ))}
-                    </div>
-                  );
-                })}
-              <button
-                className="secondary compact"
-                disabled={groups.length === 1}
-                onClick={() => setGroups(groups.filter((_, i) => i !== index))}
-              >
-                Remover grupo
-              </button>
-            </section>
-          ))}
-          <div className="form-actions">
-            <button
-              className="secondary"
-              onClick={() =>
-                setGroups([
-                  ...groups,
-                  {
-                    nome: "Grupo " + (groups.length + 1),
-                    dominio: "documentos",
-                    campos: {},
-                  },
-                ])
-              }
-            >
-              Adicionar grupo
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => {
-                setBusy(true);
-                setError("");
-                void api("importacoes/" + batch.id + "/analisar", "POST", {
-                  aba,
-                  grupos: groups,
-                })
-                  .then(() => load(batch.id, 1))
-                  .catch((e) => setError((e as Error).message))
-                  .finally(() => setBusy(false));
-              }}
-            >
-              Analisar e gerar prévia
-            </button>
-          </div>
-        </section>
-      )}
-      {batch?.status && batch.status !== "UPLOAD" && (
-        <>
-          <section className="panel">
-            <h2>
-              {batch.nomeArquivo} · <StatusBadge value={batch.status} />
-            </h2>
-            <p>
-              {batch.totalRegistros ?? batch.total} registros encontrados
-              {batch.totalRegistros !== undefined &&
-                batch.totalRegistros !== batch.total &&
-                ` · ${batch.total} exigem revisão`}
-            </p>
-            <div className="metrics import-summary">
-              {batch.summary?.map((s) => (
-                <MetricCard
-                  key={s.status + s.acao}
-                  label={`${s.status} · ${s.acao}`}
-                  value={s._count}
-                  {...(/PENDENTE|AGUARDANDO/i.test(s.status)
-                    ? { tone: "warning" }
-                    : {})}
-                />
-              ))}
-            </div>
-            <div className="filter-grid">
-              <label>
-                <span>Situação</span>
-                <select
-                  value={situation}
-                  onChange={(e) => setSituation(e.target.value)}
-                >
-                  <option>TODOS</option>
-                  <option value="DUPLICIDADE">Possível duplicidade</option>
-                  <option value="DATA">Data inválida</option>
-                  <option value="REFERENCIA">Referência</option>
-                  <option value="DEPENDENCIA">Dependência</option>
-                  <option value="REJEITADOS">Rejeitados</option>
-                  <option value="PRONTOS">Prontos</option>
-                </select>
-              </label>
-              <label>
-                <span>Domínio</span>
-                <select
-                  value={domainFilter}
-                  onChange={(e) => setDomainFilter(e.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {domains.map((d) => (
-                    <option key={d.path} value={d.path}>
-                      {d.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Linha</th>
-                    <th>Grupo</th>
-                    <th>Classificação</th>
-                    <th>Decisão</th>
-                    <th>Mensagens</th>
-                    <th>Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batch.items?.map((item) => (
-                    <tr key={String(item.id)}>
-                      <td>{String(item.numeroLinha)}</td>
-                      <td>{String(item.grupo)}</td>
-                      <td>{String(item.status)}</td>
-                      <td>{String(item.acao)}</td>
-                      <td className="wrap">
-                        {(item.mensagens as string[]).join(" · ")}
-                      </td>
-                      <td>
-                        {canReview(batch.status) && (
-                          <button
-                            className="secondary compact"
-                            onClick={() => setReview(item)}
-                          >
-                            Revisar linha {String(item.numeroLinha)}
-                          </button>
-                        )}
-                      </td>
+              <div className="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Linha</th>
+                      <th>Grupo</th>
+                      <th>Classificação</th>
+                      <th>Decisão</th>
+                      <th>Mensagens</th>
+                      <th>Ação</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="pagination">
-              <button
-                className="secondary"
-                disabled={page === 1}
-                onClick={() => void load(batch.id, page - 1)}
-              >
-                Anterior
-              </button>
-              <span>Página {page}</span>
-              <button
-                className="secondary"
-                disabled={page * 25 >= (batch.total ?? 0)}
-                onClick={() => void load(batch.id, page + 1)}
-              >
-                Próxima
-              </button>
-            </div>
-            {canReview(batch.status) && (
-              <div className="form-actions">
-                <button onClick={() => setConfirming(true)}>
-                  Tentar publicar itens disponíveis…
-                </button>
+                  </thead>
+                  <tbody>
+                    {batch.items?.map((item) => (
+                      <tr key={String(item.id)}>
+                        <td>{String(item.numeroLinha)}</td>
+                        <td>{String(item.grupo)}</td>
+                        <td>{String(item.status)}</td>
+                        <td>{String(item.acao)}</td>
+                        <td className="wrap">
+                          {(item.mensagens as string[]).join(" · ")}
+                        </td>
+                        <td>
+                          {canReview(batch.status) && (
+                            <button
+                              className="secondary compact"
+                              onClick={() => setReview(item)}
+                            >
+                              Revisar linha {String(item.numeroLinha)}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
-          </section>
-          {review && canReview(batch.status) && (
-            <Review
-              key={String(review.id)}
-              item={review}
-              onSaved={() => {
-                setReview(null);
-                void load(batch.id);
-                setNotice("Revisão salva.");
-              }}
-            />
-          )}
-          {confirming && canReview(batch.status) && (
-            <section className="panel">
-              <h2>Publicar itens disponíveis</h2>
-              <p>
-                O sistema publicará somente registros válidos cujas dependências
-                estejam resolvidas. Pendências e valores originais continuarão
-                preservados no staging.
-              </p>
-              <div className="form-actions">
-                <button
-                  disabled={busy}
-                  onClick={() => {
-                    setBusy(true);
-                    setError("");
-                    void api(
-                      "importacoes/" + batch.id + "/publicar-validos",
-                      "POST",
-                      {},
-                    )
-                      .then(() => {
-                        setConfirming(false);
-                        setNotice("Itens disponíveis processados com sucesso.");
-                        return load(batch.id);
-                      })
-                      .catch((e) => setError((e as Error).message))
-                      .finally(() => setBusy(false));
-                  }}
-                >
-                  Publicar agora
-                </button>
+              <div className="pagination">
                 <button
                   className="secondary"
-                  onClick={() => setConfirming(false)}
+                  disabled={page === 1}
+                  onClick={() => void load(batch.id, page - 1)}
                 >
-                  Voltar
+                  Anterior
+                </button>
+                <span>Página {page}</span>
+                <button
+                  className="secondary"
+                  disabled={page * 25 >= (batch.total ?? 0)}
+                  onClick={() => void load(batch.id, page + 1)}
+                >
+                  Próxima
                 </button>
               </div>
+              {canReview(batch.status) && (
+                <div className="form-actions">
+                  <button onClick={() => setConfirming(true)}>
+                    Tentar publicar itens disponíveis…
+                  </button>
+                </div>
+              )}
             </section>
-          )}
-        </>
+            {review && canReview(batch.status) && (
+              <Review
+                key={String(review.id)}
+                item={review}
+                onSaved={() => {
+                  setReview(null);
+                  void load(batch.id);
+                  setNotice("Revisão salva.");
+                }}
+              />
+            )}
+            {confirming && canReview(batch.status) && (
+              <section className="panel">
+                <h2>Publicar itens disponíveis</h2>
+                <p>
+                  O sistema publicará somente registros válidos cujas
+                  dependências estejam resolvidas. Pendências e valores
+                  originais continuarão preservados no staging.
+                </p>
+                <div className="form-actions">
+                  <button
+                    disabled={busy}
+                    onClick={() => {
+                      setBusy(true);
+                      setError("");
+                      void api(
+                        "importacoes/" + batch.id + "/publicar-validos",
+                        "POST",
+                        {},
+                      )
+                        .then(() => {
+                          setConfirming(false);
+                          setNotice(
+                            "Itens disponíveis processados com sucesso.",
+                          );
+                          return load(batch.id);
+                        })
+                        .catch((e) => setError((e as Error).message))
+                        .finally(() => setBusy(false));
+                    }}
+                  >
+                    Publicar agora
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => setConfirming(false)}
+                  >
+                    Voltar
+                  </button>
+                </div>
+              </section>
+            )}
+          </>
+        </RefreshingContent>
       )}
     </>
   );

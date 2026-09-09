@@ -11,6 +11,11 @@ Definir a baseline de segurança do MVP sem criar complexidade desnecessária.
 - `SameSite` apropriado ao fluxo da aplicação.
 - Não armazenar token de autenticação em `localStorage`.
 - Sessões devem poder ser invalidadas no servidor.
+- Um `401` durante o uso autenticado deve remover o estado local de autenticação
+  e solicitar novo login. Falha de rede ou indisponibilidade da API deve ser
+  apresentada separadamente, sem afirmar que a sessão expirou.
+- Se o logout não puder ser confirmado pelo servidor, a interface deve limpar
+  o estado local e informar que a revogação remota não foi confirmada.
 
 ## Senhas
 

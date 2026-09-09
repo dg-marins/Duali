@@ -2,6 +2,7 @@ import { inclusiveDays } from "@duali/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, display, type Row } from "./api";
 import { label, type Screen, type Field } from "./resources";
+import { LoadingSkeleton, RefreshingContent } from "./ui";
 export function Notice({
   text,
   error = false,
@@ -29,10 +30,12 @@ export function Lookup({
 }) {
   const [q, setQ] = useState(""),
     [items, setItems] = useState<Row[]>([]),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(true);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
+      setLoading(true);
       void api<{ items: Row[] }>(
         field.resource + "?pageSize=100&q=" + encodeURIComponent(q),
       )
@@ -48,6 +51,9 @@ export function Lookup({
         })
         .catch(() => {
           if (active) setError("Falha ao carregar opções.");
+        })
+        .finally(() => {
+          if (active) setLoading(false);
         });
     }, 150);
     return () => {
@@ -56,7 +62,7 @@ export function Lookup({
     };
   }, [field.resource, q, value]);
   return (
-    <div className="lookup">
+    <div className="lookup" aria-busy={loading}>
       <input
         aria-label={"Buscar " + field.label}
         placeholder="Buscar opções…"
@@ -69,7 +75,9 @@ export function Lookup({
         value={String(value ?? "")}
         onChange={(e) => onChange(e.target.value)}
       >
-        <option value="">Selecione…</option>
+        <option value="">
+          {loading && !items.length ? "Carregando…" : "Selecione…"}
+        </option>
         {items.map((row) => (
           <option key={String(row.id)} value={String(row.id)}>
             {row.pessoa
@@ -79,6 +87,11 @@ export function Lookup({
         ))}
       </select>
       {error && <small>{error}</small>}
+      {loading && (
+        <span className="sr-only" role="status">
+          Carregando opções…
+        </span>
+      )}
     </div>
   );
 }
@@ -261,6 +274,7 @@ export function Records({
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [loading, setLoading] = useState(true),
+    [hasLoaded, setHasLoaded] = useState(false),
     [version, setVersion] = useState(0);
   useEffect(() => {
     let active = true;
@@ -279,7 +293,10 @@ export function Records({
         if (active) setError((e as Error).message);
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+          setHasLoaded(true);
+        }
       });
     return () => {
       active = false;
@@ -329,52 +346,56 @@ export function Records({
           />
           <span>{total} registros</span>
         </div>
-        {loading ? (
-          <p role="status">Carregando…</p>
+        {loading && !hasLoaded ? (
+          <LoadingSkeleton
+            label={`Carregando ${screen.title.toLowerCase()}…`}
+          />
         ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  {screen.columns.map((k) => (
-                    <th key={k}>{label(k, screen)}</th>
-                  ))}
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={String(row.id)}>
+          <RefreshingContent refreshing={loading}>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
                     {screen.columns.map((k) => (
-                      <td key={k}>{display(row[k])}</td>
+                      <th key={k}>{label(k, screen)}</th>
                     ))}
-                    <td>
-                      {onOpen && (
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={String(row.id)}>
+                      {screen.columns.map((k) => (
+                        <td key={k}>{display(row[k])}</td>
+                      ))}
+                      <td>
+                        {onOpen && (
+                          <button
+                            className="secondary compact"
+                            onClick={() => onOpen(row)}
+                          >
+                            Ver detalhes
+                          </button>
+                        )}{" "}
                         <button
                           className="secondary compact"
-                          onClick={() => onOpen(row)}
+                          onClick={() => setEditing(row)}
                         >
-                          Ver detalhes
+                          Editar
                         </button>
-                      )}{" "}
-                      <button
-                        className="secondary compact"
-                        onClick={() => setEditing(row)}
-                      >
-                        Editar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!rows.length && (
-              <p className="empty">
-                Nenhum registro encontrado. Cadastre o primeiro ou ajuste a
-                busca.
-              </p>
-            )}
-          </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!rows.length && (
+                <p className="empty">
+                  Nenhum registro encontrado. Cadastre o primeiro ou ajuste a
+                  busca.
+                </p>
+              )}
+            </div>
+          </RefreshingContent>
         )}
         <div className="pagination">
           <button

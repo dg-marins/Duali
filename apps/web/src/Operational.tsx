@@ -9,11 +9,13 @@ import { api, display, type Row } from "./api";
 import {
   DataTable,
   EmptyState,
+  LoadingSkeleton,
   MetricCard,
   money,
   maskCpf,
   PageHeader,
   Pagination,
+  RefreshingContent,
   StatusBadge,
   formatDate,
 } from "./ui";
@@ -98,6 +100,7 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
       pageSize: 25,
     }),
     [loading, setLoading] = useState(true),
+    [hasLoaded, setHasLoaded] = useState(false),
     [error, setError] = useState(""),
     [editing, setEditing] = useState(false),
     [version, setVersion] = useState(0);
@@ -119,7 +122,10 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
             if (active) setError((e as Error).message);
           })
           .finally(() => {
-            if (active) setLoading(false);
+            if (active) {
+              setLoading(false);
+              setHasLoaded(true);
+            }
           }),
       180,
     );
@@ -218,55 +224,59 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
         </div>
       </section>
       <section className="panel">
-        <div className="result-count">
-          {loading ? "Carregando…" : `${data.total} pessoas encontradas`}
-        </div>
-        {!loading && (
-          <DataTable
-            rows={data.items}
-            onRow={(row) => navigate(`/app/pessoas/${row.id}`)}
-            empty={
-              <EmptyState
-                title="Nenhuma pessoa encontrada"
-                description="Ajuste os filtros, cadastre uma pessoa ou importe uma planilha."
-                action={
-                  <button onClick={() => setEditing(true)}>Nova pessoa</button>
-                }
-              />
-            }
-            columns={[
-              { key: "nomeCompleto", label: "Nome" },
-              { key: "vinculo", label: "Vínculo" },
-              {
-                key: "unidade",
-                label: "Unidade",
-                render: (row) => display(row.unidade),
-              },
-              {
-                key: "equipe",
-                label: "Equipe",
-                render: (row) => display(row.equipe),
-              },
-              {
-                key: "admissao",
-                label: "Admissão",
-                render: (row) => formatDate(row.admissao),
-              },
-              { key: "cpf", label: "CPF", render: (row) => maskCpf(row.cpf) },
-              {
-                key: "status",
-                label: "Situação",
-                render: (row) => (
-                  <>
-                    <StatusBadge value={row.status} />
-                    {Number(row.vinculosAtivos) > 1 && (
-                      <StatusBadge value="INCONSISTÊNCIA" />
-                    )}
-                  </>
-                ),
-              },
-            ]}
-          />
+        <div className="result-count">{data.total} pessoas encontradas</div>
+        {loading && !hasLoaded ? (
+          <LoadingSkeleton label="Carregando pessoas…" />
+        ) : (
+          <RefreshingContent refreshing={loading}>
+            <DataTable
+              rows={data.items}
+              onRow={(row) => navigate(`/app/pessoas/${row.id}`)}
+              empty={
+                <EmptyState
+                  title="Nenhuma pessoa encontrada"
+                  description="Ajuste os filtros, cadastre uma pessoa ou importe uma planilha."
+                  action={
+                    <button onClick={() => setEditing(true)}>
+                      Nova pessoa
+                    </button>
+                  }
+                />
+              }
+              columns={[
+                { key: "nomeCompleto", label: "Nome" },
+                { key: "vinculo", label: "Vínculo" },
+                {
+                  key: "unidade",
+                  label: "Unidade",
+                  render: (row) => display(row.unidade),
+                },
+                {
+                  key: "equipe",
+                  label: "Equipe",
+                  render: (row) => display(row.equipe),
+                },
+                {
+                  key: "admissao",
+                  label: "Admissão",
+                  render: (row) => formatDate(row.admissao),
+                },
+                { key: "cpf", label: "CPF", render: (row) => maskCpf(row.cpf) },
+                {
+                  key: "status",
+                  label: "Situação",
+                  render: (row) => (
+                    <>
+                      <StatusBadge value={row.status} />
+                      {Number(row.vinculosAtivos) > 1 && (
+                        <StatusBadge value="INCONSISTÊNCIA" />
+                      )}
+                    </>
+                  ),
+                },
+              ]}
+            />
+          </RefreshingContent>
         )}
         <Pagination page={page} total={data.total} onChange={setPage} />
       </section>
@@ -418,16 +428,23 @@ export function PersonProfile({
   const [profile, setProfile] = useState<Row | null>(null),
     [tab, setTab] = useState("visao"),
     [error, setError] = useState(""),
+    [loading, setLoading] = useState(true),
     [editing, setEditing] = useState(false),
     [formScreen, setFormScreen] = useState<string | null>(null),
     [version, setVersion] = useState(0);
   useEffect(() => {
+    setLoading(true);
     void api<Row>(`pessoas/${id}/perfil`)
-      .then(setProfile)
-      .catch((e) => setError((e as Error).message));
+      .then((result) => {
+        setProfile(result);
+        setError("");
+      })
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false));
   }, [id, version]);
-  if (error) return <Notice text={error} error />;
-  if (!profile) return <p role="status">Carregando perfil…</p>;
+  if (error && !profile) return <Notice text={error} error />;
+  if (!profile)
+    return <LoadingSkeleton variant="detail" label="Carregando perfil…" />;
   const person = profile.pessoa as Row,
     current = profile.vinculoAtual as Row | null,
     links = person.vinculos as Row[],
@@ -442,251 +459,258 @@ export function PersonProfile({
     ["historico", "Histórico"],
   ];
   return (
-    <>
-      <PageHeader
-        title={String(person.nomeCompleto)}
-        description={`${current?.tipo === "ESTAGIO" ? "Estagiário(a)" : current?.tipo === "APRENDIZ" ? "Aprendiz" : (current?.tipo ?? "Sem vínculo")} · ${display(current?.unidade)}`}
-        breadcrumb={
-          <button
-            className="link-button"
-            onClick={() => {
-              if (history.length > 1) history.back();
-              else navigate("/app/pessoas");
-            }}
-          >
-            ← Pessoas
-          </button>
-        }
-        action={
-          <div className="form-actions">
+    <RefreshingContent refreshing={loading}>
+      <>
+        <Notice text={error} error />
+        <PageHeader
+          title={String(person.nomeCompleto)}
+          description={`${current?.tipo === "ESTAGIO" ? "Estagiário(a)" : current?.tipo === "APRENDIZ" ? "Aprendiz" : (current?.tipo ?? "Sem vínculo")} · ${display(current?.unidade)}`}
+          breadcrumb={
             <button
-              className="secondary"
-              onClick={() => setFormScreen("vinculos")}
+              className="link-button"
+              onClick={() => {
+                if (history.length > 1) history.back();
+                else navigate("/app/pessoas");
+              }}
             >
-              Novo vínculo
+              ← Pessoas
             </button>
-            <button onClick={() => setEditing(true)}>Editar pessoa</button>
-          </div>
-        }
-      />
-      {profile.multiplosVinculosAtivos && (
-        <Notice
-          text="Mais de um vínculo ativo encontrado. Revise esta situação."
-          error
+          }
+          action={
+            <div className="form-actions">
+              <button
+                className="secondary"
+                onClick={() => setFormScreen("vinculos")}
+              >
+                Novo vínculo
+              </button>
+              <button onClick={() => setEditing(true)}>Editar pessoa</button>
+            </div>
+          }
         />
-      )}
-      {editing && (
-        <PersonForm
-          person={person}
-          onClose={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false);
-            setVersion(version + 1);
-          }}
-        />
-      )}
-      {formScreen && (
-        <RecordForm
-          screen={screens.find((screen) => screen.path === formScreen)!}
-          record={null}
-          {...(formScreen === "vinculos" ? { defaults: { pessoaId: id } } : {})}
-          onClose={() => setFormScreen(null)}
-          onSaved={() => {
-            setFormScreen(null);
-            setVersion(version + 1);
-          }}
-        />
-      )}
-      <div className="tabs" role="tablist">
-        {tabs.map(([key, label]) => (
-          <button
-            role="tab"
-            aria-selected={tab === key}
-            className={tab === key ? "active" : "secondary"}
-            key={key}
-            onClick={() => setTab(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === "visao" && (
-        <div className="profile-grid">
-          <InfoCard
-            title="Dados pessoais"
-            rows={[
-              ["CPF", maskCpf(person.cpf)],
-              ["Nascimento", formatDate(person.dataNascimento)],
-              ["Telefone", display(person.telefone)],
-              ["E-mail", display(person.email)],
-            ]}
+        {profile.multiplosVinculosAtivos && (
+          <Notice
+            text="Mais de um vínculo ativo encontrado. Revise esta situação."
+            error
           />
-          <InfoCard
-            title="Vínculo atual"
-            rows={[
-              ["Tipo", display(current?.tipo)],
-              ["Unidade", display(current?.unidade)],
-              ["Equipe", display(current?.equipe)],
-              ["Admissão", formatDate(current?.dataAdmissao)],
-              ["Status", <StatusBadge value={current?.status} />],
-            ]}
+        )}
+        {editing && (
+          <PersonForm
+            person={person}
+            onClose={() => setEditing(false)}
+            onSaved={() => {
+              setEditing(false);
+              setVersion(version + 1);
+            }}
           />
-          <InfoCard
-            title="Situação"
-            rows={[
-              [
-                "Saldo disponível",
-                current
-                  ? `${balances[String(current.id)]?.saldo ?? 0} dias`
-                  : "—",
-              ],
-              [
-                "Benefícios ativos",
-                String(
-                  (current?.beneficios as Row[] | undefined)?.filter(
-                    (b) => b.status === "ATIVO",
-                  ).length ?? 0,
-                ),
-              ],
-              [
-                "Término previsto",
-                formatDate(
-                  (current?.estagio as Row | undefined)?.dataTerminoPrevista,
-                ),
-              ],
-            ]}
+        )}
+        {formScreen && (
+          <RecordForm
+            screen={screens.find((screen) => screen.path === formScreen)!}
+            record={null}
+            {...(formScreen === "vinculos"
+              ? { defaults: { pessoaId: id } }
+              : {})}
+            onClose={() => setFormScreen(null)}
+            onSaved={() => {
+              setFormScreen(null);
+              setVersion(version + 1);
+            }}
           />
-          <section className="panel">
-            <h2>Alertas</h2>
-            {alerts.length ? (
-              alerts.map((alert, index) => (
-                <div className="alert-row" key={index}>
-                  <StatusBadge value={alert.tipo} />
-                  <span>{String(alert.mensagem)}</span>
-                </div>
-              ))
-            ) : (
-              <EmptyState
-                title="Nenhuma pendência"
-                description="Tudo certo por aqui."
-              />
-            )}
-          </section>
-        </div>
-      )}
-      {tab === "vinculo" && (
-        <Timeline
-          items={links.map((link) => ({
-            date: link.dataAdmissao,
-            title: `${link.tipo} · ${display(link.unidade)}`,
-            detail: `${link.status} · ${display(link.equipe)}`,
-          }))}
-        />
-      )}
-      {tab === "descanso" && (
-        <div className="stack">
-          {links.map((link) => (
-            <section className="panel" key={String(link.id)}>
-              <h2>
-                {String(link.tipo)} · {formatDate(link.dataAdmissao)}
-              </h2>
-              <div className="metrics">
-                <MetricCard
-                  label="Adquiridos"
-                  value={String(balances[String(link.id)]?.adquiridos ?? 0)}
-                />
-                <MetricCard
-                  label="Utilizados"
-                  value={String(balances[String(link.id)]?.consumidos ?? 0)}
-                />
-                <MetricCard
-                  label="Programados"
-                  value={String(balances[String(link.id)]?.programados ?? 0)}
-                />
-                <MetricCard
-                  label="Saldo"
-                  value={String(balances[String(link.id)]?.saldo ?? 0)}
-                />
-              </div>
-              <Timeline
-                items={[
-                  ...(link.direitos as Row[]),
-                  ...(link.periodos as Row[]),
-                  ...(link.ajustes as Row[]),
-                ].map((item) => ({
-                  date: item.dataAquisicao ?? item.dataInicio ?? item.criadoEm,
-                  title: item.quantidadeDias
-                    ? `${item.quantidadeDias} dias`
-                    : String(item.tipo),
-                  detail: String(
-                    item.origem ?? item.status ?? item.motivo ?? "",
-                  ),
-                }))}
-              />
-            </section>
+        )}
+        <div className="tabs" role="tablist">
+          {tabs.map(([key, label]) => (
+            <button
+              role="tab"
+              aria-selected={tab === key}
+              className={tab === key ? "active" : "secondary"}
+              key={key}
+              onClick={() => setTab(key)}
+            >
+              {label}
+            </button>
           ))}
         </div>
-      )}
-      {tab === "beneficios" && (
-        <div className="stack">
-          {links
-            .flatMap((link) => link.beneficios as Row[])
-            .map((benefit) => (
-              <section className="panel" key={String(benefit.id)}>
+        {tab === "visao" && (
+          <div className="profile-grid">
+            <InfoCard
+              title="Dados pessoais"
+              rows={[
+                ["CPF", maskCpf(person.cpf)],
+                ["Nascimento", formatDate(person.dataNascimento)],
+                ["Telefone", display(person.telefone)],
+                ["E-mail", display(person.email)],
+              ]}
+            />
+            <InfoCard
+              title="Vínculo atual"
+              rows={[
+                ["Tipo", display(current?.tipo)],
+                ["Unidade", display(current?.unidade)],
+                ["Equipe", display(current?.equipe)],
+                ["Admissão", formatDate(current?.dataAdmissao)],
+                ["Status", <StatusBadge value={current?.status} />],
+              ]}
+            />
+            <InfoCard
+              title="Situação"
+              rows={[
+                [
+                  "Saldo disponível",
+                  current
+                    ? `${balances[String(current.id)]?.saldo ?? 0} dias`
+                    : "—",
+                ],
+                [
+                  "Benefícios ativos",
+                  String(
+                    (current?.beneficios as Row[] | undefined)?.filter(
+                      (b) => b.status === "ATIVO",
+                    ).length ?? 0,
+                  ),
+                ],
+                [
+                  "Término previsto",
+                  formatDate(
+                    (current?.estagio as Row | undefined)?.dataTerminoPrevista,
+                  ),
+                ],
+              ]}
+            />
+            <section className="panel">
+              <h2>Alertas</h2>
+              {alerts.length ? (
+                alerts.map((alert, index) => (
+                  <div className="alert-row" key={index}>
+                    <StatusBadge value={alert.tipo} />
+                    <span>{String(alert.mensagem)}</span>
+                  </div>
+                ))
+              ) : (
+                <EmptyState
+                  title="Nenhuma pendência"
+                  description="Tudo certo por aqui."
+                />
+              )}
+            </section>
+          </div>
+        )}
+        {tab === "vinculo" && (
+          <Timeline
+            items={links.map((link) => ({
+              date: link.dataAdmissao,
+              title: `${link.tipo} · ${display(link.unidade)}`,
+              detail: `${link.status} · ${display(link.equipe)}`,
+            }))}
+          />
+        )}
+        {tab === "descanso" && (
+          <div className="stack">
+            {links.map((link) => (
+              <section className="panel" key={String(link.id)}>
                 <h2>
-                  {String(benefit.tipo)} <StatusBadge value={benefit.status} />
+                  {String(link.tipo)} · {formatDate(link.dataAdmissao)}
                 </h2>
+                <div className="metrics">
+                  <MetricCard
+                    label="Adquiridos"
+                    value={String(balances[String(link.id)]?.adquiridos ?? 0)}
+                  />
+                  <MetricCard
+                    label="Utilizados"
+                    value={String(balances[String(link.id)]?.consumidos ?? 0)}
+                  />
+                  <MetricCard
+                    label="Programados"
+                    value={String(balances[String(link.id)]?.programados ?? 0)}
+                  />
+                  <MetricCard
+                    label="Saldo"
+                    value={String(balances[String(link.id)]?.saldo ?? 0)}
+                  />
+                </div>
                 <Timeline
-                  items={(benefit.competencias as Row[]).map((item) => ({
-                    date: item.competencia,
-                    title: `${String(item.componente)} · ${money(item.valorInformado)}`,
-                    detail: display((item.configuracao as Row)?.fornecedor),
+                  items={[
+                    ...(link.direitos as Row[]),
+                    ...(link.periodos as Row[]),
+                    ...(link.ajustes as Row[]),
+                  ].map((item) => ({
+                    date:
+                      item.dataAquisicao ?? item.dataInicio ?? item.criadoEm,
+                    title: item.quantidadeDias
+                      ? `${item.quantidadeDias} dias`
+                      : String(item.tipo),
+                    detail: String(
+                      item.origem ?? item.status ?? item.motivo ?? "",
+                    ),
                   }))}
                 />
               </section>
             ))}
-        </div>
-      )}
-      {tab === "documentos" && (
-        <div className="profile-grid">
-          {links.map((link) => (
-            <section className="panel" key={String(link.id)}>
-              <h2>Documentos e seguro · {String(link.tipo)}</h2>
-              <Timeline
-                items={[
-                  ...(link.documentos as Row[]).map((item) => ({
-                    date: item.dataReferencia ?? item.fimVigencia,
-                    title: String(item.tipo),
-                    detail: `${item.status} · ${display(item.observacoes)}`,
-                  })),
-                  ...(link.seguros as Row[]).flatMap((insurance) => [
-                    {
-                      date: insurance.inicioVigencia,
-                      title: `Seguro · ${insurance.seguradora}`,
-                      detail: String(insurance.status),
-                    },
-                    ...(insurance.movimentacoes as Row[]).map((movement) => ({
-                      date: movement.dataMovimentacao,
-                      title: String(movement.tipo),
-                      detail: display(movement.observacoes),
+          </div>
+        )}
+        {tab === "beneficios" && (
+          <div className="stack">
+            {links
+              .flatMap((link) => link.beneficios as Row[])
+              .map((benefit) => (
+                <section className="panel" key={String(benefit.id)}>
+                  <h2>
+                    {String(benefit.tipo)}{" "}
+                    <StatusBadge value={benefit.status} />
+                  </h2>
+                  <Timeline
+                    items={(benefit.competencias as Row[]).map((item) => ({
+                      date: item.competencia,
+                      title: `${String(item.componente)} · ${money(item.valorInformado)}`,
+                      detail: display((item.configuracao as Row)?.fornecedor),
+                    }))}
+                  />
+                </section>
+              ))}
+          </div>
+        )}
+        {tab === "documentos" && (
+          <div className="profile-grid">
+            {links.map((link) => (
+              <section className="panel" key={String(link.id)}>
+                <h2>Documentos e seguro · {String(link.tipo)}</h2>
+                <Timeline
+                  items={[
+                    ...(link.documentos as Row[]).map((item) => ({
+                      date: item.dataReferencia ?? item.fimVigencia,
+                      title: String(item.tipo),
+                      detail: `${item.status} · ${display(item.observacoes)}`,
                     })),
-                  ]),
-                ]}
-              />
-            </section>
-          ))}
-        </div>
-      )}
-      {tab === "historico" && (
-        <Timeline
-          items={(profile.historico as Row[]).map((item) => ({
-            date: item.criadoEm,
-            title: `${String(item.acao)} · ${String(item.entidade)}`,
-            detail: `Por ${display(item.usuario)}`,
-          }))}
-        />
-      )}
-    </>
+                    ...(link.seguros as Row[]).flatMap((insurance) => [
+                      {
+                        date: insurance.inicioVigencia,
+                        title: `Seguro · ${insurance.seguradora}`,
+                        detail: String(insurance.status),
+                      },
+                      ...(insurance.movimentacoes as Row[]).map((movement) => ({
+                        date: movement.dataMovimentacao,
+                        title: String(movement.tipo),
+                        detail: display(movement.observacoes),
+                      })),
+                    ]),
+                  ]}
+                />
+              </section>
+            ))}
+          </div>
+        )}
+        {tab === "historico" && (
+          <Timeline
+            items={(profile.historico as Row[]).map((item) => ({
+              date: item.criadoEm,
+              title: `${String(item.acao)} · ${String(item.entidade)}`,
+              detail: `Por ${display(item.usuario)}`,
+            }))}
+          />
+        )}
+      </>
+    </RefreshingContent>
   );
 }
 function InfoCard({
@@ -770,6 +794,7 @@ function OperationalList({
       pageSize: 25,
     }),
     [loading, setLoading] = useState(true),
+    [hasLoaded, setHasLoaded] = useState(false),
     [error, setError] = useState(""),
     [formScreen, setFormScreen] = useState<string | null>(null),
     [version, setVersion] = useState(0);
@@ -794,7 +819,10 @@ function OperationalList({
           if (active) setError((e as Error).message);
         })
         .finally(() => {
-          if (active) setLoading(false);
+          if (active) {
+            setLoading(false);
+            setHasLoaded(true);
+          }
         });
     }, 180);
     return () => {
@@ -1040,39 +1068,54 @@ function OperationalList({
           }}
         />
       )}
-      <div className="metrics">
-        {kind === "descansos" ? (
-          <>
-            <MetricCard
-              label="Regulares nesta página"
-              value={summary.regular}
-            />
-            <MetricCard
-              label="Com atenção"
-              value={summary.warning}
-              tone="warning"
-            />
-          </>
-        ) : kind === "beneficios" ? (
-          <>
-            <MetricCard label="Valor informado" value={money(summary.total)} />
-            <MetricCard
-              label="Pendências"
-              value={summary.pending}
-              tone="warning"
-            />
-          </>
-        ) : (
-          <>
-            <MetricCard label="Estagiários encontrados" value={data.total} />
-            <MetricCard
-              label="Alertas nesta página"
-              value={summary.alerts}
-              tone="warning"
-            />
-          </>
-        )}
-      </div>
+      {loading && !hasLoaded ? (
+        <LoadingSkeleton
+          variant="metrics"
+          label={`Carregando resumo de ${title.toLowerCase()}…`}
+        />
+      ) : (
+        <RefreshingContent refreshing={loading}>
+          <div className="metrics">
+            {kind === "descansos" ? (
+              <>
+                <MetricCard
+                  label="Regulares nesta página"
+                  value={summary.regular}
+                />
+                <MetricCard
+                  label="Com atenção"
+                  value={summary.warning}
+                  tone="warning"
+                />
+              </>
+            ) : kind === "beneficios" ? (
+              <>
+                <MetricCard
+                  label="Valor informado"
+                  value={money(summary.total)}
+                />
+                <MetricCard
+                  label="Pendências"
+                  value={summary.pending}
+                  tone="warning"
+                />
+              </>
+            ) : (
+              <>
+                <MetricCard
+                  label="Estagiários encontrados"
+                  value={data.total}
+                />
+                <MetricCard
+                  label="Alertas nesta página"
+                  value={summary.alerts}
+                  tone="warning"
+                />
+              </>
+            )}
+          </div>
+        </RefreshingContent>
+      )}
       <section className="panel filter-panel">
         <div className="filter-grid">
           <label>
@@ -1166,25 +1209,27 @@ function OperationalList({
         </div>
       </section>
       <section className="panel">
-        {loading ? (
-          <p role="status">Carregando…</p>
+        {loading && !hasLoaded ? (
+          <LoadingSkeleton label={`Carregando ${title.toLowerCase()}…`} />
         ) : (
-          <DataTable
-            rows={rows}
-            columns={columns}
-            onRow={(row) => {
-              const personId =
-                row.pessoaId ??
-                ((row.beneficioVinculo as Row)?.vinculo as Row)?.pessoaId;
-              if (personId) navigate(`/app/pessoas/${personId}`);
-            }}
-            empty={
-              <EmptyState
-                title="Nenhum resultado"
-                description="Não há registros para os filtros selecionados."
-              />
-            }
-          />
+          <RefreshingContent refreshing={loading}>
+            <DataTable
+              rows={rows}
+              columns={columns}
+              onRow={(row) => {
+                const personId =
+                  row.pessoaId ??
+                  ((row.beneficioVinculo as Row)?.vinculo as Row)?.pessoaId;
+                if (personId) navigate(`/app/pessoas/${personId}`);
+              }}
+              empty={
+                <EmptyState
+                  title="Nenhum resultado"
+                  description="Não há registros para os filtros selecionados."
+                />
+              }
+            />
+          </RefreshingContent>
         )}
         <Pagination page={page} total={data.total} onChange={setPage} />
       </section>
@@ -1273,9 +1318,11 @@ export function RegistryDetail({
     >([]),
     [editing, setEditing] = useState(false),
     [error, setError] = useState(""),
+    [loading, setLoading] = useState(true),
     [version, setVersion] = useState(0);
   useEffect(() => {
     let active = true;
+    setLoading(true);
     const definitions = registryRelations[resource] ?? [];
     void Promise.all([
       api<Row>(`${resource}/${id}`),
@@ -1290,76 +1337,84 @@ export function RegistryDetail({
         if (active) {
           setRecord(current as Row);
           setRelations(related as Array<{ title: string; items: Row[] }>);
+          setError("");
         }
       })
       .catch((reason) => {
         if (active) setError((reason as Error).message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
     return () => {
       active = false;
     };
   }, [id, resource, version]);
-  if (error) return <Notice text={error} error />;
-  if (!record) return <p role="status">Carregando detalhes…</p>;
+  if (error && !record) return <Notice text={error} error />;
+  if (!record)
+    return <LoadingSkeleton variant="detail" label="Carregando detalhes…" />;
   return (
-    <>
-      <PageHeader
-        title={display(record)}
-        description={`Detalhes e relacionamentos de ${screen.title.toLowerCase()}.`}
-        breadcrumb={
-          <button
-            className="link-button"
-            onClick={() => navigate(`/app/cadastros/${resource}`)}
-          >
-            ← {screen.title}
-          </button>
-        }
-        action={
-          <button onClick={() => setEditing(true)}>Editar cadastro</button>
-        }
-      />
-      {editing && (
-        <RecordForm
-          screen={screen}
-          record={record}
-          onClose={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false);
-            setVersion(version + 1);
-          }}
+    <RefreshingContent refreshing={loading}>
+      <>
+        <Notice text={error} error />
+        <PageHeader
+          title={display(record)}
+          description={`Detalhes e relacionamentos de ${screen.title.toLowerCase()}.`}
+          breadcrumb={
+            <button
+              className="link-button"
+              onClick={() => navigate(`/app/cadastros/${resource}`)}
+            >
+              ← {screen.title}
+            </button>
+          }
+          action={
+            <button onClick={() => setEditing(true)}>Editar cadastro</button>
+          }
         />
-      )}
-      <InfoCard
-        title="Cadastro"
-        rows={screen.columns.map((key) => [
-          screen.fields.find((field) => field.key === key)?.label ?? key,
-          display(record[key]),
-        ])}
-      />
-      {relations.map((relation) => (
-        <section className="panel" key={relation.title}>
-          <h2>{relation.title}</h2>
-          <DataTable
-            rows={relation.items}
-            columns={[
-              {
-                key: "registro",
-                label: "Registro",
-                render: (row) => display(row),
-              },
-              { key: "tipo", label: "Tipo" },
-              { key: "status", label: "Situação" },
-            ]}
-            empty={
-              <EmptyState
-                title="Nenhum relacionamento"
-                description="Ainda não há registros relacionados."
-              />
-            }
+        {editing && (
+          <RecordForm
+            screen={screen}
+            record={record}
+            onClose={() => setEditing(false)}
+            onSaved={() => {
+              setEditing(false);
+              setVersion(version + 1);
+            }}
           />
-        </section>
-      ))}
-    </>
+        )}
+        <InfoCard
+          title="Cadastro"
+          rows={screen.columns.map((key) => [
+            screen.fields.find((field) => field.key === key)?.label ?? key,
+            display(record[key]),
+          ])}
+        />
+        {relations.map((relation) => (
+          <section className="panel" key={relation.title}>
+            <h2>{relation.title}</h2>
+            <DataTable
+              rows={relation.items}
+              columns={[
+                {
+                  key: "registro",
+                  label: "Registro",
+                  render: (row) => display(row),
+                },
+                { key: "tipo", label: "Tipo" },
+                { key: "status", label: "Situação" },
+              ]}
+              empty={
+                <EmptyState
+                  title="Nenhum relacionamento"
+                  description="Ainda não há registros relacionados."
+                />
+              }
+            />
+          </section>
+        ))}
+      </>
+    </RefreshingContent>
   );
 }
 

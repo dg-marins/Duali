@@ -1,5 +1,6 @@
 ﻿import * as XLSX from "@e965/xlsx";
 import { randomUUID } from "node:crypto";
+import { competenciaSchema } from "@duali/shared";
 import { audit, DomainError, json, type Row, type Tx } from "../core.js";
 import { classifyNotes, type ImportIssue } from "./import-issues.js";
 import type { Sheet } from "./import-files.js";
@@ -21,13 +22,14 @@ const norm = (v: unknown) =>
     .trim()
     .toLowerCase();
 const text = (v: unknown) => String(v ?? "").trim();
-const money = (v: unknown) => {
-  const n = Number(
-    text(v)
-      .replace(/R\$\s*/i, "")
-      .replace(/\./g, "")
-      .replace(",", "."),
-  );
+export const money = (v: unknown) => {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v !== "string") return null;
+  const value = v.trim().replace(/^R\$\s*/i, "");
+  // Ponto sem vírgula é ambíguo: pode indicar decimal ou milhar.
+  if (!/^[+-]?(?:\d+(?:,\d+)?|\d{1,3}(?:\.\d{3})+,\d+)$/.test(value))
+    return null;
+  const n = Number(value.replace(/\./g, "").replace(",", "."));
   return Number.isFinite(n) ? n : null;
 };
 const iso = (v: unknown): string | null => {
@@ -469,6 +471,13 @@ async function stageLeave(tx: Tx, importId: string, workbook: AuditedWorkbook) {
           dateMatch = original.match(/\d{1,2}\/\d{1,2}\/\/?\d{2,4}/),
           eventDate = dateMatch ? iso(dateMatch[0]) : null,
           issues: ImportIssue[] = [];
+        if (valueMatch && money(valueMatch[1]) === null)
+          issues.push({
+            codigo: "AJUSTE_BENEFICIO_PENDENTE",
+            severidade: "REVISAO",
+            mensagem:
+              "Valor monetário inválido ou ambíguo; confira o original.",
+          });
         if (dateMatch && !eventDate)
           issues.push({
             codigo: "DATA_AMBIGUA",
@@ -557,13 +566,28 @@ async function stageBenefits(
         people.set(personKey, base);
       }
       if (!base.existingLink) continue;
-      for (let j = 1; j < row.length - 1; j++) {
+      for (let j = 1; j < row.length; j++) {
         if (!/\/dia/i.test(text(row[j]))) continue;
         const provider = text(row[j]).split("/")[0]!.trim().toUpperCase(),
           tipo = j < 12 ? "TRANSPORTE" : "ALIMENTACAO",
           days = money(row[j - 1]),
           unitValue = money(row[j + 1]);
-        if (!provider || days === null || unitValue === null) continue;
+        if (!provider) continue;
+        const issues: ImportIssue[] = [];
+        for (const [field, label, value] of [
+          ["quantidadeDias", "Quantidade de dias", days],
+          ["valorUnitario", "Valor unitário", unitValue],
+        ] as const) {
+          const validation = competenciaSchema
+            .innerType()
+            .shape[field].safeParse(value);
+          if (value === null || !validation.success)
+            issues.push({
+              codigo: "AJUSTE_BENEFICIO_PENDENTE",
+              severidade: "REVISAO",
+              mensagem: `${label} ausente, inválido ou ambíguo; confira o original.`,
+            });
+        }
         let supplierEntry = suppliers.get(provider);
         if (!supplierEntry) {
           const existing = await tx.fornecedor.findFirst({
@@ -665,6 +689,8 @@ async function stageBenefits(
             beneficioVinculoId: benefitTarget,
             configuracaoId: configTarget,
           },
+          action: issues.length ? "PENDENTE" : "CRIAR",
+          issues,
         });
       }
     }

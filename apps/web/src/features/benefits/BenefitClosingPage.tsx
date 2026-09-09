@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, display, type Row } from "../../api";
+import { Notice } from "../../components";
 import { Button } from "../../components/ui/button";
+import { LoadingSkeleton, RefreshingContent } from "../../ui";
 export function BenefitClosingPage({
   navigate,
 }: {
@@ -11,27 +13,46 @@ export function BenefitClosingPage({
     [unitSearch, setUnitSearch] = useState(""),
     [unit, setUnit] = useState(""),
     [month, setMonth] = useState(new Date().toISOString().slice(0, 7)),
-    [closing, setClosing] = useState<Row | null>(null);
+    [closing, setClosing] = useState<Row | null>(null),
+    [unitsLoading, setUnitsLoading] = useState(true),
+    [loading, setLoading] = useState(false),
+    [hasLoaded, setHasLoaded] = useState(false),
+    [error, setError] = useState("");
   useEffect(() => {
     const timer = setTimeout(() => {
+      setUnitsLoading(true);
       void api<{ items: Row[] }>(
         `unidades?pageSize=100&q=${encodeURIComponent(unitSearch)}`,
-      ).then((r) => {
-        setUnits(r.items);
-        if (r.items[0] && !r.items.some((item) => item.id === unit))
-          setUnit(String(r.items[0].id));
-      });
+      )
+        .then((r) => {
+          setUnits(r.items);
+          if (r.items[0] && !r.items.some((item) => item.id === unit))
+            setUnit(String(r.items[0].id));
+          if (!r.items.length) setHasLoaded(true);
+          setError("");
+        })
+        .catch((reason) => setError((reason as Error).message))
+        .finally(() => setUnitsLoading(false));
     }, 150);
     return () => clearTimeout(timer);
   }, [unitSearch]);
   async function load() {
     if (!unit) return;
-    const rows = await api<Row[]>(
-      `beneficios/fechamentos?unidadeId=${unit}&competencia=${month}-01`,
-    );
-    if (rows[0])
-      setClosing(await api<Row>(`beneficios/fechamentos/${rows[0].id}`));
-    else setClosing(null);
+    setLoading(true);
+    try {
+      const rows = await api<Row[]>(
+        `beneficios/fechamentos?unidadeId=${unit}&competencia=${month}-01`,
+      );
+      if (rows[0])
+        setClosing(await api<Row>(`beneficios/fechamentos/${rows[0].id}`));
+      else setClosing(null);
+      setError("");
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setLoading(false);
+      setHasLoaded(true);
+    }
   }
   useEffect(() => {
     void load();
@@ -91,77 +112,86 @@ export function BenefitClosingPage({
           </label>
         </div>
       </section>
-      {!closing ? (
+      <Notice text={error} error />
+      {!hasLoaded ? (
         <section className="panel">
-          <p>A competência ainda não foi preparada.</p>
-          <Button disabled={!unit} onClick={() => void create()}>
-            Preparar competência
-          </Button>
+          <LoadingSkeleton variant="detail" label="Carregando competência…" />
         </section>
       ) : (
-        <>
-          <section className="stats-grid">
-            <article className="stat-card">
-              <span>Situação</span>
-              <strong>{display(closing.status)}</strong>
-            </article>
-            <article className="stat-card">
-              <span>Pessoas cobertas</span>
-              <strong>{display(closing.pessoasCobertas)}</strong>
-            </article>
-            <article className="stat-card">
-              <span>Pendências</span>
-              <strong>{display(closing.pendencias)}</strong>
-            </article>
-            <article className="stat-card">
-              <span>Total</span>
-              <strong>R$ {display((closing.totais as Row)?.total)}</strong>
-            </article>
-          </section>
-          <section className="panel">
-            <h2>Totais</h2>
-            <div className="stats-grid">
-              {Object.entries((closing.totais as Row) ?? {})
-                .filter(([k]) => k !== "total")
-                .map(([k, v]) => (
-                  <article className="stat-card" key={k}>
-                    <span>{k.replaceAll("_", " ")}</span>
-                    <strong>R$ {display(v)}</strong>
-                  </article>
-                ))}
-            </div>
-            <div className="form-actions">
-              {closing.status === "ABERTA" && (
-                <Button onClick={() => void action("revisar")}>
-                  Iniciar revisão
-                </Button>
-              )}
-              {closing.status === "EM_REVISAO" && (
-                <Button onClick={() => void action("fechar")}>
-                  Fechar competência
-                </Button>
-              )}
-              {closing.status === "FECHADA" && (
-                <Button
-                  onClick={() => {
-                    const motivo = prompt(
-                      "Motivo obrigatório para reabrir:",
-                    )?.trim();
-                    if (motivo) void action("reabrir", { motivo });
-                  }}
-                >
-                  Reabrir competência
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                onClick={() => navigate("/app/pendencias")}
-              >
-                Revisar pendências
+        <RefreshingContent refreshing={unitsLoading || loading}>
+          {!closing ? (
+            <section className="panel">
+              <p>A competência ainda não foi preparada.</p>
+              <Button disabled={!unit} onClick={() => void create()}>
+                Preparar competência
               </Button>
-            </div>
-          </section>
-        </>
+            </section>
+          ) : (
+            <>
+              <section className="stats-grid">
+                <article className="stat-card">
+                  <span>Situação</span>
+                  <strong>{display(closing.status)}</strong>
+                </article>
+                <article className="stat-card">
+                  <span>Pessoas cobertas</span>
+                  <strong>{display(closing.pessoasCobertas)}</strong>
+                </article>
+                <article className="stat-card">
+                  <span>Pendências</span>
+                  <strong>{display(closing.pendencias)}</strong>
+                </article>
+                <article className="stat-card">
+                  <span>Total</span>
+                  <strong>R$ {display((closing.totais as Row)?.total)}</strong>
+                </article>
+              </section>
+              <section className="panel">
+                <h2>Totais</h2>
+                <div className="stats-grid">
+                  {Object.entries((closing.totais as Row) ?? {})
+                    .filter(([k]) => k !== "total")
+                    .map(([k, v]) => (
+                      <article className="stat-card" key={k}>
+                        <span>{k.replaceAll("_", " ")}</span>
+                        <strong>R$ {display(v)}</strong>
+                      </article>
+                    ))}
+                </div>
+                <div className="form-actions">
+                  {closing.status === "ABERTA" && (
+                    <Button onClick={() => void action("revisar")}>
+                      Iniciar revisão
+                    </Button>
+                  )}
+                  {closing.status === "EM_REVISAO" && (
+                    <Button onClick={() => void action("fechar")}>
+                      Fechar competência
+                    </Button>
+                  )}
+                  {closing.status === "FECHADA" && (
+                    <Button
+                      onClick={() => {
+                        const motivo = prompt(
+                          "Motivo obrigatório para reabrir:",
+                        )?.trim();
+                        if (motivo) void action("reabrir", { motivo });
+                      }}
+                    >
+                      Reabrir competência
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate("/app/pendencias")}
+                  >
+                    Revisar pendências
+                  </Button>
+                </div>
+              </section>
+            </>
+          )}
+        </RefreshingContent>
       )}
     </div>
   );

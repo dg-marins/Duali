@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { api, display, type Row } from "./api";
+import { api, apiBlob, display, type Row } from "./api";
 import { Lookup, Notice } from "./components";
 import {
   EmptyState,
+  LoadingSkeleton,
   MetricCard,
   PageHeader,
   Pagination,
+  RefreshingContent,
   StatusBadge,
   formatDate,
 } from "./ui";
@@ -38,7 +40,19 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
       />
       <Notice text={error} error />
       {!data && !error ? (
-        <p role="status">Carregando indicadores…</p>
+        <>
+          <LoadingSkeleton variant="metrics" label="Carregando indicadores…" />
+          <section className="panel">
+            <LoadingSkeleton rows={4} label="Carregando pendências…" />
+          </section>
+          <section className="panel">
+            <LoadingSkeleton
+              variant="detail"
+              rows={3}
+              label="Carregando atividades…"
+            />
+          </section>
+        </>
       ) : (
         data && (
           <>
@@ -140,7 +154,8 @@ export function Reporting() {
     [rows, setRows] = useState<Row[]>([]),
     [total, setTotal] = useState(0),
     [error, setError] = useState(""),
-    [loading, setLoading] = useState(false);
+    [loading, setLoading] = useState(true),
+    [hasLoaded, setHasLoaded] = useState(false);
   const query = new URLSearchParams({
     page: String(page),
     ...(unit ? { unidadeId: unit } : {}),
@@ -168,7 +183,10 @@ export function Reporting() {
         if (active) setError((e as Error).message);
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+          setHasLoaded(true);
+        }
       });
     return () => {
       active = false;
@@ -176,15 +194,10 @@ export function Reporting() {
   }, [kind, query]);
   async function download(format: string) {
     try {
-      const response = await fetch(
-        "/api/exportacoes/" + kind + "/" + format + "?" + query,
-        { credentials: "same-origin" },
+      const blob = await apiBlob(
+        "exportacoes/" + kind + "/" + format + "?" + query,
       );
-      if (!response.ok) {
-        const data = (await response.json()) as { error: { message: string } };
-        throw new Error(data.error.message);
-      }
-      const url = URL.createObjectURL(await response.blob());
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = "duali-" + kind + "." + format;
@@ -321,35 +334,37 @@ export function Reporting() {
       <Notice text={error} error />
       <section className="panel">
         <h2>{total} registros</h2>
-        {loading ? (
-          <p role="status">Consultando…</p>
+        {loading && !hasLoaded ? (
+          <LoadingSkeleton label="Consultando relatório…" />
         ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  {Object.keys(rows[0] ?? {}).map((k) => (
-                    <th key={k}>{k}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i}>
-                    {Object.entries(r).map(([k, v]) => (
-                      <td key={k}>{display(v)}</td>
+          <RefreshingContent refreshing={loading}>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    {Object.keys(rows[0] ?? {}).map((k) => (
+                      <th key={k}>{k}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {!rows.length && (
-              <EmptyState
-                title="Nenhum resultado"
-                description="Não há registros para os filtros selecionados."
-              />
-            )}
-          </div>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i}>
+                      {Object.entries(r).map(([k, v]) => (
+                        <td key={k}>{display(v)}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!rows.length && (
+                <EmptyState
+                  title="Nenhum resultado"
+                  description="Não há registros para os filtros selecionados."
+                />
+              )}
+            </div>
+          </RefreshingContent>
         )}
         <div className="pagination">
           <button
@@ -382,7 +397,9 @@ export function Audit() {
     [entity, setEntity] = useState(""),
     [action, setAction] = useState(""),
     [start, setStart] = useState(""),
-    [end, setEnd] = useState("");
+    [end, setEnd] = useState(""),
+    [loading, setLoading] = useState(true),
+    [hasLoaded, setHasLoaded] = useState(false);
   const query = new URLSearchParams({
     page: String(page),
     ...(q ? { q } : {}),
@@ -392,14 +409,20 @@ export function Audit() {
     ...(end ? { fim: end } : {}),
   }).toString();
   useEffect(() => {
+    setLoading(true);
     const timer = setTimeout(
       () =>
         void api<{ items: Row[]; total: number }>("auditoria?" + query)
           .then((r) => {
             setRows(r.items);
             setTotal(r.total);
+            setError("");
           })
-          .catch((e) => setError((e as Error).message)),
+          .catch((e) => setError((e as Error).message))
+          .finally(() => {
+            setLoading(false);
+            setHasLoaded(true);
+          }),
       180,
     );
     return () => clearTimeout(timer);
@@ -458,42 +481,48 @@ export function Audit() {
         </div>
       </section>
       <section className="panel">
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Usuário</th>
-                <th>Ação</th>
-                <th>Entidade</th>
-                <th>Detalhes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={String(row.id)}>
-                  <td>{formatDate(row.criadoEm)}</td>
-                  <td>{display(row.usuario)}</td>
-                  <td>{display(row.acao)}</td>
-                  <td>{display(row.entidade)}</td>
-                  <td>
-                    <button
-                      className="secondary compact"
-                      onClick={() => setSelected(row)}
-                    >
-                      Ver alteração
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {!rows.length && (
-          <EmptyState
-            title="Nenhum evento"
-            description="Não há eventos para os filtros selecionados."
-          />
+        {loading && !hasLoaded ? (
+          <LoadingSkeleton label="Carregando eventos de auditoria…" />
+        ) : (
+          <RefreshingContent refreshing={loading}>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Usuário</th>
+                    <th>Ação</th>
+                    <th>Entidade</th>
+                    <th>Detalhes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={String(row.id)}>
+                      <td>{formatDate(row.criadoEm)}</td>
+                      <td>{display(row.usuario)}</td>
+                      <td>{display(row.acao)}</td>
+                      <td>{display(row.entidade)}</td>
+                      <td>
+                        <button
+                          className="secondary compact"
+                          onClick={() => setSelected(row)}
+                        >
+                          Ver alteração
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!rows.length && (
+              <EmptyState
+                title="Nenhum evento"
+                description="Não há eventos para os filtros selecionados."
+              />
+            )}
+          </RefreshingContent>
         )}
         <Pagination page={page} total={total} onChange={setPage} />
       </section>

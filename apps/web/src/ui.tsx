@@ -1,6 +1,66 @@
 import type { ReactNode } from "react";
 import { display, type Row } from "./api";
 
+export function LoadingSkeleton({
+  variant = "table",
+  rows = 5,
+  label = "Carregando conteúdo…",
+}: {
+  variant?: "table" | "metrics" | "detail";
+  rows?: number;
+  label?: string;
+}) {
+  const count = variant === "metrics" ? 4 : rows;
+  return (
+    <div
+      className={`loading-skeleton loading-skeleton-${variant}`}
+      role="status"
+      aria-label={label}
+      data-testid={`loading-skeleton-${variant}`}
+    >
+      <span className="sr-only">{label}</span>
+      {Array.from({ length: count }, (_, index) => (
+        <div className="skeleton-item" aria-hidden="true" key={index}>
+          <span />
+          <span />
+          {variant === "table" && <span />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function RefreshingContent({
+  refreshing,
+  children,
+  label = "Atualizando conteúdo…",
+  className = "",
+}: {
+  refreshing: boolean;
+  children: ReactNode;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`refreshing-content ${refreshing ? "is-refreshing" : ""} ${className}`.trim()}
+      aria-busy={refreshing}
+    >
+      {refreshing && (
+        <>
+          <div className="refresh-progress" aria-hidden="true" />
+          <span className="sr-only" role="status">
+            {label}
+          </span>
+        </>
+      )}
+      <div className="refreshing-body" inert={refreshing}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function PageHeader({
   title,
   description,

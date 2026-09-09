@@ -1,7 +1,7 @@
-import React, { useEffect, useState, type FormEvent } from "react";
+import React, { useEffect, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
-import { api, setCsrf, type Row } from "./api";
+import { ApiError, api, onUnauthorized, setCsrf, type Row } from "./api";
 import { Notice, Records } from "./components";
 import { screens } from "./resources";
 import { Dashboard, Reporting, Audit } from "./Reporting";
@@ -70,51 +70,137 @@ function useRoute() {
     routerNavigate(next);
     window.scrollTo({ top: 0 });
   };
-  return { path, navigate };
+  return {
+    path,
+    navigate,
+    currentRoute: location.pathname + location.search,
+  };
 }
+
+type AuthState =
+  | { status: "loading" }
+  | { status: "authenticated"; user: Row }
+  | { status: "unauthenticated" }
+  | { status: "unavailable"; message: string };
+
 function App() {
-  const { path, navigate } = useRoute();
-  const [user, setUser] = useState<Row | null>(null),
-    [loading, setLoading] = useState(true),
-    [error, setError] = useState(""),
+  const { path, navigate, currentRoute } = useRoute();
+  const [auth, setAuth] = useState<AuthState>({ status: "loading" }),
+    [message, setMessage] = useState(""),
     [email, setEmail] = useState(""),
     [senha, setSenha] = useState(""),
     [collapsed, setCollapsed] = useState(false),
     [drawer, setDrawer] = useState(false),
     [openGroup, setOpenGroup] = useState("");
-  useEffect(() => {
-    void api<{ usuario: Row; csrf: string }>("auth/me")
+  const returnRoute = useRef<string | null>(null);
+  const retryButton = useRef<HTMLButtonElement | null>(null);
+  useEffect(
+    () =>
+      onUnauthorized(() => {
+        if (auth.status !== "authenticated") return;
+        returnRoute.current = currentRoute.startsWith("/app")
+          ? currentRoute
+          : "/app";
+        setCsrf("");
+        setAuth({ status: "unauthenticated" });
+        setMessage("Sua sessão expirou. Entre novamente.");
+        navigate("/login");
+      }),
+    [auth.status, currentRoute, navigate],
+  );
+
+  function loadSession() {
+    setAuth({ status: "loading" });
+    setMessage("");
+    void api<{ usuario: Row; csrf: string }>("auth/me", "GET", undefined, {
+      notifyUnauthorized: false,
+    })
       .then((result) => {
-        setUser(result.usuario);
         setCsrf(result.csrf);
+        setAuth({ status: "authenticated", user: result.usuario });
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+      .catch((error: unknown) => {
+        setCsrf("");
+        if (error instanceof ApiError && error.status === 401)
+          setAuth({ status: "unauthenticated" });
+        else
+          setAuth({
+            status: "unavailable",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Não foi possível verificar sua sessão.",
+          });
+      });
+  }
+
+  useEffect(loadSession, []);
+
+  useEffect(() => {
+    if (auth.status === "unavailable") retryButton.current?.focus();
+  }, [auth.status]);
+
   async function login(event: FormEvent) {
     event.preventDefault();
-    setError("");
+    setMessage("");
     try {
       const result = await api<{ usuario: Row; csrf: string }>(
         "auth/login",
         "POST",
         { email, senha },
+        { notifyUnauthorized: false },
       );
-      setUser(result.usuario);
       setCsrf(result.csrf);
+      setAuth({ status: "authenticated", user: result.usuario });
       setSenha("");
-      navigate("/app");
+      const destination = returnRoute.current ?? "/app";
+      returnRoute.current = null;
+      navigate(destination);
     } catch (e) {
-      setError((e as Error).message);
+      setMessage((e as Error).message);
     }
   }
-  if (loading)
+
+  async function logout() {
+    const request = api(
+      "auth/logout",
+      "POST",
+      {},
+      { notifyUnauthorized: false },
+    );
+    setCsrf("");
+    setAuth({ status: "unauthenticated" });
+    setMessage("");
+    returnRoute.current = null;
+    navigate("/login");
+    try {
+      await request;
+    } catch {
+      setMessage(
+        "Você saiu desta tela, mas não foi possível encerrar a sessão no servidor.",
+      );
+    }
+  }
+
+  if (auth.status === "loading")
     return (
       <main role="status" className="center-state">
         Carregando Duali…
       </main>
     );
-  if (!user)
+  if (auth.status === "unavailable")
+    return (
+      <main className="center-state">
+        <section className="panel">
+          <h1>Duali indisponível</h1>
+          <Notice text={auth.message} error />
+          <button ref={retryButton} onClick={loadSession}>
+            Tentar novamente
+          </button>
+        </section>
+      </main>
+    );
+  if (auth.status === "unauthenticated")
     return (
       <div className="login">
         <section className="panel">
@@ -124,7 +210,7 @@ function App() {
           <h1>Bem-vindo de volta</h1>
           <p>Entre para acompanhar sua operação.</p>
           <form onSubmit={(e) => void login(e)}>
-            <Notice text={error} error />
+            <Notice text={message} error />
             <label>
               E-mail
               <input
@@ -150,6 +236,7 @@ function App() {
         </section>
       </div>
     );
+  const user = auth.user;
   const go = (next: string) => {
     navigate(next);
     setDrawer(false);
@@ -234,16 +321,7 @@ function App() {
             <strong>{String(user.nome)}</strong>
             <span>Administrador</span>
           </div>
-          <button
-            className="secondary"
-            onClick={() =>
-              void api("auth/logout", "POST", {}).then(() => {
-                setUser(null);
-                setCsrf("");
-                history.replaceState({}, "", "/login");
-              })
-            }
-          >
+          <button className="secondary" onClick={() => void logout()}>
             Sair
           </button>
         </div>
@@ -263,7 +341,7 @@ function App() {
             <span className="online-dot" title="Sessão ativa" />
           </div>
         </header>
-        <Notice text={error} error />
+        <Notice text={message} error />
         <RouteContent path={path} navigate={navigate} />
         <Toaster richColors position="top-right" />
       </main>
@@ -289,13 +367,17 @@ function RouteContent({
   navigate: (path: string) => void;
 }) {
   const person = path.match(/^\/app\/pessoas\/([0-9a-f-]+)$/i);
-  if (person) return <PersonProfile id={person[1]!} navigate={navigate} />;
+  if (person)
+    return (
+      <PersonProfile key={person[1]} id={person[1]!} navigate={navigate} />
+    );
   const registry = path.match(
     /^\/app\/cadastros\/(unidades|equipes|instituicoes|fornecedores)\/([0-9a-f-]+)$/i,
   );
   if (registry)
     return (
       <RegistryDetail
+        key={`${registry[1]}-${registry[2]}`}
         resource={registry[1]!}
         id={registry[2]!}
         navigate={navigate}
