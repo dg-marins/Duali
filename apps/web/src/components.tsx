@@ -60,7 +60,11 @@ export function Lookup({
   };
   const selected = items.find((row) => String(row.id) === String(value ?? ""));
   const optionLabel = (row: Row) =>
-    row.pessoa ? display(row.pessoa) + " · " + display(row.tipo) : display(row);
+    field.resource === "instituicoes" && row.nome
+      ? `${String(row.sigla ?? "").trim() ? `${String(row.sigla).trim()} - ` : ""}${String(row.nome)}`
+      : row.pessoa
+        ? display(row.pessoa) + " · " + display(row.tipo)
+        : display(row);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {

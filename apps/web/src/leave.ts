@@ -56,7 +56,7 @@ export const leaveScreens: Screen[] = [
   },
   {
     path: "periodos",
-    title: "Férias e descanso",
+    title: "Férias",
     description:
       "Programação separada de consumo. Dias corridos são sugeridos; diferenças exigem justificativa.",
     columns: ["vinculo", "dataInicio", "dataFim", "quantidadeDias", "status"],

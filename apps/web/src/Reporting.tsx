@@ -354,7 +354,7 @@ export function Reporting() {
             >
               <option value="pessoas">Pessoas e vínculos</option>
               <option value="estagios">Estagiários</option>
-              <option value="descansos">Férias e descanso</option>
+              <option value="descansos">Férias</option>
               <option value="beneficios">Benefícios</option>
               <option value="inconsistencias">Inconsistências</option>
             </select>

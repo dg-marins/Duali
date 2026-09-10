@@ -150,3 +150,62 @@ test("composite person creation converts dates and creates an active initial lin
     await f.app.close();
   }
 });
+
+test("estágio ativo aceita término previsto e rejeita data anterior à admissão", async () => {
+  const f = await fixture();
+  try {
+    const unit = await f.db.unidade.create({
+      data: {
+        nome: `Unidade estágio ${f.suffix}`,
+        sigla: f.suffix.slice(0, 8),
+        uf: "RJ",
+      },
+    });
+    const response = await f.app.inject({
+      method: "POST",
+      url: "/api/pessoas-com-vinculo",
+      headers: f.headers,
+      payload: {
+        pessoa: { nomeCompleto: `Estagiário ${f.suffix}` },
+        vinculo: {
+          unidadeId: unit.id,
+          tipo: "ESTAGIO",
+          dataAdmissao: "2025-09-01",
+        },
+        estagio: { dataTerminoPrevista: "2027-09-01" },
+      },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const created = response.json<{
+      pessoa: { id: string };
+      vinculo: { id: string; status: string; dataDesligamento: string | null };
+      estagio: { dataTerminoPrevista: string };
+    }>();
+    expect(created.vinculo.status).toBe("ATIVO");
+    expect(created.vinculo.dataDesligamento).toBeNull();
+    expect(created.estagio.dataTerminoPrevista.slice(0, 10)).toBe("2027-09-01");
+    expect(
+      await f.db.documentoVinculo.findFirst({
+        where: { vinculoId: created.vinculo.id, tipo: "TCE" },
+      }),
+    ).toMatchObject({ status: "PENDENTE" });
+    const invalid = await f.app.inject({
+      method: "POST",
+      url: "/api/pessoas-com-vinculo",
+      headers: f.headers,
+      payload: {
+        pessoa: { nomeCompleto: `Estagiário inválido ${f.suffix}` },
+        vinculo: {
+          unidadeId: unit.id,
+          tipo: "ESTAGIO",
+          dataAdmissao: "2025-09-01",
+        },
+        estagio: { dataTerminoPrevista: "2025-08-01" },
+      },
+    });
+    expect(invalid.statusCode).toBe(422);
+    expect(invalid.body).toContain("fim previsto");
+  } finally {
+    await f.app.close();
+  }
+});

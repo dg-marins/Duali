@@ -44,7 +44,7 @@ export const internshipScreens: Screen[] = [
     path: "instituicoes",
     title: "Instituições",
     description: "Instituições de ensino.",
-    columns: ["nome", "sigla", "ativa"],
+    columns: ["sigla", "nome", "ativa"],
     fields: [
       { key: "nome", label: "Nome", required: true },
       { key: "sigla", label: "Sigla" },

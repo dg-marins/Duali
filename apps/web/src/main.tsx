@@ -52,7 +52,7 @@ const grouped = [
     icon: BriefcaseBusiness,
     items: [
       ["/app/estagiarios", "Estagiários", GraduationCap],
-      ["/app/ferias", "Férias e descanso", CalendarDays],
+      ["/app/ferias", "Férias", CalendarDays],
       ["/app/beneficios", "Benefícios", WalletCards],
     ],
   },

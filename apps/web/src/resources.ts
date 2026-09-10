@@ -90,7 +90,7 @@ export const screens: Screen[] = [
         default: "ATIVO",
         required: true,
       },
-      { key: "dataDesligamento", label: "Desligamento", type: "date" },
+      { key: "dataDesligamento", label: "Data de desligamento", type: "date" },
       { key: "matricula", label: "Matrícula" },
       { key: "cargoFuncao", label: "Cargo / função" },
       { key: "gestor", label: "Gestor" },

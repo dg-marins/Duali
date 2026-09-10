@@ -10,15 +10,20 @@ import {
 import { acquire } from "./leave-domain.js";
 import { audit, dateData, DomainError, transaction, type Tx } from "../core.js";
 
+const tceStatusSchema = z.enum(["ASSINADO", "AGUARDANDO_ASSINATURA"]);
+const stagePayloadSchema = estagioCadastroSchema.extend({
+  tceStatus: tceStatusSchema.default("AGUARDANDO_ASSINATURA"),
+});
+
 const createSchema = z
   .object({
     pessoa: pessoaCadastroSchema,
     vinculo: vinculoCadastroSchema,
-    estagio: estagioCadastroSchema.optional(),
+    estagio: stagePayloadSchema.optional(),
   })
   .strict();
 const editSchema = z
-  .object({ vinculo: vinculoSchema, estagio: estagioCadastroSchema.optional() })
+  .object({ vinculo: vinculoSchema, estagio: stagePayloadSchema.optional() })
   .strict();
 
 async function validateLink(tx: Tx, data: Record<string, unknown>) {
@@ -34,6 +39,56 @@ async function validateLink(tx: Tx, data: Record<string, unknown>) {
     if (!team || !team.ativa)
       throw new DomainError(422, "Selecione uma equipe ativa.");
   }
+}
+
+function validateInternshipEnd(admission: Date, end: Date | null | undefined) {
+  if (end && end < admission)
+    throw new DomainError(
+      422,
+      "O fim previsto do estÃ¡gio nÃ£o pode ser anterior Ã  admissÃ£o.",
+    );
+}
+
+async function ensureTce(
+  tx: Tx,
+  vinculoId: string,
+  status: "ASSINADO" | "AGUARDANDO_ASSINATURA",
+  userId: string | null,
+) {
+  const persistedStatus = status === "ASSINADO" ? "VIGENTE" : "PENDENTE";
+  const existing = await tx.documentoVinculo.findFirst({
+    where: { vinculoId, tipo: "TCE" },
+  });
+  if (existing) {
+    const updated = await tx.documentoVinculo.update({
+      where: { id: existing.id },
+      data: { status: persistedStatus },
+    });
+    if (updated.status !== existing.status)
+      await audit(
+        tx,
+        userId,
+        "ALTERAR",
+        "documentoVinculo",
+        updated.id,
+        existing,
+        updated,
+      );
+    return updated;
+  }
+  const created = await tx.documentoVinculo.create({
+    data: { vinculoId, tipo: "TCE", status: persistedStatus },
+  });
+  await audit(
+    tx,
+    userId,
+    "CRIAR",
+    "documentoVinculo",
+    created.id,
+    undefined,
+    created,
+  );
+  return created;
 }
 
 export function registerPeopleComposite(
@@ -96,12 +151,17 @@ export function registerPeopleComposite(
       );
       let estagio;
       if (body.estagio) {
+        const { tceStatus, ...stagePayload } = body.estagio;
         const data = dateData(
           {
-            ...estagioCadastroSchema.parse(body.estagio),
+            ...estagioCadastroSchema.parse(stagePayload),
             vinculoId: vinculo.id,
           },
           ["dataTerminoPrevista"],
+        );
+        validateInternshipEnd(
+          linkData.dataAdmissao as Date,
+          data.dataTerminoPrevista as Date | null | undefined,
         );
         if (data.instituicaoEnsinoId) {
           const institution = await tx.instituicaoEnsino.findUnique({
@@ -120,6 +180,7 @@ export function registerPeopleComposite(
           undefined,
           estagio,
         );
+        await ensureTce(tx, vinculo.id, tceStatus, req.userId);
       }
       return { pessoa, vinculo, estagio };
     });
@@ -149,9 +210,14 @@ export function registerPeopleComposite(
           "Pessoa, tipo e admissão são imutáveis; encerre e crie outro vínculo.",
         );
       if (previous.tipo === "ESTAGIO" && body.estagio) {
+        const { tceStatus, ...stagePayload } = body.estagio;
         const stageData = dateData(
-          { ...estagioCadastroSchema.parse(body.estagio), vinculoId: id },
+          { ...estagioCadastroSchema.parse(stagePayload), vinculoId: id },
           ["dataTerminoPrevista"],
+        );
+        validateInternshipEnd(
+          previous.dataAdmissao,
+          stageData.dataTerminoPrevista as Date | null | undefined,
         );
         if (stageData.instituicaoEnsinoId) {
           const institution = await tx.instituicaoEnsino.findUnique({
@@ -175,6 +241,9 @@ export function registerPeopleComposite(
           previous.estagio ?? undefined,
           stage,
         );
+        await ensureTce(tx, id, tceStatus, req.userId);
+      } else if ((previous.tipo as string) === "ESTAGIO") {
+        await ensureTce(tx, id, "AGUARDANDO_ASSINATURA", req.userId);
       } else if (previous.tipo !== "ESTAGIO" && body.estagio) {
         throw new DomainError(
           422,

@@ -334,6 +334,8 @@ function PersonForm({
       instituicaoEnsinoId: "",
       periodoAcademico: "",
       valorBolsa: "",
+      dataTerminoPrevista: "",
+      tceStatus: "AGUARDANDO_ASSINATURA",
       ...person,
     }),
     [person],
@@ -384,6 +386,8 @@ function PersonForm({
                 "instituicaoEnsinoId",
                 "periodoAcademico",
                 "valorBolsa",
+                "dataTerminoPrevista",
+                "tceStatus",
               ].includes(key),
           )
           .map(([key, value]) => [key, value === "" ? null : value]),
@@ -410,6 +414,11 @@ function PersonForm({
                     instituicaoEnsinoId: data.instituicaoEnsinoId || null,
                     periodoAcademico: data.periodoAcademico || null,
                     valorBolsa: data.valorBolsa === "" ? null : data.valorBolsa,
+                    dataTerminoPrevista:
+                      data.dataTerminoPrevista === ""
+                        ? null
+                        : data.dataTerminoPrevista,
+                    tceStatus: data.tceStatus || "AGUARDANDO_ASSINATURA",
                   },
                 }
               : {}),
@@ -485,7 +494,7 @@ function PersonForm({
                   <option value="">Selecione</option>
                   {options.units.map((row) => (
                     <option key={String(row.id)} value={String(row.id)}>
-                      {display(row)}
+                      {`${String(row.sigla ?? "").trim() ? `${String(row.sigla).trim()} - ` : ""}${String(row.nome ?? "")}`}
                     </option>
                   ))}
                 </select>
@@ -540,13 +549,33 @@ function PersonForm({
                     <option value="">Selecione</option>
                     {options.institutions.map((row) => (
                       <option key={String(row.id)} value={String(row.id)}>
-                        {display(row)}
+                        {`${String(row.sigla ?? "").trim() ? `${String(row.sigla).trim()} - ` : ""}${String(row.nome ?? "")}`}
                       </option>
                     ))}
                   </select>
                 </label>
                 {field("periodoAcademico", "Período acadêmico")}
                 {field("valorBolsa", "Bolsa (R$)", "number")}
+                {field(
+                  "dataTerminoPrevista",
+                  "Fim previsto do estágio",
+                  "date",
+                )}
+                <label>
+                  <span>TCE *</span>
+                  <select
+                    required
+                    value={String(data.tceStatus ?? "AGUARDANDO_ASSINATURA")}
+                    onChange={(e) =>
+                      setData({ ...data, tceStatus: e.target.value })
+                    }
+                  >
+                    <option value="AGUARDANDO_ASSINATURA">
+                      Aguardando assinatura
+                    </option>
+                    <option value="ASSINADO">Assinado</option>
+                  </select>
+                </label>
               </div>
             )}
           </fieldset>
@@ -658,6 +687,7 @@ export function PersonProfile({
     [formScreen, setFormScreen] = useState<string | null>(null),
     [editingLink, setEditingLink] = useState<Row | null>(null),
     [version, setVersion] = useState(0);
+  const options = useOptions();
   useEffect(() => {
     setLoading(true);
     void api<Row>(`pessoas/${id}/perfil`)
@@ -679,7 +709,7 @@ export function PersonProfile({
   const tabs: Array<[string, string]> = [
     ["visao", "Visão geral"],
     ["vinculo", "Vínculo"],
-    ["descanso", "Férias / descanso"],
+    ["descanso", "Férias"],
     ["beneficios", "Benefícios"],
     ["documentos", "Documentos"],
     ["historico", "Histórico"],
@@ -727,7 +757,21 @@ export function PersonProfile({
           }
           description="Preencha os dados desta operação."
         >
-          {formScreen && (
+          {formScreen && editingLink ? (
+            <LinkEditorForm
+              link={editingLink}
+              options={options}
+              onClose={() => {
+                setFormScreen(null);
+                setEditingLink(null);
+              }}
+              onSaved={() => {
+                setFormScreen(null);
+                setEditingLink(null);
+                setVersion(version + 1);
+              }}
+            />
+          ) : formScreen ? (
             <RecordForm
               embedded
               screen={screens.find((screen) => screen.path === formScreen)!}
@@ -743,7 +787,7 @@ export function PersonProfile({
                 setVersion(version + 1);
               }}
             />
-          )}
+          ) : null}
         </FormSheet>
         <div className="tabs" role="tablist">
           {tabs.map(([key, label]) => (
@@ -1025,6 +1069,209 @@ export function PersonProfile({
     </RefreshingContent>
   );
 }
+function LinkEditorForm({
+  link,
+  options,
+  onClose,
+  onSaved,
+}: {
+  link: Row;
+  options: ReturnType<typeof useOptions>;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const stage = (link.estagio as Row | undefined) ?? {};
+  const [data, setData] = useState<Row>({
+    ...link,
+    dataAdmissao: String(link.dataAdmissao ?? "").slice(0, 10),
+    dataDesligamento: String(link.dataDesligamento ?? "").slice(0, 10),
+    instituicaoEnsinoId: stage.instituicaoEnsinoId ?? "",
+    periodoAcademico: stage.periodoAcademico ?? "",
+    valorBolsa: stage.valorBolsa ?? "",
+    dataTerminoPrevista: String(stage.dataTerminoPrevista ?? "").slice(0, 10),
+  });
+  const [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  const initial = useMemo(() => JSON.stringify(data), []);
+  const dirty = JSON.stringify(data) !== initial;
+  useFormDirty(dirty);
+  const set = (key: string, value: unknown) =>
+    setData({ ...data, [key]: value });
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api(`vinculos/${link.id}/detalhes`, "PUT", {
+        vinculo: {
+          pessoaId: link.pessoaId,
+          unidadeId: data.unidadeId,
+          equipeId: data.equipeId || null,
+          tipo: link.tipo,
+          status: data.status,
+          matricula: data.matricula || null,
+          dataAdmissao: data.dataAdmissao,
+          dataDesligamento:
+            data.status === "DESLIGADO" ? data.dataDesligamento || null : null,
+          cargoFuncao: data.cargoFuncao || null,
+          gestor: data.gestor || null,
+          escala: data.escala || null,
+          observacoes: data.observacoes || null,
+        },
+        ...(link.tipo === "ESTAGIO"
+          ? {
+              estagio: {
+                instituicaoEnsinoId: data.instituicaoEnsinoId || null,
+                periodoAcademico: data.periodoAcademico || null,
+                valorBolsa: data.valorBolsa || null,
+                dataTerminoPrevista: data.dataTerminoPrevista || null,
+              },
+            }
+          : {}),
+      });
+      onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="form-panel embedded-form">
+      <Notice text={error} error />
+      <form onSubmit={(e) => void submit(e)}>
+        <fieldset>
+          <legend>Dados do vínculo</legend>
+          <div className="form-grid">
+            <label>
+              <span>Unidade</span>
+              <select
+                required
+                value={String(data.unidadeId ?? "")}
+                onChange={(e) => set("unidadeId", e.target.value)}
+              >
+                {options.units.map((row) => (
+                  <option key={String(row.id)} value={String(row.id)}>
+                    {`${String(row.sigla ?? "").trim() ? `${String(row.sigla).trim()} - ` : ""}${String(row.nome ?? "")}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Equipe</span>
+              <select
+                value={String(data.equipeId ?? "")}
+                onChange={(e) => set("equipeId", e.target.value || null)}
+              >
+                <option value="">Sem equipe</option>
+                {options.teams.map((row) => (
+                  <option key={String(row.id)} value={String(row.id)}>
+                    {`${String(row.sigla ?? "").trim() ? `${String(row.sigla).trim()} - ` : ""}${String(row.nome ?? "")}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Tipo</span>
+              <input value={String(link.tipo)} readOnly />
+            </label>
+            <label>
+              <span>Admissão</span>
+              <input type="date" value={String(data.dataAdmissao)} readOnly />
+            </label>
+            <label>
+              <span>Status</span>
+              <select
+                value={String(data.status)}
+                onChange={(e) => set("status", e.target.value)}
+              >
+                <option>ATIVO</option>
+                <option>AFASTADO</option>
+                <option>DESLIGADO</option>
+              </select>
+            </label>
+            <label>
+              <span>Data de desligamento</span>
+              <input
+                type="date"
+                value={String(data.dataDesligamento ?? "")}
+                onChange={(e) => set("dataDesligamento", e.target.value)}
+              />
+            </label>
+            <label>
+              <span>Matrícula</span>
+              <input
+                value={String(data.matricula ?? "")}
+                onChange={(e) => set("matricula", e.target.value)}
+              />
+            </label>
+            <label>
+              <span>Cargo / função</span>
+              <input
+                value={String(data.cargoFuncao ?? "")}
+                onChange={(e) => set("cargoFuncao", e.target.value)}
+              />
+            </label>
+          </div>
+        </fieldset>
+        {link.tipo === "ESTAGIO" && (
+          <fieldset>
+            <legend>Dados do estágio</legend>
+            <div className="form-grid">
+              <label>
+                <span>Instituição de ensino</span>
+                <select
+                  value={String(data.instituicaoEnsinoId ?? "")}
+                  onChange={(e) =>
+                    set("instituicaoEnsinoId", e.target.value || null)
+                  }
+                >
+                  <option value="">Selecione</option>
+                  {options.institutions.map((row) => (
+                    <option key={String(row.id)} value={String(row.id)}>
+                      {`${String(row.sigla ?? "").trim() ? `${String(row.sigla).trim()} - ` : ""}${String(row.nome ?? "")}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Período acadêmico</span>
+                <input
+                  value={String(data.periodoAcademico ?? "")}
+                  onChange={(e) => set("periodoAcademico", e.target.value)}
+                />
+              </label>
+              <label>
+                <span>Bolsa</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={String(data.valorBolsa ?? "")}
+                  onChange={(e) => set("valorBolsa", e.target.value)}
+                />
+              </label>
+              <label>
+                <span>Fim previsto do estágio</span>
+                <input
+                  type="date"
+                  value={String(data.dataTerminoPrevista ?? "")}
+                  onChange={(e) => set("dataTerminoPrevista", e.target.value)}
+                />
+              </label>
+            </div>
+          </fieldset>
+        )}
+        <div className="form-actions">
+          <button disabled={busy}>{busy ? "Salvando…" : "Salvar"}</button>
+          <button type="button" className="secondary" onClick={onClose}>
+            Cancelar
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function InfoCard({
   title,
   rows,
@@ -1503,7 +1750,7 @@ function OperationalList({
             >
               {options.institutions.map((r) => (
                 <option key={String(r.id)} value={String(r.id)}>
-                  {display(r)}
+                  {`${String(r.sigla ?? "").trim() ? `${String(r.sigla).trim()} - ` : ""}${String(r.nome ?? "")}`}
                 </option>
               ))}
             </FilterSelect>
@@ -1566,14 +1813,14 @@ export const InternsPage = ({ navigate }: { navigate: Navigate }) => (
   <OperationalList
     kind="estagiarios"
     title="Estagiários"
-    description="Acompanhe estágio, instituição, documentos e descanso."
+    description="Acompanhe estágio, instituição, documentos e férias."
     navigate={navigate}
   />
 );
 export const LeavePage = ({ navigate }: { navigate: Navigate }) => (
   <OperationalList
     kind="descansos"
-    title="Férias e descanso"
+    title="Férias"
     description="Saldos reconstruídos, prazos e inconsistências por vínculo."
     navigate={navigate}
   />

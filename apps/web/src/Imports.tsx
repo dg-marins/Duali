@@ -32,7 +32,7 @@ const importProfiles = [
   ["AUTO", "Detectar automaticamente"],
   ["PESSOAS", "Pessoas e vínculos"],
   ["ESTAGIOS", "Estágios"],
-  ["DESCANSOS", "Férias e descanso"],
+  ["DESCANSOS", "Férias"],
   ["BENEFICIOS", "Benefícios"],
 ] as const;
 function initialGroups(profile: string): Group[] {
