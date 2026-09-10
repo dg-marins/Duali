@@ -14,12 +14,106 @@ import {
   money,
 } from "./ui";
 
-const reportColumns: Record<string, Array<{ key: string; label: string; format: "date" | "money" | undefined; mobile: "primary" | "secondary" | "hidden" }>> = {
-  pessoas: ["Pessoa", "Unidade", "Equipe", "Vínculo", "Status", "Admissão", "CPF", "E-mail", "Telefone", "Cargo", "Desligamento"].map((key, index) => ({ key, label: key, format: /Admissão|Desligamento/.test(key) ? "date" : undefined, mobile: index === 0 ? "primary" : index > 4 ? "hidden" : "secondary" })),
-  estagios: ["Pessoa", "Unidade", "Equipe", "Vínculo", "Status", "Admissão", "Instituição", "Curso", "Matrícula", "Bolsa"].map((key, index) => ({ key, label: key, format: key === "Admissão" ? "date" : key === "Bolsa" ? "money" : undefined, mobile: index === 0 ? "primary" : index > 5 ? "hidden" : "secondary" })),
-  descansos: ["Pessoa", "Unidade", "Equipe", "Vínculo", "Status", "Admissão", "Adquiridos", "Consumidos", "Ajustes", "Saldo", "Programados", "Alertas"].map((key, index) => ({ key, label: key, format: key === "Admissão" ? "date" : undefined, mobile: index === 0 ? "primary" : index > 5 ? "hidden" : "secondary" })),
-  beneficios: ["Pessoa", "Unidade", "Equipe", "Vínculo", "Benefício", "Fornecedor", "Componente", "Competência", "Dias", "Quantidade", "Valor unitário", "Valor calculado", "Valor informado", "Ajustes", "Divergência", "Status", "Observações"].map((key, index) => ({ key, label: key, format: key === "Competência" ? "date" : /^Valor|Ajustes|Divergência/.test(key) ? "money" : undefined, mobile: index === 0 ? "primary" : index > 5 ? "hidden" : "secondary" })),
-  inconsistencias: ["Pessoa", "Tipo", "Mensagem", "Prazo"].map((key, index) => ({ key, label: key, format: key === "Prazo" ? "date" : undefined, mobile: index === 0 ? "primary" : "secondary" })),
+const reportColumns: Record<
+  string,
+  Array<{
+    key: string;
+    label: string;
+    format: "date" | "money" | undefined;
+    mobile: "primary" | "secondary" | "hidden";
+  }>
+> = {
+  pessoas: [
+    "Pessoa",
+    "Unidade",
+    "Equipe",
+    "Vínculo",
+    "Status",
+    "Admissão",
+    "CPF",
+    "E-mail",
+    "Telefone",
+    "Cargo",
+    "Desligamento",
+  ].map((key, index) => ({
+    key,
+    label: key,
+    format: /Admissão|Desligamento/.test(key) ? "date" : undefined,
+    mobile: index === 0 ? "primary" : index > 4 ? "hidden" : "secondary",
+  })),
+  estagios: [
+    "Pessoa",
+    "Unidade",
+    "Equipe",
+    "Vínculo",
+    "Status",
+    "Admissão",
+    "Instituição",
+    "Curso",
+    "Matrícula",
+    "Bolsa",
+  ].map((key, index) => ({
+    key,
+    label: key,
+    format: key === "Admissão" ? "date" : key === "Bolsa" ? "money" : undefined,
+    mobile: index === 0 ? "primary" : index > 5 ? "hidden" : "secondary",
+  })),
+  descansos: [
+    "Pessoa",
+    "Unidade",
+    "Equipe",
+    "Vínculo",
+    "Status",
+    "Admissão",
+    "Adquiridos",
+    "Consumidos",
+    "Ajustes",
+    "Saldo",
+    "Programados",
+    "Alertas",
+  ].map((key, index) => ({
+    key,
+    label: key,
+    format: key === "Admissão" ? "date" : undefined,
+    mobile: index === 0 ? "primary" : index > 5 ? "hidden" : "secondary",
+  })),
+  beneficios: [
+    "Pessoa",
+    "Unidade",
+    "Equipe",
+    "Vínculo",
+    "Benefício",
+    "Fornecedor",
+    "Componente",
+    "Competência",
+    "Dias",
+    "Quantidade",
+    "Valor unitário",
+    "Valor calculado",
+    "Valor informado",
+    "Ajustes",
+    "Divergência",
+    "Status",
+    "Observações",
+  ].map((key, index) => ({
+    key,
+    label: key,
+    format:
+      key === "Competência"
+        ? "date"
+        : /^Valor|Ajustes|Divergência/.test(key)
+          ? "money"
+          : undefined,
+    mobile: index === 0 ? "primary" : index > 5 ? "hidden" : "secondary",
+  })),
+  inconsistencias: ["Pessoa", "Tipo", "Mensagem", "Prazo"].map(
+    (key, index) => ({
+      key,
+      label: key,
+      format: key === "Prazo" ? "date" : undefined,
+      mobile: index === 0 ? "primary" : "secondary",
+    }),
+  ),
 };
 export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
   const [data, setData] = useState<Row | null>(null),
@@ -44,8 +138,12 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
   };
   const alerts = data
     ? [...((data.alertas as Row[]) ?? [])].sort((left, right) => {
-        const leftDate = left.prazo ? new Date(String(left.prazo)).getTime() : Number.MAX_SAFE_INTEGER;
-        const rightDate = right.prazo ? new Date(String(right.prazo)).getTime() : Number.MAX_SAFE_INTEGER;
+        const leftDate = left.prazo
+          ? new Date(String(left.prazo)).getTime()
+          : Number.MAX_SAFE_INTEGER;
+        const rightDate = right.prazo
+          ? new Date(String(right.prazo)).getTime()
+          : Number.MAX_SAFE_INTEGER;
         return leftDate - rightDate;
       })
     : [];
@@ -110,7 +208,16 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
                     </thead>
                     <tbody>
                       {alerts.map((row) => (
-                        <tr className="clickable-row" tabIndex={0} key={String(row.id)} onClick={() => navigate?.("/app/pendencias")} onKeyDown={(event) => { if (event.key === "Enter") navigate?.("/app/pendencias"); }}>
+                        <tr
+                          className="clickable-row"
+                          tabIndex={0}
+                          key={String(row.id)}
+                          onClick={() => navigate?.("/app/pendencias")}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter")
+                              navigate?.("/app/pendencias");
+                          }}
+                        >
                           <td>{display(row.pessoa)}</td>
                           <td>
                             <StatusBadge value={row.tipo} />
@@ -362,10 +469,22 @@ export function Reporting() {
                 key: column.key,
                 label: column.label,
                 mobile: column.mobile,
-                ...(column.format === "money" ? { align: "end" as const, render: (row: Row) => money(row[column.key]) } : {}),
-                ...(column.format === "date" ? { render: (row: Row) => formatDate(row[column.key]) } : {}),
+                ...(column.format === "money"
+                  ? {
+                      align: "end" as const,
+                      render: (row: Row) => money(row[column.key]),
+                    }
+                  : {}),
+                ...(column.format === "date"
+                  ? { render: (row: Row) => formatDate(row[column.key]) }
+                  : {}),
               }))}
-              empty={<EmptyState title="Nenhum resultado" description="Não há registros para os filtros selecionados." />}
+              empty={
+                <EmptyState
+                  title="Nenhum resultado"
+                  description="Não há registros para os filtros selecionados."
+                />
+              }
             />
           </RefreshingContent>
         )}

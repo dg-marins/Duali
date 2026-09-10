@@ -189,17 +189,53 @@ export function BenefitClosingPage({
           )}
         </RefreshingContent>
       )}
-      <FormDialog open={reopening} onOpenChange={setReopening} title="Reabrir competência" description="Informe o motivo para manter a rastreabilidade desta operação.">
-        <form onSubmit={(event) => {
-          event.preventDefault();
-          const motivo = reason.trim();
-          if (!motivo) { setReasonError("Informe o motivo da reabertura."); return; }
-          setReasonError("");
-          void action("reabrir", { motivo }).then(() => { setReopening(false); setReason(""); }).catch((cause) => setReasonError((cause as Error).message));
-        }}>
-          <label><span>Motivo *</span><textarea autoFocus value={reason} onChange={(event) => setReason(event.target.value)} aria-invalid={Boolean(reasonError)} /></label>
-          {reasonError && <small className="field-error" role="alert">{reasonError}</small>}
-          <div className="form-actions dialog-actions"><Button type="button" variant="outline" onClick={() => setReopening(false)}>Cancelar</Button><Button type="submit">Reabrir competência</Button></div>
+      <FormDialog
+        open={reopening}
+        onOpenChange={setReopening}
+        title="Reabrir competência"
+        description="Informe o motivo para manter a rastreabilidade desta operação."
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const motivo = reason.trim();
+            if (!motivo) {
+              setReasonError("Informe o motivo da reabertura.");
+              return;
+            }
+            setReasonError("");
+            void action("reabrir", { motivo })
+              .then(() => {
+                setReopening(false);
+                setReason("");
+              })
+              .catch((cause) => setReasonError((cause as Error).message));
+          }}
+        >
+          <label>
+            <span>Motivo *</span>
+            <textarea
+              autoFocus
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              aria-invalid={Boolean(reasonError)}
+            />
+          </label>
+          {reasonError && (
+            <small className="field-error" role="alert">
+              {reasonError}
+            </small>
+          )}
+          <div className="form-actions dialog-actions">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setReopening(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit">Reabrir competência</Button>
+          </div>
         </form>
       </FormDialog>
     </div>

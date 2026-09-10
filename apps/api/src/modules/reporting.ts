@@ -63,6 +63,7 @@ export async function report(
             vinculo: { include: { pessoa: true, unidade: true, equipe: true } },
           },
         },
+        transporteItens: { include: { cartaoTransporte: true } },
       },
       orderBy: { competencia: "desc" },
       take: 10001,

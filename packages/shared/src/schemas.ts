@@ -58,6 +58,19 @@ export const pessoaSchema = z
     ativa: z.boolean().default(true),
   })
   .strict();
+export const pessoaCadastroSchema = pessoaSchema
+  .omit({
+    nomeSocial: true,
+    endereco: true,
+    cep: true,
+    logradouro: true,
+    numeroEndereco: true,
+    complemento: true,
+    bairro: true,
+    cidadeEndereco: true,
+    ufEndereco: true,
+  })
+  .strict();
 export const unidadeSchema = z
   .object({
     nome: shortText,
@@ -105,6 +118,20 @@ export const vinculoSchema = z
         message: "Desligamento anterior à admissão.",
       });
   });
+export const vinculoCadastroSchema = z
+  .object({
+    unidadeId: id,
+    equipeId: id.nullable().optional(),
+    tipo: z.enum(["CLT", "ESTAGIO", "APRENDIZ"]),
+    matricula: optionalText,
+    dataAdmissao: date,
+    dataDesligamento: optionalDate,
+    cargoFuncao: optionalText,
+    gestor: optionalText,
+    escala: optionalText,
+    observacoes: optionalText,
+  })
+  .strict();
 export const loginSchema = z
   .object({
     email: z

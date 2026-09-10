@@ -55,6 +55,9 @@ export const estagioSchema = z
     observacoes: optionalText,
   })
   .strict();
+export const estagioCadastroSchema = estagioSchema
+  .omit({ vinculoId: true })
+  .strict();
 function range(
   v: {
     inicioVigencia?: string | null | undefined;

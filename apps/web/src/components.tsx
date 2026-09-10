@@ -1,5 +1,12 @@
 import { inclusiveDays } from "@duali/shared";
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError, display, type Row } from "./api";
@@ -53,9 +60,7 @@ export function Lookup({
   };
   const selected = items.find((row) => String(row.id) === String(value ?? ""));
   const optionLabel = (row: Row) =>
-    row.pessoa
-      ? display(row.pessoa) + " · " + display(row.tipo)
-      : display(row);
+    row.pessoa ? display(row.pessoa) + " · " + display(row.tipo) : display(row);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
@@ -132,7 +137,11 @@ export function Lookup({
               aria-autocomplete="list"
               aria-expanded={open}
               aria-controls={listId}
-              aria-activedescendant={items[activeIndex] ? `${listId}-${String(items[activeIndex]!.id)}` : undefined}
+              aria-activedescendant={
+                items[activeIndex]
+                  ? `${listId}-${String(items[activeIndex]!.id)}`
+                  : undefined
+              }
               aria-label={"Buscar " + field.label}
               placeholder="Buscar opções…"
               value={q}
@@ -143,7 +152,9 @@ export function Lookup({
               onKeyDown={(event) => {
                 if (event.key === "ArrowDown") {
                   event.preventDefault();
-                  setActiveIndex((index) => Math.min(index + 1, items.length - 1));
+                  setActiveIndex((index) =>
+                    Math.min(index + 1, items.length - 1),
+                  );
                 }
                 if (event.key === "ArrowUp") {
                   event.preventDefault();
@@ -162,7 +173,12 @@ export function Lookup({
               }}
             />
           </div>
-          <div id={listId} role="listbox" aria-label={field.label} className="searchable-options">
+          <div
+            id={listId}
+            role="listbox"
+            aria-label={field.label}
+            className="searchable-options"
+          >
             {!loading && !error && items.length === 0 && (
               <div className="searchable-state">Nenhuma opção encontrada.</div>
             )}
@@ -173,7 +189,11 @@ export function Lookup({
                 id={`${listId}-${String(row.id)}`}
                 tabIndex={-1}
                 aria-selected={String(row.id) === String(value ?? "")}
-                className={index === activeIndex ? "searchable-option active" : "searchable-option"}
+                className={
+                  index === activeIndex
+                    ? "searchable-option active"
+                    : "searchable-option"
+                }
                 key={String(row.id)}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => {
@@ -182,14 +202,23 @@ export function Lookup({
                 }}
               >
                 <span>{optionLabel(row)}</span>
-                {String(row.id) === String(value ?? "") && <Check size={16} aria-hidden="true" />}
+                {String(row.id) === String(value ?? "") && (
+                  <Check size={16} aria-hidden="true" />
+                )}
               </button>
             ))}
           </div>
         </div>
       )}
       {field.required && (
-        <input className="sr-only" tabIndex={-1} required value={String(value ?? "")} onChange={() => undefined} aria-hidden="true" />
+        <input
+          className="sr-only"
+          tabIndex={-1}
+          required
+          value={String(value ?? "")}
+          onChange={() => undefined}
+          aria-hidden="true"
+        />
       )}
       {error && <small className="field-error">{error}</small>}
       {loading && (
@@ -465,8 +494,15 @@ export function Records({
         <FilterBar
           search={q}
           searchLabel="Buscar registros"
-          onSearchChange={(value) => { setQ(value); setPage(1); }}
-          activeFilters={q ? [{ key: "q", label: `Busca: ${q}`, onRemove: () => setQ("") }] : []}
+          onSearchChange={(value) => {
+            setQ(value);
+            setPage(1);
+          }}
+          activeFilters={
+            q
+              ? [{ key: "q", label: `Busca: ${q}`, onRemove: () => setQ("") }]
+              : []
+          }
         />
         <div className="result-count">{total} registros</div>
         {loading && !hasLoaded ? (

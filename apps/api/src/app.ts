@@ -8,10 +8,12 @@ import { readConfig } from "./config.js";
 import { DomainError, requestContext } from "./core.js";
 import { registerAuth } from "./modules/auth.js";
 import { registerPeople } from "./modules/resources.js";
+import { registerPeopleComposite } from "./modules/people-composite.js";
 import { registerInternship, internshipAlerts } from "./modules/internship.js";
 import { registerLeave, leaveAlerts } from "./modules/leave.js";
 import { synchronize } from "./modules/leave-domain.js";
 import { registerBenefits, benefitAlerts } from "./modules/benefits.js";
+import { registerTransport } from "./modules/transport.js";
 import { registerImports } from "./modules/imports.js";
 import { registerReporting } from "./modules/reporting.js";
 import { registerOperational } from "./modules/operational.js";
@@ -114,9 +116,11 @@ export async function createApp(
     }
   });
   registerPeople(app, db);
+  registerPeopleComposite(app, db);
   registerInternship(app, db);
   registerLeave(app, db);
   registerBenefits(app, db);
+  registerTransport(app, db);
   await registerImports(app, db);
   registerReporting(app, db);
   registerOperational(app, db);

@@ -19,7 +19,9 @@ async function selectLookup(
   if (keyboard) {
     await search.press("ArrowDown");
     await search.press("Escape");
-    await expect(container.getByRole("button", { name: label, exact: true })).toBeFocused();
+    await expect(
+      container.getByRole("button", { name: label, exact: true }),
+    ).toBeFocused();
     await container.getByRole("button", { name: label, exact: true }).click();
     if (query) await container.getByLabel(`Buscar ${label}`).fill(query);
     await container.getByRole("option", { name: new RegExp(option) }).click();
@@ -53,21 +55,31 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     ).toBeVisible();
 
     await page.getByRole("button", { name: "Recolher menu" }).click();
-    await expect(page.getByRole("button", { name: "Equipes", exact: true })).toBeHidden();
+    await expect(
+      page.getByRole("button", { name: "Equipes", exact: true }),
+    ).toBeHidden();
     await page.getByRole("button", { name: "Cadastros", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Equipes", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Equipes", exact: true }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Expandir menu" }).click();
     await page.getByRole("button", { name: "Equipes", exact: true }).click();
     await page.getByRole("button", { name: "Novo registro" }).click();
-    const teamDialog = page.getByRole("dialog", { name: /Novo registro · Equipes/ });
+    const teamDialog = page.getByRole("dialog", {
+      name: /Novo registro · Equipes/,
+    });
     await expect(teamDialog).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(teamDialog).toBeHidden();
-    await expect(page.getByRole("button", { name: "Novo registro" })).toBeFocused();
+    await expect(
+      page.getByRole("button", { name: "Novo registro" }),
+    ).toBeFocused();
     await page.getByRole("button", { name: "Novo registro" }).click();
     await teamDialog.getByLabel("Nome *").fill(`Equipe descartada ${suffix}`);
     await teamDialog.getByRole("button", { name: "Cancelar" }).click();
-    const discardDialog = page.getByRole("dialog", { name: "Descartar alterações?" });
+    const discardDialog = page.getByRole("dialog", {
+      name: "Descartar alterações?",
+    });
     await expect(discardDialog).toBeVisible();
     await discardDialog.getByRole("button", { name: "Descartar" }).click();
     await expect(teamDialog).toBeHidden();
@@ -77,14 +89,12 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     const personForm = page.locator(".form-panel");
     await personForm.getByLabel("Nome completo *").fill("Rascunho");
     await page.getByRole("button", { name: "← Voltar" }).click();
-    await expect(page.getByRole("dialog", { name: "Descartar alterações?" })).toBeVisible();
+    await expect(
+      page.getByRole("dialog", { name: "Descartar alterações?" }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Continuar editando" }).click();
     await personForm.getByLabel("Nome completo *").fill(`Pessoa E2E ${suffix}`);
     await personForm.getByLabel("E-mail").fill(`pessoa-${suffix}@example.test`);
-    await personForm.getByLabel("CEP").fill("20000-000");
-    await personForm.getByLabel("Logradouro").fill("Rua do teste");
-    await personForm.getByLabel("Número").fill("15");
-    await personForm.getByLabel("UF").fill("RJ");
     await personForm
       .getByRole("button", { name: "Salvar", exact: true })
       .click();
@@ -98,7 +108,6 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     const person = await db.pessoa.findFirstOrThrow({
       where: { nomeCompleto: `Pessoa E2E ${suffix}` },
     });
-    expect(person.logradouro).toBe("Rua do teste");
     const unit = await db.unidade.create({
       data: {
         nome: `Unidade E2E ${suffix}`,
@@ -175,8 +184,18 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     });
     await page.getByRole("button", { name: "Nova competência" }).click();
     const competenceForm = page.locator(".form-panel");
-    await selectLookup(competenceForm, "Benefício do vínculo", enrollment.id, enrollment.id);
-    await selectLookup(competenceForm, "Configuração por unidade", config.id, config.id);
+    await selectLookup(
+      competenceForm,
+      "Benefício do vínculo",
+      enrollment.id,
+      enrollment.id,
+    );
+    await selectLookup(
+      competenceForm,
+      "Configuração por unidade",
+      config.id,
+      config.id,
+    );
     await competenceForm
       .getByLabel("Competência (primeiro dia do mês)")
       .fill("2026-01-01");
@@ -187,7 +206,11 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       .click();
     await expect(competenceForm).toBeHidden();
     await Promise.all([
-      page.waitForResponse((response) => response.url().includes("beneficios-operacional") && response.url().includes("competencia=2026-01")),
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("beneficios-operacional") &&
+          response.url().includes("competencia=2026-01"),
+      ),
       page.locator('input[type="month"]').fill("2026-01"),
     ]);
     await page.getByLabel("Buscar", { exact: true }).fill(suffix);
@@ -196,7 +219,11 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     ).toBeVisible({ timeout: 15_000 });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Detalhes" }).click();
-    await expect(page.locator(".mobile-details-row").getByText("Fornecedor", { exact: true })).toBeVisible();
+    await expect(
+      page
+        .locator(".mobile-details-row")
+        .getByText("Fornecedor", { exact: true }),
+    ).toBeVisible();
     await page.setViewportSize({ width: 1280, height: 720 });
 
     expect(await db.estagio.count({ where: { vinculoId: link.id } })).toBe(1);
@@ -217,7 +244,9 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       .click();
     await page.getByLabel("Buscar unidade").fill(suffix);
     await page.getByLabel("Unidade", { exact: true }).selectOption(unit.id);
-    await page.getByRole("textbox", { name: "Competência", exact: true }).fill("2026-01");
+    await page
+      .getByRole("textbox", { name: "Competência", exact: true })
+      .fill("2026-01");
     await page.getByRole("button", { name: "Preparar competência" }).click();
     await page.getByRole("button", { name: "Iniciar revisão" }).click();
     await page.getByRole("button", { name: "Fechar competência" }).click();

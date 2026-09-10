@@ -211,3 +211,109 @@ test("benefit closing is scoped by month and unit and requires audited reopening
     await f.app.close();
   }
 });
+
+test("structured transport snapshots calculate by card and conduction with Decimal arithmetic", async () => {
+  const f = await fixture();
+  try {
+    const person = await f.db.pessoa.create({
+      data: { nomeCompleto: "Pessoa transporte" },
+    });
+    const unit = await f.db.unidade.create({
+      data: {
+        nome: "Unidade transporte",
+        sigla: f.suffix.slice(0, 8),
+        uf: "RJ",
+      },
+    });
+    const link = await f.db.vinculo.create({
+      data: {
+        pessoaId: person.id,
+        unidadeId: unit.id,
+        tipo: "CLT",
+        dataAdmissao: new Date("2025-01-01"),
+      },
+    });
+    const supplier = await f.db.fornecedor.create({
+      data: { nome: `Fornecedor transporte ${f.suffix}` },
+    });
+    const config = await f.db.configuracaoBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        fornecedorId: supplier.id,
+        tipo: "TRANSPORTE",
+      },
+    });
+    const benefit = await f.db.beneficioVinculo.create({
+      data: {
+        vinculoId: link.id,
+        tipo: "TRANSPORTE",
+        inicioVigencia: new Date("2025-01-01"),
+      },
+    });
+    const cards = await f.db.cartaoTransporte.findMany({
+      where: { nome: { in: ["RioCard", "JAÉ"] } },
+    });
+    const rio = cards.find((card) => card.nome === "RioCard")!;
+    const jae = cards.find((card) => card.nome === "JAÉ")!;
+    const items = await f.app.inject({
+      method: "PUT",
+      url: `/api/beneficios-vinculo/${benefit.id}/transporte`,
+      headers: f.headers,
+      payload: {
+        items: [
+          {
+            tipoConducao: "ONIBUS",
+            cartaoTransporteId: rio.id,
+            valorDiario: 11.2,
+            inicioVigencia: "2026-01-01",
+          },
+          {
+            tipoConducao: "BARCA",
+            cartaoTransporteId: rio.id,
+            valorDiario: 9.4,
+            inicioVigencia: "2026-01-01",
+          },
+          {
+            tipoConducao: "METRO",
+            cartaoTransporteId: jae.id,
+            valorDiario: 15.8,
+            inicioVigencia: "2026-01-01",
+          },
+        ],
+      },
+    });
+    expect(items.statusCode, items.body).toBe(200);
+    const response = await f.app.inject({
+      method: "POST",
+      url: "/api/competencias-transporte",
+      headers: f.headers,
+      payload: {
+        beneficioVinculoId: benefit.id,
+        configuracaoId: config.id,
+        competencia: "2026-01-01",
+        quantidadeDias: 22,
+      },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const result = response.json<{
+      transporteTotalDiario: string;
+      transporteTotalMensal: string;
+      transportePorCartaoDiario: Record<string, string>;
+      transportePorCartaoMensal: Record<string, string>;
+      transportePorConducaoDiario: Record<string, string>;
+    }>();
+    expect(result.transporteTotalDiario).toBe("36.40");
+    expect(result.transporteTotalMensal).toBe("800.80");
+    expect(result.transportePorCartaoDiario.RioCard).toBe("20.60");
+    expect(result.transportePorCartaoMensal.RioCard).toBe("453.20");
+    expect(result.transportePorCartaoMensal["JAÉ"]).toBe("347.60");
+    expect(result.transportePorConducaoDiario.ONIBUS).toBe("11.20");
+    expect(
+      await f.db.auditoria.count({
+        where: { entidade: "beneficioTransporteItem" },
+      }),
+    ).toBeGreaterThanOrEqual(3);
+  } finally {
+    await f.app.close();
+  }
+});

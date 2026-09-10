@@ -22,6 +22,7 @@ import {
   formatDate,
   FormDialog,
   FormSheet,
+  useFormDirty,
 } from "./ui";
 import { Notice, RecordForm } from "./components";
 import { screens } from "./resources";
@@ -105,7 +106,9 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
     }),
     [loading, setLoading] = useState(true),
     [hasLoaded, setHasLoaded] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [creating, setCreating] = useState(false),
+    [version, setVersion] = useState(0);
   useEffect(() => {
     let active = true;
     const query = filtersQuery(filters, page);
@@ -135,7 +138,7 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
       active = false;
       clearTimeout(timer);
     };
-  }, [filters, page]);
+  }, [filters, page, version]);
   const update = (key: string, value: string) => {
     setFilters({ ...filters, [key]: value });
     setPage(1);
@@ -145,8 +148,27 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
       <PageHeader
         title="Pessoas"
         description="Encontre rapidamente uma pessoa e acompanhe sua situação atual."
-        action={<button onClick={() => navigate("/app/pessoas/nova")}>+ Nova pessoa</button>}
+        action={
+          <button onClick={() => setCreating(true)}>+ Nova pessoa</button>
+        }
       />
+      <FormSheet
+        open={creating}
+        onOpenChange={setCreating}
+        title="Nova pessoa"
+        description="Cadastre a pessoa e seu vínculo inicial."
+      >
+        {creating && (
+          <PersonForm
+            options={options}
+            onClose={() => setCreating(false)}
+            onSaved={() => {
+              setCreating(false);
+              setVersion((value) => value + 1);
+            }}
+          />
+        )}
+      </FormSheet>
       <Notice text={error} error />
       <section className="panel filter-panel">
         <div className="filter-grid">
@@ -231,7 +253,7 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
                   title="Nenhuma pessoa encontrada"
                   description="Ajuste os filtros, cadastre uma pessoa ou importe uma planilha."
                   action={
-                    <button onClick={() => navigate("/app/pessoas/nova")}>
+                    <button onClick={() => setCreating(true)}>
                       + Nova pessoa
                     </button>
                   }
@@ -280,40 +302,48 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
 
 function PersonForm({
   person,
+  options = { units: [], teams: [], institutions: [], suppliers: [] },
   onClose,
   onSaved,
   onDirtyChange,
 }: {
   person?: Row;
+  options?: ReturnType<typeof useOptions>;
   onClose: () => void;
   onSaved: (id?: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const initial = useMemo<Row>(() => ({
+  const initial = useMemo<Row>(
+    () => ({
       nomeCompleto: "",
-      nomeSocial: "",
       cpf: "",
       rg: "",
       dataNascimento: "",
       email: "",
       telefone: "",
-      endereco: person?.endereco ?? "",
-      cep: "",
-      logradouro: "",
-      numeroEndereco: "",
-      complemento: "",
-      bairro: "",
-      cidadeEndereco: "",
-      ufEndereco: "",
       observacoes: "",
       ativa: true,
+      unidadeId: "",
+      equipeId: "",
+      tipo: "CLT",
+      dataAdmissao: "",
+      matricula: "",
+      cargoFuncao: "",
+      gestor: "",
+      escala: "",
+      instituicaoEnsinoId: "",
+      periodoAcademico: "",
+      valorBolsa: "",
       ...person,
-    }), [person]);
+    }),
+    [person],
+  );
   const [data, setData] = useState<Row>(initial),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [confirmClose, setConfirmClose] = useState(false);
   const dirty = JSON.stringify(data) !== JSON.stringify(initial);
+  useFormDirty(dirty);
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   const close = () => (dirty ? setConfirmClose(true) : onClose());
   const field = (key: string, label: string, type = "text") => (
@@ -338,15 +368,52 @@ function PersonForm({
         Object.entries(data)
           .filter(
             ([key]) =>
-              !["id", "criadoEm", "atualizadoEm", "vinculos"].includes(key),
+              ![
+                "id",
+                "criadoEm",
+                "atualizadoEm",
+                "vinculos",
+                "unidadeId",
+                "equipeId",
+                "tipo",
+                "dataAdmissao",
+                "matricula",
+                "cargoFuncao",
+                "gestor",
+                "escala",
+                "instituicaoEnsinoId",
+                "periodoAcademico",
+                "valorBolsa",
+              ].includes(key),
           )
           .map(([key, value]) => [key, value === "" ? null : value]),
       );
-      const saved = await api<Row>(
-        `pessoas${person?.id ? `/${person.id}` : ""}`,
-        person?.id ? "PUT" : "POST",
-        payload,
-      );
+      const saved = person?.id
+        ? await api<Row>(`pessoas/${person.id}`, "PUT", payload)
+        : await api<Row>("pessoas-com-vinculo", "POST", {
+            pessoa: payload,
+            vinculo: Object.fromEntries(
+              [
+                "unidadeId",
+                "equipeId",
+                "tipo",
+                "dataAdmissao",
+                "matricula",
+                "cargoFuncao",
+                "gestor",
+                "escala",
+              ].map((key) => [key, data[key] === "" ? null : data[key]]),
+            ),
+            ...(data.tipo === "ESTAGIO"
+              ? {
+                  estagio: {
+                    instituicaoEnsinoId: data.instituicaoEnsinoId || null,
+                    periodoAcademico: data.periodoAcademico || null,
+                    valorBolsa: data.valorBolsa === "" ? null : data.valorBolsa,
+                  },
+                }
+              : {}),
+          });
       onSaved(String(saved.id ?? person?.id ?? ""));
     } catch (e) {
       setError((e as Error).message);
@@ -368,7 +435,6 @@ function PersonForm({
           <legend>Dados pessoais</legend>
           <div className="form-grid">
             {field("nomeCompleto", "Nome completo *")}
-            {field("nomeSocial", "Nome social")}
             {field("cpf", "CPF")}
             {field("rg", "RG")}
             {field("dataNascimento", "Data de nascimento", "date")}
@@ -381,24 +447,110 @@ function PersonForm({
             {field("telefone", "Telefone")}
           </div>
         </fieldset>
-        <fieldset>
-          <legend>Endereço</legend>
-          <div className="form-grid">
-            {field("cep", "CEP")}
-            {field("logradouro", "Logradouro")}
-            {field("numeroEndereco", "Número")}
-            {field("complemento", "Complemento")}
-            {field("bairro", "Bairro")}
-            {field("cidadeEndereco", "Cidade")}
-            {field("ufEndereco", "UF")}{" "}
-            {Boolean(data.endereco) && (
-              <label className="wide">
-                <span>Endereço legado importado</span>
-                <textarea value={String(data.endereco)} readOnly />
+        {/* Legacy address fields remain in the data model but are intentionally hidden from this form. */}
+        {/* eslint-disable-next-line no-constant-binary-expression */}
+        {false && (
+          <fieldset>
+            <legend>Endereço</legend>
+            <div className="form-grid">
+              {field("cep", "CEP")}
+              {field("logradouro", "Logradouro")}
+              {field("numeroEndereco", "Número")}
+              {field("complemento", "Complemento")}
+              {field("bairro", "Bairro")}
+              {field("cidadeEndereco", "Cidade")}
+              {field("ufEndereco", "UF")}{" "}
+              {Boolean(data.endereco) && (
+                <label className="wide">
+                  <span>Endereço legado importado</span>
+                  <textarea value={String(data.endereco)} readOnly />
+                </label>
+              )}
+            </div>
+          </fieldset>
+        )}
+        {!person && (
+          <fieldset>
+            <legend>Vínculo inicial</legend>
+            <div className="form-grid">
+              <label>
+                <span>Unidade *</span>
+                <select
+                  required
+                  value={String(data.unidadeId ?? "")}
+                  onChange={(e) =>
+                    setData({ ...data, unidadeId: e.target.value })
+                  }
+                >
+                  <option value="">Selecione</option>
+                  {options.units.map((row) => (
+                    <option key={String(row.id)} value={String(row.id)}>
+                      {display(row)}
+                    </option>
+                  ))}
+                </select>
               </label>
+              <label>
+                <span>Equipe</span>
+                <select
+                  value={String(data.equipeId ?? "")}
+                  onChange={(e) =>
+                    setData({ ...data, equipeId: e.target.value || null })
+                  }
+                >
+                  <option value="">Sem equipe</option>
+                  {options.teams.map((row) => (
+                    <option key={String(row.id)} value={String(row.id)}>
+                      {display(row)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Tipo *</span>
+                <select
+                  required
+                  value={String(data.tipo)}
+                  onChange={(e) => setData({ ...data, tipo: e.target.value })}
+                >
+                  <option value="CLT">CLT</option>
+                  <option value="ESTAGIO">Estágio</option>
+                  <option value="APRENDIZ">Aprendiz</option>
+                </select>
+              </label>
+              {field("dataAdmissao", "Admissão *", "date")}
+              {field("matricula", "Matrícula")}
+              {field("cargoFuncao", "Cargo/Função")}
+              {field("gestor", "Gestor")}
+              {field("escala", "Escala")}
+            </div>
+            {data.tipo === "ESTAGIO" && (
+              <div className="form-grid">
+                <label>
+                  <span>Instituição de ensino</span>
+                  <select
+                    value={String(data.instituicaoEnsinoId ?? "")}
+                    onChange={(e) =>
+                      setData({
+                        ...data,
+                        instituicaoEnsinoId: e.target.value || null,
+                      })
+                    }
+                  >
+                    <option value="">Selecione</option>
+                    {options.institutions.map((row) => (
+                      <option key={String(row.id)} value={String(row.id)}>
+                        {display(row)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {field("periodoAcademico", "Período acadêmico")}
+                {field("valorBolsa", "Bolsa (R$)", "number")}
+              </div>
             )}
-          </div>
-        </fieldset>
+          </fieldset>
+        )}
         <fieldset>
           <legend>Observações</legend>
           <textarea
@@ -415,12 +567,25 @@ function PersonForm({
           </button>
         </div>
       </form>
-      <ConfirmDialog open={confirmClose} onOpenChange={setConfirmClose} title="Descartar alterações?" description="As informações preenchidas serão perdidas." confirmLabel="Descartar" onConfirm={onClose} />
+      <ConfirmDialog
+        open={confirmClose}
+        onOpenChange={setConfirmClose}
+        title="Descartar alterações?"
+        description="As informações preenchidas serão perdidas."
+        confirmLabel="Descartar"
+        onConfirm={onClose}
+      />
     </section>
   );
 }
 
-export function PersonEditor({ id, navigate }: { id?: string; navigate: Navigate }) {
+export function PersonEditor({
+  id,
+  navigate,
+}: {
+  id?: string;
+  navigate: Navigate;
+}) {
   const [person, setPerson] = useState<Row | undefined>(),
     [loading, setLoading] = useState(Boolean(id)),
     [error, setError] = useState(""),
@@ -440,22 +605,41 @@ export function PersonEditor({ id, navigate }: { id?: string; navigate: Navigate
     window.addEventListener("beforeunload", guard);
     return () => window.removeEventListener("beforeunload", guard);
   }, [dirty]);
-  if (loading) return <LoadingSkeleton variant="detail" label="Carregando pessoa…" />;
+  if (loading)
+    return <LoadingSkeleton variant="detail" label="Carregando pessoa…" />;
   if (error) return <Notice text={error} error />;
   return (
     <>
       <PageHeader
         title={id ? "Editar pessoa" : "Nova pessoa"}
         description="Dados pessoais, contato e endereço."
-        breadcrumb={<button className="link-button" onClick={() => dirty ? setConfirmBack(true) : navigate(destination)}>← Voltar</button>}
+        breadcrumb={
+          <button
+            className="link-button"
+            onClick={() =>
+              dirty ? setConfirmBack(true) : navigate(destination)
+            }
+          >
+            ← Voltar
+          </button>
+        }
       />
       <PersonForm
         {...(person ? { person } : {})}
         onClose={() => navigate(destination)}
-        onSaved={(savedId) => navigate(id && savedId ? `/app/pessoas/${savedId}` : "/app/pessoas")}
+        onSaved={(savedId) =>
+          navigate(id && savedId ? `/app/pessoas/${savedId}` : "/app/pessoas")
+        }
         onDirtyChange={setDirty}
       />
-      <ConfirmDialog open={confirmBack} onOpenChange={setConfirmBack} title="Descartar alterações?" description="As informações preenchidas serão perdidas." confirmLabel="Descartar" onConfirm={() => navigate(destination)} />
+      <ConfirmDialog
+        open={confirmBack}
+        onOpenChange={setConfirmBack}
+        title="Descartar alterações?"
+        description="As informações preenchidas serão perdidas."
+        confirmLabel="Descartar"
+        onConfirm={() => navigate(destination)}
+      />
     </>
   );
 }
@@ -472,6 +656,7 @@ export function PersonProfile({
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
     [formScreen, setFormScreen] = useState<string | null>(null),
+    [editingLink, setEditingLink] = useState<Row | null>(null),
     [version, setVersion] = useState(0);
   useEffect(() => {
     setLoading(true);
@@ -519,7 +704,9 @@ export function PersonProfile({
           }
           action={
             <div className="form-actions">
-              <button onClick={() => navigate(`/app/pessoas/${id}/editar`)}>Editar pessoa</button>
+              <button onClick={() => navigate(`/app/pessoas/${id}/editar`)}>
+                Editar pessoa
+              </button>
             </div>
           }
         />
@@ -529,8 +716,34 @@ export function PersonProfile({
             error
           />
         )}
-        <FormSheet open={Boolean(formScreen)} onOpenChange={(open) => { if (!open) setFormScreen(null); }} title={screens.find((screen) => screen.path === formScreen)?.title ?? "Novo registro"} description="Preencha os dados desta operação.">
-          {formScreen && <RecordForm embedded screen={screens.find((screen) => screen.path === formScreen)!} record={null} defaults={{ pessoaId: id, vinculoId: current?.id }} onClose={() => setFormScreen(null)} onSaved={() => { setFormScreen(null); setVersion(version + 1); }} />}
+        <FormSheet
+          open={Boolean(formScreen)}
+          onOpenChange={(open) => {
+            if (!open) setFormScreen(null);
+          }}
+          title={
+            screens.find((screen) => screen.path === formScreen)?.title ??
+            "Novo registro"
+          }
+          description="Preencha os dados desta operação."
+        >
+          {formScreen && (
+            <RecordForm
+              embedded
+              screen={screens.find((screen) => screen.path === formScreen)!}
+              record={editingLink ?? null}
+              defaults={{ pessoaId: id, vinculoId: current?.id }}
+              onClose={() => {
+                setFormScreen(null);
+                setEditingLink(null);
+              }}
+              onSaved={() => {
+                setFormScreen(null);
+                setEditingLink(null);
+                setVersion(version + 1);
+              }}
+            />
+          )}
         </FormSheet>
         <div className="tabs" role="tablist">
           {tabs.map(([key, label]) => (
@@ -547,10 +760,58 @@ export function PersonProfile({
         </div>
         {tab !== "visao" && tab !== "historico" && (
           <div className="context-actions">
-            {tab === "vinculo" && <button onClick={() => setFormScreen("vinculos")}>Adicionar vínculo</button>}
-            {tab === "descanso" && <><button onClick={() => setFormScreen("periodos")}>Programar descanso</button><ActionMenu items={[{ label: "Registrar ajuste", onSelect: () => setFormScreen("ajustes-descanso") }]} /></>}
-            {tab === "beneficios" && <><button onClick={() => setFormScreen("beneficios-vinculo")}>Adicionar benefício</button><ActionMenu items={[{ label: "Nova competência", onSelect: () => setFormScreen("competencias") }, { label: "Registrar ajuste", onSelect: () => setFormScreen("ajustes-beneficios") }]} /></>}
-            {tab === "documentos" && <><button onClick={() => setFormScreen("documentos")}>Adicionar documento</button><button className="secondary" onClick={() => setFormScreen("seguros")}>Adicionar seguro</button></>}
+            {tab === "vinculo" && (
+              <button onClick={() => setFormScreen("vinculos")}>
+                Adicionar vínculo
+              </button>
+            )}
+            {tab === "descanso" && (
+              <>
+                <button onClick={() => setFormScreen("periodos")}>
+                  Programar descanso
+                </button>
+                <ActionMenu
+                  items={[
+                    {
+                      label: "Registrar ajuste",
+                      onSelect: () => setFormScreen("ajustes-descanso"),
+                    },
+                  ]}
+                />
+              </>
+            )}
+            {tab === "beneficios" && (
+              <>
+                <button onClick={() => setFormScreen("beneficios-vinculo")}>
+                  Adicionar benefício
+                </button>
+                <ActionMenu
+                  items={[
+                    {
+                      label: "Nova competência",
+                      onSelect: () => setFormScreen("competencias"),
+                    },
+                    {
+                      label: "Registrar ajuste",
+                      onSelect: () => setFormScreen("ajustes-beneficios"),
+                    },
+                  ]}
+                />
+              </>
+            )}
+            {tab === "documentos" && (
+              <>
+                <button onClick={() => setFormScreen("documentos")}>
+                  Adicionar documento
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => setFormScreen("seguros")}
+                >
+                  Adicionar seguro
+                </button>
+              </>
+            )}
           </div>
         )}
         {tab === "visao" && (
@@ -618,13 +879,42 @@ export function PersonProfile({
           </div>
         )}
         {tab === "vinculo" && (
-          <Timeline
-            items={links.map((link) => ({
-              date: link.dataAdmissao,
-              title: `${link.tipo} · ${display(link.unidade)}`,
-              detail: `${link.status} · ${display(link.equipe)}`,
-            }))}
-          />
+          <>
+            <div className="stack">
+              {links.map((link) => (
+                <section className="panel" key={String(link.id)}>
+                  <div className="section-heading">
+                    <h2>
+                      {String(link.tipo)} · {display(link.unidade)}
+                    </h2>
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        setEditingLink(link);
+                        setFormScreen("vinculos");
+                      }}
+                    >
+                      Editar vínculo
+                    </button>
+                  </div>
+                  <p>
+                    {String(link.status)} · {display(link.equipe)} ·{" "}
+                    {formatDate(link.dataAdmissao)}
+                  </p>
+                </section>
+              ))}
+            </div>
+            {/* eslint-disable-next-line no-constant-binary-expression */}
+            {false && (
+              <Timeline
+                items={links.map((link) => ({
+                  date: link.dataAdmissao,
+                  title: `${link.tipo} · ${display(link.unidade)}`,
+                  detail: `${link.status} · ${display(link.equipe)}`,
+                }))}
+              />
+            )}
+          </>
         )}
         {tab === "descanso" && (
           <div className="stack">
@@ -1079,8 +1369,29 @@ function OperationalList({
         }
       />
       {error && <Notice text={error} error />}
-      <FormSheet open={Boolean(formScreen)} onOpenChange={(open) => { if (!open) setFormScreen(null); }} title={screens.find((screen) => screen.path === formScreen)?.title ?? "Novo registro"} description="Preencha os dados desta operação.">
-        {formScreen && <RecordForm embedded screen={screens.find((screen) => screen.path === formScreen)!} record={null} onClose={() => setFormScreen(null)} onSaved={() => { setFormScreen(null); setVersion(version + 1); }} />}
+      <FormSheet
+        open={Boolean(formScreen)}
+        onOpenChange={(open) => {
+          if (!open) setFormScreen(null);
+        }}
+        title={
+          screens.find((screen) => screen.path === formScreen)?.title ??
+          "Novo registro"
+        }
+        description="Preencha os dados desta operação."
+      >
+        {formScreen && (
+          <RecordForm
+            embedded
+            screen={screens.find((screen) => screen.path === formScreen)!}
+            record={null}
+            onClose={() => setFormScreen(null)}
+            onSaved={() => {
+              setFormScreen(null);
+              setVersion(version + 1);
+            }}
+          />
+        )}
       </FormSheet>
       {loading && !hasLoaded ? (
         <LoadingSkeleton
@@ -1387,8 +1698,24 @@ export function RegistryDetail({
             <button onClick={() => setEditing(true)}>Editar cadastro</button>
           }
         />
-        <FormDialog open={editing} onOpenChange={setEditing} title={`Editar · ${screen.title}`} description={screen.description}>
-          {editing && <RecordForm embedded screen={screen} record={record} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); setVersion(version + 1); }} />}
+        <FormDialog
+          open={editing}
+          onOpenChange={setEditing}
+          title={`Editar · ${screen.title}`}
+          description={screen.description}
+        >
+          {editing && (
+            <RecordForm
+              embedded
+              screen={screen}
+              record={record}
+              onClose={() => setEditing(false)}
+              onSaved={() => {
+                setEditing(false);
+                setVersion(version + 1);
+              }}
+            />
+          )}
         </FormDialog>
         <InfoCard
           title="Cadastro"

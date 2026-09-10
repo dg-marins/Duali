@@ -101,3 +101,52 @@ test("authentication, CSRF, people, team history, uniqueness and revocation", as
     await f.app.close();
   }
 });
+
+test("composite person creation converts dates and creates an active initial link atomically", async () => {
+  const f = await fixture();
+  try {
+    const unit = await f.db.unidade.create({
+      data: {
+        nome: `Unidade composta ${f.suffix}`,
+        sigla: f.suffix.slice(0, 8),
+        uf: "RJ",
+      },
+    });
+    const response = await f.app.inject({
+      method: "POST",
+      url: "/api/pessoas-com-vinculo",
+      headers: f.headers,
+      payload: {
+        pessoa: {
+          nomeCompleto: `Pessoa composta ${f.suffix}`,
+          dataNascimento: "2000-01-02",
+          email: `composta-${f.suffix}@example.test`,
+        },
+        vinculo: {
+          unidadeId: unit.id,
+          tipo: "CLT",
+          dataAdmissao: "2026-01-01",
+        },
+      },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const created = response.json<{
+      pessoa: { id: string };
+      vinculo: { id: string; status: string };
+    }>();
+    expect(created.vinculo.status).toBe("ATIVO");
+    const person = await f.db.pessoa.findUniqueOrThrow({
+      where: { id: created.pessoa.id },
+    });
+    expect(person.dataNascimento?.toISOString().slice(0, 10)).toBe(
+      "2000-01-02",
+    );
+    expect(
+      await f.db.auditoria.count({
+        where: { entidadeId: created.pessoa.id, acao: "CRIAR" },
+      }),
+    ).toBe(1);
+  } finally {
+    await f.app.close();
+  }
+});

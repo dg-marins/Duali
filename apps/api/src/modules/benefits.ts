@@ -20,7 +20,13 @@ import {
   type Tx,
 } from "../core.js";
 import { registerResource, type Resource } from "./resources.js";
+import { transportCalculation } from "./transport.js";
 export function benefitCalculation(row: Row): Row {
+  if (
+    (row.beneficioVinculo as Row | undefined)?.tipo === "TRANSPORTE" &&
+    row.transporteItens
+  )
+    return transportCalculation(row);
   const quantity = row.quantidadeDias ?? row.quantidade;
   const ajustes = (row.ajustes ?? []) as Row[];
   const adjustment = ajustes.reduce(
@@ -97,6 +103,7 @@ export const benefitResources: Resource[] = [
       beneficioVinculo: { include: { vinculo: { include: { pessoa: true } } } },
       configuracao: { include: { fornecedor: true } },
       ajustes: true,
+      transporteItens: { include: { cartaoTransporte: true } },
     },
     present: benefitCalculation,
     filters: ["status"],
@@ -210,6 +217,7 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
         ajustes: true,
         configuracao: true,
         beneficioVinculo: { include: { vinculo: true } },
+        transporteItens: { include: { cartaoTransporte: true } },
       },
     });
     const totals = Object.fromEntries(
@@ -352,6 +360,7 @@ export async function benefitAlerts(db: PrismaClient) {
     include: {
       ajustes: true,
       beneficioVinculo: { include: { vinculo: { include: { pessoa: true } } } },
+      transporteItens: { include: { cartaoTransporte: true } },
     },
   });
   return rows.flatMap((row) => {

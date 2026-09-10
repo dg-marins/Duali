@@ -371,6 +371,21 @@ model Fornecedor {
  ativo Boolean @default(true)
  configuracoes ConfiguracaoBeneficio[]
 }
+enum TipoConducao {
+ ONIBUS
+ ONIBUS_INTER
+ BARCA
+ METRO
+}
+model CartaoTransporte {
+ id String @id @default(uuid()) @db.Uuid
+ nome String @unique @db.VarChar(120)
+ ativo Boolean @default(true)
+ criadoEm DateTime @default(now())
+ atualizadoEm DateTime @updatedAt
+ itens BeneficioTransporteItem[]
+ snapshots BeneficioTransporteCompetenciaItem[]
+}
 model ConfiguracaoBeneficio {
  id String @id @default(uuid()) @db.Uuid
  unidadeId String @db.Uuid
@@ -394,6 +409,7 @@ model BeneficioVinculo {
  observacoes String?
  competencias BeneficioCompetencia[]
  periodosHistoricos BeneficioPeriodoHistorico[]
+ transporteItens BeneficioTransporteItem[]
  @@index([vinculoId,tipo])
 }
 model BeneficioCompetencia {
@@ -411,8 +427,40 @@ model BeneficioCompetencia {
  status StatusLancamentoBeneficio @default(PENDENTE)
  observacoes String?
  ajustes BeneficioAjuste[]
+ transporteItens BeneficioTransporteCompetenciaItem[]
+ transporteRevisaoPendente Boolean @default(false)
  @@unique([beneficioVinculoId,configuracaoId,competencia,componente])
  @@index([competencia,status])
+}
+model BeneficioTransporteItem {
+ id String @id @default(uuid()) @db.Uuid
+ beneficioVinculoId String @db.Uuid
+ beneficioVinculo BeneficioVinculo @relation(fields:[beneficioVinculoId],references:[id])
+ tipoConducao TipoConducao
+ cartaoTransporteId String @db.Uuid
+ cartaoTransporte CartaoTransporte @relation(fields:[cartaoTransporteId],references:[id])
+ valorDiario Decimal @db.Decimal(12,2)
+ inicioVigencia DateTime @db.Date
+ fimVigencia DateTime? @db.Date
+ ativo Boolean @default(true)
+ criadoEm DateTime @default(now())
+ atualizadoEm DateTime @updatedAt
+ snapshots BeneficioTransporteCompetenciaItem[]
+ @@index([beneficioVinculoId,ativo,inicioVigencia])
+ @@index([cartaoTransporteId,tipoConducao])
+}
+model BeneficioTransporteCompetenciaItem {
+ id String @id @default(uuid()) @db.Uuid
+ competenciaId String @db.Uuid
+ competencia BeneficioCompetencia @relation(fields:[competenciaId],references:[id])
+ origemItemId String? @db.Uuid
+ origemItem BeneficioTransporteItem? @relation(fields:[origemItemId],references:[id],onDelete:SetNull)
+ tipoConducao TipoConducao
+ cartaoTransporteId String @db.Uuid
+ cartaoTransporte CartaoTransporte @relation(fields:[cartaoTransporteId],references:[id])
+ valorDiario Decimal @db.Decimal(12,2)
+ @@index([competenciaId])
+ @@index([cartaoTransporteId,tipoConducao])
 }
 model BeneficioAjuste {
  id String @id @default(uuid()) @db.Uuid

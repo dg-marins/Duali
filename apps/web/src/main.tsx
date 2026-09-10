@@ -19,10 +19,25 @@ import { PendingsPage } from "./features/pendings/PendingsPage";
 import { BenefitClosingPage } from "./features/benefits/BenefitClosingPage";
 import { Toaster } from "sonner";
 import {
-  BarChart3, BriefcaseBusiness, Building2, CalendarDays, ChevronLeft,
-  ChevronRight, CircleAlert, ClipboardList, Database, FileChartColumn,
-  GraduationCap, LayoutDashboard, Menu, Settings2, ShieldCheck, Users,
-  UserRoundCog, WalletCards, X,
+  BarChart3,
+  BriefcaseBusiness,
+  Building2,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  ClipboardList,
+  Database,
+  FileChartColumn,
+  GraduationCap,
+  LayoutDashboard,
+  Menu,
+  Settings2,
+  ShieldCheck,
+  Users,
+  UserRoundCog,
+  WalletCards,
+  X,
 } from "lucide-react";
 import "./style.css";
 
@@ -113,7 +128,8 @@ function App() {
     [senha, setSenha] = useState(""),
     [collapsed, setCollapsed] = useState(false),
     [drawer, setDrawer] = useState(false),
-    [openGroup, setOpenGroup] = useState("");
+    [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set()),
+    [flyoutGroup, setFlyoutGroup] = useState<string | null>(null);
   const returnRoute = useRef<string | null>(null);
   const retryButton = useRef<HTMLButtonElement | null>(null);
   useEffect(
@@ -169,6 +185,18 @@ function App() {
     document.addEventListener("keydown", close);
     return () => document.removeEventListener("keydown", close);
   }, [drawer]);
+  useEffect(() => {
+    const close = () => setFlyoutGroup(null);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFlyoutGroup(null);
+    };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, []);
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -270,7 +298,7 @@ function App() {
   const go = (next: string) => {
     navigate(next);
     setDrawer(false);
-    setOpenGroup("");
+    setFlyoutGroup(null);
   };
   return (
     <div className={`shell ${collapsed ? "sidebar-collapsed" : ""}`}>
@@ -293,7 +321,11 @@ function App() {
           >
             {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </button>
-          <button className="icon-button drawer-close" aria-label="Fechar menu" onClick={() => setDrawer(false)}>
+          <button
+            className="icon-button drawer-close"
+            aria-label="Fechar menu"
+            onClick={() => setDrawer(false)}
+          >
             <X size={19} />
           </button>
         </div>
@@ -317,22 +349,36 @@ function App() {
           ))}
           <div className="nav-divider" />
           {grouped.map((group) => {
-            const active = group.items.some(([route]) =>
-              path.startsWith(route),
-            );
-            const open = active || openGroup === group.title || (!collapsed && !openGroup);
+            const open = collapsed
+              ? flyoutGroup === group.title
+              : openGroups.has(group.title);
             return (
               <section className="nav-group" key={group.title}>
                 <button
                   className="nav-group-toggle"
                   title={group.title}
                   aria-expanded={open}
-                  onClick={() =>
-                    setOpenGroup(openGroup === group.title ? "" : group.title)
-                  }
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (collapsed)
+                      setFlyoutGroup(
+                        flyoutGroup === group.title ? null : group.title,
+                      );
+                    else
+                      setOpenGroups((current) => {
+                        const next = new Set(current);
+                        if (next.has(group.title)) next.delete(group.title);
+                        else next.add(group.title);
+                        return next;
+                      });
+                  }}
                 >
-                  <span className="nav-icon" aria-hidden="true"><group.icon size={19} /></span>
-                  <span className="nav-label nav-group-title">{group.title}</span>
+                  <span className="nav-icon" aria-hidden="true">
+                    <group.icon size={19} />
+                  </span>
+                  <span className="nav-label nav-group-title">
+                    {group.title}
+                  </span>
                   <span className="nav-label">{open ? "−" : "+"}</span>
                 </button>
                 {open && (
@@ -344,7 +390,9 @@ function App() {
                         className={path === route ? "active" : ""}
                         onClick={() => go(route)}
                       >
-                        <span className="nav-icon" aria-hidden="true"><Icon size={17} /></span>
+                        <span className="nav-icon" aria-hidden="true">
+                          <Icon size={17} />
+                        </span>
                         <span className="nav-label">{label}</span>
                       </button>
                     ))}
@@ -404,9 +452,10 @@ function RouteContent({
   path: string;
   navigate: (path: string) => void;
 }) {
-  if (path === "/app/pessoas/nova") return <PersonEditor navigate={navigate} />;
+  if (path === "/app/pessoas/nova") return <PeoplePage navigate={navigate} />;
   const editPerson = path.match(/^\/app\/pessoas\/([0-9a-f-]+)\/editar$/i);
-  if (editPerson) return <PersonEditor id={editPerson[1]!} navigate={navigate} />;
+  if (editPerson)
+    return <PersonEditor id={editPerson[1]!} navigate={navigate} />;
   const person = path.match(/^\/app\/pessoas\/([0-9a-f-]+)$/i);
   if (person)
     return (

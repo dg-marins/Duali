@@ -14,6 +14,58 @@ export const benefitTypes = [
   "PREMIACAO",
   "OUTRO",
 ] as const;
+export const transportTypes = [
+  "ONIBUS",
+  "ONIBUS_INTER",
+  "BARCA",
+  "METRO",
+] as const;
+export const cartaoTransporteSchema = z
+  .object({ nome: shortText, ativo: z.boolean().default(true) })
+  .strict();
+const transporteItemBase = z
+  .object({
+    beneficioVinculoId: id,
+    tipoConducao: z.enum(transportTypes),
+    cartaoTransporteId: id,
+    valorDiario: money,
+    inicioVigencia: date,
+    fimVigencia: optionalDate,
+    ativo: z.boolean().default(true),
+  })
+  .strict();
+export const transporteItemSchema = transporteItemBase.superRefine((v, ctx) => {
+  if (v.fimVigencia && v.fimVigencia < v.inicioVigencia)
+    ctx.addIssue({
+      code: "custom",
+      path: ["fimVigencia"],
+      message: "Fim anterior ao início.",
+    });
+});
+export const transporteItemInputSchema = transporteItemBase
+  .omit({ beneficioVinculoId: true })
+  .strict();
+export const transporteCompetenciaSchema = z
+  .object({
+    beneficioVinculoId: id,
+    configuracaoId: id,
+    competencia: date.refine(
+      (v) => v.endsWith("-01"),
+      "Informe o primeiro dia do mês.",
+    ),
+    quantidadeDias: z.coerce
+      .number()
+      .finite()
+      .min(0)
+      .max(99999)
+      .multipleOf(0.01),
+    valorInformado: money.nullable().optional(),
+    status: z
+      .enum(["PENDENTE", "CONFERIDO", "PAGO", "CANCELADO"])
+      .default("PENDENTE"),
+    observacoes: optionalText,
+  })
+  .strict();
 export const fornecedorSchema = z
   .object({ nome: shortText, ativo: z.boolean().default(true) })
   .strict();
