@@ -8,6 +8,7 @@ import { Dashboard, Reporting, Audit } from "./Reporting";
 import { Imports } from "./Imports";
 import {
   PeoplePage,
+  PersonEditor,
   PersonProfile,
   InternsPage,
   LeavePage,
@@ -17,37 +18,58 @@ import {
 import { PendingsPage } from "./features/pendings/PendingsPage";
 import { BenefitClosingPage } from "./features/benefits/BenefitClosingPage";
 import { Toaster } from "sonner";
+import {
+  BarChart3, BriefcaseBusiness, Building2, CalendarDays, ChevronLeft,
+  ChevronRight, CircleAlert, ClipboardList, Database, FileChartColumn,
+  GraduationCap, LayoutDashboard, Menu, Settings2, ShieldCheck, Users,
+  UserRoundCog, WalletCards, X,
+} from "lucide-react";
 import "./style.css";
 
 const primary = [
-  ["/app", "Visão geral", "⌂"],
-  ["/app/pendencias", "Pendências", "!"],
-  ["/app/pessoas", "Pessoas", "●"],
-  ["/app/estagiarios", "Estagiários", "◇"],
-  ["/app/ferias", "Férias e descanso", "◷"],
-  ["/app/beneficios", "Benefícios", "▣"],
-  ["/app/importacoes", "Importações", "⇧"],
-  ["/app/relatorios", "Relatórios", "▤"],
+  ["/app", "Visão geral", LayoutDashboard],
+  ["/app/pendencias", "Pendências", CircleAlert],
+  ["/app/pessoas", "Pessoas", Users],
 ] as const;
 const grouped = [
   {
-    title: "Cadastros",
+    title: "Operação",
+    icon: BriefcaseBusiness,
     items: [
-      ["/app/cadastros/unidades", "Unidades"],
-      ["/app/cadastros/equipes", "Equipes"],
-      ["/app/cadastros/instituicoes", "Instituições"],
-      ["/app/cadastros/fornecedores", "Fornecedores / meios"],
+      ["/app/estagiarios", "Estagiários", GraduationCap],
+      ["/app/ferias", "Férias e descanso", CalendarDays],
+      ["/app/beneficios", "Benefícios", WalletCards],
+    ],
+  },
+  {
+    title: "Dados",
+    icon: Database,
+    items: [
+      ["/app/importacoes", "Importações", ClipboardList],
+      ["/app/relatorios", "Relatórios", FileChartColumn],
+    ],
+  },
+  {
+    title: "Cadastros",
+    icon: Building2,
+    items: [
+      ["/app/cadastros/unidades", "Unidades", Building2],
+      ["/app/cadastros/equipes", "Equipes", Users],
+      ["/app/cadastros/instituicoes", "Instituições", GraduationCap],
+      ["/app/cadastros/fornecedores", "Fornecedores / meios", WalletCards],
       [
         "/app/cadastros/configuracoes-beneficios",
         "Configurações de benefícios",
+        Settings2,
       ],
     ],
   },
   {
     title: "Administração",
+    icon: ShieldCheck,
     items: [
-      ["/app/admin/usuarios", "Usuários"],
-      ["/app/admin/auditoria", "Auditoria"],
+      ["/app/admin/usuarios", "Usuários", UserRoundCog],
+      ["/app/admin/auditoria", "Auditoria", BarChart3],
     ],
   },
 ] as const;
@@ -139,6 +161,14 @@ function App() {
   useEffect(() => {
     if (auth.status === "unavailable") retryButton.current?.focus();
   }, [auth.status]);
+  useEffect(() => {
+    if (!drawer) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDrawer(false);
+    };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [drawer]);
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -240,6 +270,7 @@ function App() {
   const go = (next: string) => {
     navigate(next);
     setDrawer(false);
+    setOpenGroup("");
   };
   return (
     <div className={`shell ${collapsed ? "sidebar-collapsed" : ""}`}>
@@ -257,14 +288,17 @@ function App() {
           </div>
           <button
             className="icon-button collapse-button"
-            aria-label="Recolher menu"
+            aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
             onClick={() => setCollapsed(!collapsed)}
           >
-            {collapsed ? "›" : "‹"}
+            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
+          <button className="icon-button drawer-close" aria-label="Fechar menu" onClick={() => setDrawer(false)}>
+            <X size={19} />
           </button>
         </div>
         <nav>
-          {primary.map(([route, label, icon]) => (
+          {primary.map(([route, label, Icon]) => (
             <button
               key={route}
               title={label}
@@ -276,7 +310,7 @@ function App() {
               onClick={() => go(route)}
             >
               <span className="nav-icon" aria-hidden="true">
-                {icon}
+                <Icon size={19} />
               </span>
               <span className="nav-label">{label}</span>
             </button>
@@ -286,27 +320,31 @@ function App() {
             const active = group.items.some(([route]) =>
               path.startsWith(route),
             );
-            const open = openGroup === group.title || active;
+            const open = active || openGroup === group.title || (!collapsed && !openGroup);
             return (
               <section className="nav-group" key={group.title}>
                 <button
                   className="nav-group-toggle"
+                  title={group.title}
                   aria-expanded={open}
                   onClick={() =>
                     setOpenGroup(openGroup === group.title ? "" : group.title)
                   }
                 >
-                  <span className="nav-label">{group.title}</span>
+                  <span className="nav-icon" aria-hidden="true"><group.icon size={19} /></span>
+                  <span className="nav-label nav-group-title">{group.title}</span>
                   <span className="nav-label">{open ? "−" : "+"}</span>
                 </button>
                 {open && (
                   <div className="nav-items">
-                    {group.items.map(([route, label]) => (
+                    {group.items.map(([route, label, Icon]) => (
                       <button
                         key={route}
+                        title={label}
                         className={path === route ? "active" : ""}
                         onClick={() => go(route)}
                       >
+                        <span className="nav-icon" aria-hidden="true"><Icon size={17} /></span>
                         <span className="nav-label">{label}</span>
                       </button>
                     ))}
@@ -333,7 +371,7 @@ function App() {
             aria-label="Abrir menu"
             onClick={() => setDrawer(true)}
           >
-            ☰
+            <Menu size={20} />
           </button>
           <span>{routeTitle(path)}</span>
           <div className="top-account">
@@ -366,6 +404,9 @@ function RouteContent({
   path: string;
   navigate: (path: string) => void;
 }) {
+  if (path === "/app/pessoas/nova") return <PersonEditor navigate={navigate} />;
+  const editPerson = path.match(/^\/app\/pessoas\/([0-9a-f-]+)\/editar$/i);
+  if (editPerson) return <PersonEditor id={editPerson[1]!} navigate={navigate} />;
   const person = path.match(/^\/app\/pessoas\/([0-9a-f-]+)$/i);
   if (person)
     return (

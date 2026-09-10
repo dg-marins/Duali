@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { api, display, type Row } from "../../api";
 import { Notice } from "../../components";
 import { Button } from "../../components/ui/button";
-import { LoadingSkeleton, RefreshingContent } from "../../ui";
+import { FormDialog, LoadingSkeleton, RefreshingContent } from "../../ui";
 export function BenefitClosingPage({
   navigate,
 }: {
@@ -17,7 +17,10 @@ export function BenefitClosingPage({
     [unitsLoading, setUnitsLoading] = useState(true),
     [loading, setLoading] = useState(false),
     [hasLoaded, setHasLoaded] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [reopening, setReopening] = useState(false),
+    [reason, setReason] = useState(""),
+    [reasonError, setReasonError] = useState("");
   useEffect(() => {
     const timer = setTimeout(() => {
       setUnitsLoading(true);
@@ -170,14 +173,7 @@ export function BenefitClosingPage({
                     </Button>
                   )}
                   {closing.status === "FECHADA" && (
-                    <Button
-                      onClick={() => {
-                        const motivo = prompt(
-                          "Motivo obrigatório para reabrir:",
-                        )?.trim();
-                        if (motivo) void action("reabrir", { motivo });
-                      }}
-                    >
+                    <Button onClick={() => setReopening(true)}>
                       Reabrir competência
                     </Button>
                   )}
@@ -193,6 +189,19 @@ export function BenefitClosingPage({
           )}
         </RefreshingContent>
       )}
+      <FormDialog open={reopening} onOpenChange={setReopening} title="Reabrir competência" description="Informe o motivo para manter a rastreabilidade desta operação.">
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          const motivo = reason.trim();
+          if (!motivo) { setReasonError("Informe o motivo da reabertura."); return; }
+          setReasonError("");
+          void action("reabrir", { motivo }).then(() => { setReopening(false); setReason(""); }).catch((cause) => setReasonError((cause as Error).message));
+        }}>
+          <label><span>Motivo *</span><textarea autoFocus value={reason} onChange={(event) => setReason(event.target.value)} aria-invalid={Boolean(reasonError)} /></label>
+          {reasonError && <small className="field-error" role="alert">{reasonError}</small>}
+          <div className="form-actions dialog-actions"><Button type="button" variant="outline" onClick={() => setReopening(false)}>Cancelar</Button><Button type="submit">Reabrir competência</Button></div>
+        </form>
+      </FormDialog>
     </div>
   );
 }

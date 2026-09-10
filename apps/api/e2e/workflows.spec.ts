@@ -1,8 +1,30 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import argon2 from "argon2";
 import { PrismaClient } from "@duali/database";
 import { testDatabaseUrl } from "../src/test-helper.js";
+
+async function selectLookup(
+  container: Locator,
+  label: string,
+  option: string,
+  query?: string,
+  keyboard = false,
+) {
+  await container.getByRole("button", { name: label, exact: true }).click();
+  const search = container.getByLabel(`Buscar ${label}`);
+  if (query) await search.fill(query);
+  const match = container.getByRole("option", { name: new RegExp(option) });
+  await expect(match).toBeVisible();
+  if (keyboard) {
+    await search.press("ArrowDown");
+    await search.press("Escape");
+    await expect(container.getByRole("button", { name: label, exact: true })).toBeFocused();
+    await container.getByRole("button", { name: label, exact: true }).click();
+    if (query) await container.getByLabel(`Buscar ${label}`).fill(query);
+    await container.getByRole("option", { name: new RegExp(option) }).click();
+  } else await match.click();
+}
 
 test("administrator completes the operational RH journey", async ({ page }) => {
   test.setTimeout(150_000);
@@ -30,9 +52,33 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       page.getByRole("heading", { name: "Pendências" }),
     ).toBeVisible();
 
+    await page.getByRole("button", { name: "Recolher menu" }).click();
+    await expect(page.getByRole("button", { name: "Equipes", exact: true })).toBeHidden();
+    await page.getByRole("button", { name: "Cadastros", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Equipes", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Expandir menu" }).click();
+    await page.getByRole("button", { name: "Equipes", exact: true }).click();
+    await page.getByRole("button", { name: "Novo registro" }).click();
+    const teamDialog = page.getByRole("dialog", { name: /Novo registro · Equipes/ });
+    await expect(teamDialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(teamDialog).toBeHidden();
+    await expect(page.getByRole("button", { name: "Novo registro" })).toBeFocused();
+    await page.getByRole("button", { name: "Novo registro" }).click();
+    await teamDialog.getByLabel("Nome *").fill(`Equipe descartada ${suffix}`);
+    await teamDialog.getByRole("button", { name: "Cancelar" }).click();
+    const discardDialog = page.getByRole("dialog", { name: "Descartar alterações?" });
+    await expect(discardDialog).toBeVisible();
+    await discardDialog.getByRole("button", { name: "Descartar" }).click();
+    await expect(teamDialog).toBeHidden();
+
     await page.getByRole("button", { name: "Pessoas", exact: true }).click();
     await page.getByRole("button", { name: "+ Nova pessoa" }).click();
     const personForm = page.locator(".form-panel");
+    await personForm.getByLabel("Nome completo *").fill("Rascunho");
+    await page.getByRole("button", { name: "← Voltar" }).click();
+    await expect(page.getByRole("dialog", { name: "Descartar alterações?" })).toBeVisible();
+    await page.getByRole("button", { name: "Continuar editando" }).click();
     await personForm.getByLabel("Nome completo *").fill(`Pessoa E2E ${suffix}`);
     await personForm.getByLabel("E-mail").fill(`pessoa-${suffix}@example.test`);
     await personForm.getByLabel("CEP").fill("20000-000");
@@ -60,15 +106,11 @@ test("administrator completes the operational RH journey", async ({ page }) => {
         uf: "RJ",
       },
     });
-    await page.getByRole("button", { name: "Novo vínculo" }).click();
+    await page.getByRole("tab", { name: "Vínculo", exact: true }).click();
+    await page.getByRole("button", { name: "Adicionar vínculo" }).click();
     const linkForm = page.locator(".form-panel");
-    await linkForm.getByLabel("Buscar Pessoa").fill(suffix);
-    await linkForm
-      .getByLabel("Pessoa", { exact: true })
-      .selectOption(person.id);
     await linkForm.getByLabel("Tipo", { exact: true }).selectOption("ESTAGIO");
-    await linkForm.getByLabel("Buscar Unidade").fill(suffix);
-    await linkForm.getByLabel("Unidade", { exact: true }).selectOption(unit.id);
+    await selectLookup(linkForm, "Unidade", suffix, suffix, true);
     await linkForm.getByLabel("Admissão").fill("2024-01-01");
     await linkForm.getByRole("button", { name: "Salvar", exact: true }).click();
     await expect(linkForm).toBeHidden();
@@ -81,9 +123,7 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       .click();
     await page.getByRole("button", { name: "Novo estágio" }).click();
     const internshipForm = page.locator(".form-panel");
-    await internshipForm
-      .getByLabel("Vínculo", { exact: true })
-      .selectOption(link.id);
+    await selectLookup(internshipForm, "Vínculo", suffix, suffix);
     await internshipForm.getByLabel("Período acadêmico").fill("5º");
     await internshipForm.getByLabel("Bolsa (R$)").fill("1800");
     await internshipForm
@@ -96,9 +136,7 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       .click();
     await page.getByRole("button", { name: "Programar período" }).click();
     const leaveForm = page.locator(".form-panel");
-    await leaveForm
-      .getByLabel("Vínculo", { exact: true })
-      .selectOption(link.id);
+    await selectLookup(leaveForm, "Vínculo", suffix, suffix);
     await leaveForm
       .getByLabel("Tipo", { exact: true })
       .selectOption("DESCANSO_ESTAGIO");
@@ -123,9 +161,7 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     await page.getByRole("button", { name: "Benefícios", exact: true }).click();
     await page.getByRole("button", { name: "Nova adesão" }).click();
     const enrollmentForm = page.locator(".form-panel");
-    await enrollmentForm
-      .getByLabel("Vínculo", { exact: true })
-      .selectOption(link.id);
+    await selectLookup(enrollmentForm, "Vínculo", suffix, suffix);
     await enrollmentForm
       .getByLabel("Tipo", { exact: true })
       .selectOption("ALIMENTACAO");
@@ -139,12 +175,8 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     });
     await page.getByRole("button", { name: "Nova competência" }).click();
     const competenceForm = page.locator(".form-panel");
-    await competenceForm
-      .getByLabel("Benefício do vínculo", { exact: true })
-      .selectOption(enrollment.id);
-    await competenceForm
-      .getByLabel("Configuração por unidade", { exact: true })
-      .selectOption(config.id);
+    await selectLookup(competenceForm, "Benefício do vínculo", enrollment.id, enrollment.id);
+    await selectLookup(competenceForm, "Configuração por unidade", config.id, config.id);
     await competenceForm
       .getByLabel("Competência (primeiro dia do mês)")
       .fill("2026-01-01");
@@ -154,10 +186,18 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       .getByRole("button", { name: "Salvar", exact: true })
       .click();
     await expect(competenceForm).toBeHidden();
-    await page.locator('input[type="month"]').fill("2026-01");
+    await Promise.all([
+      page.waitForResponse((response) => response.url().includes("beneficios-operacional") && response.url().includes("competencia=2026-01")),
+      page.locator('input[type="month"]').fill("2026-01"),
+    ]);
+    await page.getByLabel("Buscar", { exact: true }).fill(suffix);
     await expect(
-      page.getByRole("cell", { name: `Pessoa E2E ${suffix}` }),
-    ).toBeVisible();
+      page.getByRole("button", { name: `Pessoa E2E ${suffix}`, exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Detalhes" }).click();
+    await expect(page.locator(".mobile-details-row").getByText("Fornecedor", { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 720 });
 
     expect(await db.estagio.count({ where: { vinculoId: link.id } })).toBe(1);
     expect(
@@ -177,7 +217,7 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       .click();
     await page.getByLabel("Buscar unidade").fill(suffix);
     await page.getByLabel("Unidade", { exact: true }).selectOption(unit.id);
-    await page.getByLabel("Competência").fill("2026-01");
+    await page.getByRole("textbox", { name: "Competência", exact: true }).fill("2026-01");
     await page.getByRole("button", { name: "Preparar competência" }).click();
     await page.getByRole("button", { name: "Iniciar revisão" }).click();
     await page.getByRole("button", { name: "Fechar competência" }).click();

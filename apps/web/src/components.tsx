@@ -1,8 +1,18 @@
 import { inclusiveDays } from "@duali/shared";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { Check, ChevronsUpDown, Search } from "lucide-react";
+import { toast } from "sonner";
 import { api, ApiError, display, type Row } from "./api";
 import { label, type Screen, type Field } from "./resources";
-import { LoadingSkeleton, RefreshingContent } from "./ui";
+import {
+  ConfirmDialog,
+  FormActions,
+  FormDialog,
+  FilterBar,
+  LoadingSkeleton,
+  RefreshingContent,
+  useFormDirty,
+} from "./ui";
 export function Notice({
   text,
   error = false,
@@ -31,7 +41,21 @@ export function Lookup({
   const [q, setQ] = useState(""),
     [items, setItems] = useState<Row[]>([]),
     [error, setError] = useState(""),
-    [loading, setLoading] = useState(true);
+    [loading, setLoading] = useState(true),
+    [open, setOpen] = useState(false),
+    [activeIndex, setActiveIndex] = useState(0);
+  const listId = useId();
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const closeOptions = () => {
+    setOpen(false);
+    requestAnimationFrame(() => trigger.current?.focus());
+  };
+  const selected = items.find((row) => String(row.id) === String(value ?? ""));
+  const optionLabel = (row: Row) =>
+    row.pessoa
+      ? display(row.pessoa) + " · " + display(row.tipo)
+      : display(row);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
@@ -40,12 +64,26 @@ export function Lookup({
         field.resource + "?pageSize=100&q=" + encodeURIComponent(q),
       )
         .then(async (result) => {
+          if (
+            /^[0-9a-f-]{36}$/i.test(q) &&
+            !result.items.some((r) => String(r.id) === q)
+          ) {
+            try {
+              result.items.unshift(await api(field.resource + "/" + q));
+            } catch {
+              // O estado vazio torna explícito que o identificador não foi encontrado.
+            }
+          }
           if (value && !result.items.some((r) => r.id === value)) {
             const selected = await api(field.resource + "/" + String(value));
             result.items.unshift(selected);
           }
           if (active) {
             setItems(result.items);
+            const exactIndex = result.items.findIndex(
+              (row) => String(row.id) === q,
+            );
+            if (exactIndex >= 0) setActiveIndex(exactIndex);
             setError("");
           }
         })
@@ -61,32 +99,99 @@ export function Lookup({
       clearTimeout(timer);
     };
   }, [field.resource, q, value]);
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [open]);
   return (
-    <div className="lookup" aria-busy={loading}>
-      <input
-        aria-label={"Buscar " + field.label}
-        placeholder="Buscar opções…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-      />
-      <select
+    <div ref={root} className="lookup searchable-select" aria-busy={loading}>
+      <button
+        ref={trigger}
+        type="button"
+        className="searchable-trigger secondary"
         aria-label={field.label}
-        required={field.required ?? false}
-        value={String(value ?? "")}
-        onChange={(e) => onChange(e.target.value)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => setOpen(!open)}
       >
-        <option value="">
-          {loading && !items.length ? "Carregando…" : "Selecione…"}
-        </option>
-        {items.map((row) => (
-          <option key={String(row.id)} value={String(row.id)}>
-            {row.pessoa
-              ? display(row.pessoa) + " · " + display(row.tipo)
-              : display(row)}
-          </option>
-        ))}
-      </select>
-      {error && <small>{error}</small>}
+        <span>{selected ? optionLabel(selected) : "Selecione…"}</span>
+        <ChevronsUpDown size={16} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="searchable-popover">
+          <div className="searchable-input">
+            <Search size={16} aria-hidden="true" />
+            <input
+              autoFocus
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={open}
+              aria-controls={listId}
+              aria-activedescendant={items[activeIndex] ? `${listId}-${String(items[activeIndex]!.id)}` : undefined}
+              aria-label={"Buscar " + field.label}
+              placeholder="Buscar opções…"
+              value={q}
+              onChange={(event) => {
+                setQ(event.target.value);
+                setActiveIndex(0);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setActiveIndex((index) => Math.min(index + 1, items.length - 1));
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setActiveIndex((index) => Math.max(index - 1, 0));
+                }
+                if (event.key === "Enter" && items[activeIndex]) {
+                  event.preventDefault();
+                  onChange(String(items[activeIndex]!.id));
+                  closeOptions();
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  closeOptions();
+                }
+              }}
+            />
+          </div>
+          <div id={listId} role="listbox" aria-label={field.label} className="searchable-options">
+            {!loading && !error && items.length === 0 && (
+              <div className="searchable-state">Nenhuma opção encontrada.</div>
+            )}
+            {items.map((row, index) => (
+              <button
+                type="button"
+                role="option"
+                id={`${listId}-${String(row.id)}`}
+                tabIndex={-1}
+                aria-selected={String(row.id) === String(value ?? "")}
+                className={index === activeIndex ? "searchable-option active" : "searchable-option"}
+                key={String(row.id)}
+                onMouseEnter={() => setActiveIndex(index)}
+                onClick={() => {
+                  onChange(String(row.id));
+                  closeOptions();
+                }}
+              >
+                <span>{optionLabel(row)}</span>
+                {String(row.id) === String(value ?? "") && <Check size={16} aria-hidden="true" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {field.required && (
+        <input className="sr-only" tabIndex={-1} required value={String(value ?? "")} onChange={() => undefined} aria-hidden="true" />
+      )}
+      {error && <small className="field-error">{error}</small>}
       {loading && (
         <span className="sr-only" role="status">
           Carregando opções…
@@ -101,12 +206,14 @@ export function RecordForm({
   defaults,
   onClose,
   onSaved,
+  embedded = false,
 }: {
   screen: Screen;
   record: Row | null;
   defaults?: Row;
   onClose: () => void;
   onSaved: () => void;
+  embedded?: boolean;
 }) {
   const initial: Row = {};
   for (const f of screen.fields) {
@@ -119,7 +226,14 @@ export function RecordForm({
   const [data, setData] = useState(initial),
     [error, setError] = useState(""),
     [fields, setFields] = useState<Record<string, string[]>>({}),
-    [saving, setSaving] = useState(false);
+    [saving, setSaving] = useState(false),
+    [confirmClose, setConfirmClose] = useState(false);
+  const dirty = useMemo(
+    () => JSON.stringify(data) !== JSON.stringify(initial),
+    [data, initial],
+  );
+  useFormDirty(dirty);
+  const close = () => (dirty ? setConfirmClose(true) : onClose());
   async function submit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -153,12 +267,12 @@ export function RecordForm({
     }
   }
   return (
-    <section className="panel form-panel">
+    <div className={embedded ? "form-panel embedded-form" : "panel form-panel"}>
       <div className="section-heading">
         <h2>
           {record ? "Editar" : "Novo registro"} · {screen.title}
         </h2>
-        <button type="button" className="secondary" onClick={onClose}>
+        <button type="button" className="secondary" onClick={close}>
           Fechar
         </button>
       </div>
@@ -249,14 +363,17 @@ export function RecordForm({
             </button>
           </p>
         ) : null}
-        <div className="form-actions">
-          <button disabled={saving}>{saving ? "Salvando…" : "Salvar"}</button>
-          <button type="button" className="secondary" onClick={onClose}>
-            Cancelar
-          </button>
-        </div>
+        <FormActions pending={saving} onCancel={close} />
       </form>
-    </section>
+      <ConfirmDialog
+        open={confirmClose}
+        onOpenChange={setConfirmClose}
+        title="Descartar alterações?"
+        description="As informações preenchidas serão perdidas."
+        confirmLabel="Descartar"
+        onConfirm={onClose}
+      />
+    </div>
   );
 }
 export function Records({
@@ -320,32 +437,38 @@ export function Records({
       </div>
       <Notice text={notice} />
       <Notice text={error} error />
-      {editing !== undefined && (
-        <RecordForm
-          key={String(editing?.id ?? "new")}
-          screen={screen}
-          record={editing}
-          onClose={() => setEditing(undefined)}
-          onSaved={() => {
-            setEditing(undefined);
-            setVersion(version + 1);
-            setNotice("Registro salvo com sucesso.");
-          }}
-        />
-      )}
-      <section className="panel">
-        <div className="toolbar">
-          <input
-            aria-label="Buscar registros"
-            placeholder="Buscar…"
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setPage(1);
+      <FormDialog
+        open={editing !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setEditing(undefined);
+        }}
+        title={`${editing ? "Editar" : "Novo registro"} · ${screen.title}`}
+        description={screen.description}
+      >
+        {editing !== undefined && (
+          <RecordForm
+            key={String(editing?.id ?? "new")}
+            embedded
+            screen={screen}
+            record={editing}
+            onClose={() => setEditing(undefined)}
+            onSaved={() => {
+              setEditing(undefined);
+              setVersion(version + 1);
+              setNotice("Registro salvo com sucesso.");
+              toast.success("Registro salvo com sucesso.");
             }}
           />
-          <span>{total} registros</span>
-        </div>
+        )}
+      </FormDialog>
+      <section className="panel">
+        <FilterBar
+          search={q}
+          searchLabel="Buscar registros"
+          onSearchChange={(value) => { setQ(value); setPage(1); }}
+          activeFilters={q ? [{ key: "q", label: `Busca: ${q}`, onRemove: () => setQ("") }] : []}
+        />
+        <div className="result-count">{total} registros</div>
         {loading && !hasLoaded ? (
           <LoadingSkeleton
             label={`Carregando ${screen.title.toLowerCase()}…`}

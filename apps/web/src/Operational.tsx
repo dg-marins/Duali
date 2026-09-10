@@ -8,6 +8,8 @@ import {
 import { api, display, type Row } from "./api";
 import {
   DataTable,
+  ActionMenu,
+  ConfirmDialog,
   EmptyState,
   LoadingSkeleton,
   MetricCard,
@@ -18,6 +20,8 @@ import {
   RefreshingContent,
   StatusBadge,
   formatDate,
+  FormDialog,
+  FormSheet,
 } from "./ui";
 import { Notice, RecordForm } from "./components";
 import { screens } from "./resources";
@@ -101,9 +105,7 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
     }),
     [loading, setLoading] = useState(true),
     [hasLoaded, setHasLoaded] = useState(false),
-    [error, setError] = useState(""),
-    [editing, setEditing] = useState(false),
-    [version, setVersion] = useState(0);
+    [error, setError] = useState("");
   useEffect(() => {
     let active = true;
     const query = filtersQuery(filters, page);
@@ -133,7 +135,7 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
       active = false;
       clearTimeout(timer);
     };
-  }, [filters, page, version]);
+  }, [filters, page]);
   const update = (key: string, value: string) => {
     setFilters({ ...filters, [key]: value });
     setPage(1);
@@ -143,18 +145,9 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
       <PageHeader
         title="Pessoas"
         description="Encontre rapidamente uma pessoa e acompanhe sua situação atual."
-        action={<button onClick={() => setEditing(true)}>+ Nova pessoa</button>}
+        action={<button onClick={() => navigate("/app/pessoas/nova")}>+ Nova pessoa</button>}
       />
       <Notice text={error} error />
-      {editing && (
-        <PersonForm
-          onClose={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false);
-            setVersion(version + 1);
-          }}
-        />
-      )}
       <section className="panel filter-panel">
         <div className="filter-grid">
           <label>
@@ -231,14 +224,15 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
           <RefreshingContent refreshing={loading}>
             <DataTable
               rows={data.items}
+              primaryKey="nomeCompleto"
               onRow={(row) => navigate(`/app/pessoas/${row.id}`)}
               empty={
                 <EmptyState
                   title="Nenhuma pessoa encontrada"
                   description="Ajuste os filtros, cadastre uma pessoa ou importe uma planilha."
                   action={
-                    <button onClick={() => setEditing(true)}>
-                      Nova pessoa
+                    <button onClick={() => navigate("/app/pessoas/nova")}>
+                      + Nova pessoa
                     </button>
                   }
                 />
@@ -288,12 +282,14 @@ function PersonForm({
   person,
   onClose,
   onSaved,
+  onDirtyChange,
 }: {
   person?: Row;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (id?: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [data, setData] = useState<Row>({
+  const initial = useMemo<Row>(() => ({
       nomeCompleto: "",
       nomeSocial: "",
       cpf: "",
@@ -312,9 +308,14 @@ function PersonForm({
       observacoes: "",
       ativa: true,
       ...person,
-    }),
+    }), [person]);
+  const [data, setData] = useState<Row>(initial),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [confirmClose, setConfirmClose] = useState(false);
+  const dirty = JSON.stringify(data) !== JSON.stringify(initial);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  const close = () => (dirty ? setConfirmClose(true) : onClose());
   const field = (key: string, label: string, type = "text") => (
     <label>
       <span>{label}</span>
@@ -341,12 +342,12 @@ function PersonForm({
           )
           .map(([key, value]) => [key, value === "" ? null : value]),
       );
-      await api(
+      const saved = await api<Row>(
         `pessoas${person?.id ? `/${person.id}` : ""}`,
         person?.id ? "PUT" : "POST",
         payload,
       );
-      onSaved();
+      onSaved(String(saved.id ?? person?.id ?? ""));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -357,7 +358,7 @@ function PersonForm({
     <section className="panel form-panel">
       <div className="section-heading">
         <h2>{person ? "Editar pessoa" : "Nova pessoa"}</h2>
-        <button className="secondary" onClick={onClose}>
+        <button type="button" className="secondary" onClick={close}>
           Fechar
         </button>
       </div>
@@ -409,12 +410,53 @@ function PersonForm({
         </fieldset>
         <div className="form-actions">
           <button disabled={busy}>{busy ? "Salvando…" : "Salvar"}</button>
-          <button type="button" className="secondary" onClick={onClose}>
+          <button type="button" className="secondary" onClick={close}>
             Cancelar
           </button>
         </div>
       </form>
+      <ConfirmDialog open={confirmClose} onOpenChange={setConfirmClose} title="Descartar alterações?" description="As informações preenchidas serão perdidas." confirmLabel="Descartar" onConfirm={onClose} />
     </section>
+  );
+}
+
+export function PersonEditor({ id, navigate }: { id?: string; navigate: Navigate }) {
+  const [person, setPerson] = useState<Row | undefined>(),
+    [loading, setLoading] = useState(Boolean(id)),
+    [error, setError] = useState(""),
+    [dirty, setDirty] = useState(false),
+    [confirmBack, setConfirmBack] = useState(false);
+  const destination = id ? `/app/pessoas/${id}` : "/app/pessoas";
+  useEffect(() => {
+    if (!id) return;
+    void api<Row>(`pessoas/${id}`)
+      .then(setPerson)
+      .catch((reason) => setError((reason as Error).message))
+      .finally(() => setLoading(false));
+  }, [id]);
+  useEffect(() => {
+    if (!dirty) return;
+    const guard = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [dirty]);
+  if (loading) return <LoadingSkeleton variant="detail" label="Carregando pessoa…" />;
+  if (error) return <Notice text={error} error />;
+  return (
+    <>
+      <PageHeader
+        title={id ? "Editar pessoa" : "Nova pessoa"}
+        description="Dados pessoais, contato e endereço."
+        breadcrumb={<button className="link-button" onClick={() => dirty ? setConfirmBack(true) : navigate(destination)}>← Voltar</button>}
+      />
+      <PersonForm
+        {...(person ? { person } : {})}
+        onClose={() => navigate(destination)}
+        onSaved={(savedId) => navigate(id && savedId ? `/app/pessoas/${savedId}` : "/app/pessoas")}
+        onDirtyChange={setDirty}
+      />
+      <ConfirmDialog open={confirmBack} onOpenChange={setConfirmBack} title="Descartar alterações?" description="As informações preenchidas serão perdidas." confirmLabel="Descartar" onConfirm={() => navigate(destination)} />
+    </>
   );
 }
 
@@ -429,7 +471,6 @@ export function PersonProfile({
     [tab, setTab] = useState("visao"),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
-    [editing, setEditing] = useState(false),
     [formScreen, setFormScreen] = useState<string | null>(null),
     [version, setVersion] = useState(0);
   useEffect(() => {
@@ -478,13 +519,7 @@ export function PersonProfile({
           }
           action={
             <div className="form-actions">
-              <button
-                className="secondary"
-                onClick={() => setFormScreen("vinculos")}
-              >
-                Novo vínculo
-              </button>
-              <button onClick={() => setEditing(true)}>Editar pessoa</button>
+              <button onClick={() => navigate(`/app/pessoas/${id}/editar`)}>Editar pessoa</button>
             </div>
           }
         />
@@ -494,30 +529,9 @@ export function PersonProfile({
             error
           />
         )}
-        {editing && (
-          <PersonForm
-            person={person}
-            onClose={() => setEditing(false)}
-            onSaved={() => {
-              setEditing(false);
-              setVersion(version + 1);
-            }}
-          />
-        )}
-        {formScreen && (
-          <RecordForm
-            screen={screens.find((screen) => screen.path === formScreen)!}
-            record={null}
-            {...(formScreen === "vinculos"
-              ? { defaults: { pessoaId: id } }
-              : {})}
-            onClose={() => setFormScreen(null)}
-            onSaved={() => {
-              setFormScreen(null);
-              setVersion(version + 1);
-            }}
-          />
-        )}
+        <FormSheet open={Boolean(formScreen)} onOpenChange={(open) => { if (!open) setFormScreen(null); }} title={screens.find((screen) => screen.path === formScreen)?.title ?? "Novo registro"} description="Preencha os dados desta operação.">
+          {formScreen && <RecordForm embedded screen={screens.find((screen) => screen.path === formScreen)!} record={null} defaults={{ pessoaId: id, vinculoId: current?.id }} onClose={() => setFormScreen(null)} onSaved={() => { setFormScreen(null); setVersion(version + 1); }} />}
+        </FormSheet>
         <div className="tabs" role="tablist">
           {tabs.map(([key, label]) => (
             <button
@@ -531,6 +545,14 @@ export function PersonProfile({
             </button>
           ))}
         </div>
+        {tab !== "visao" && tab !== "historico" && (
+          <div className="context-actions">
+            {tab === "vinculo" && <button onClick={() => setFormScreen("vinculos")}>Adicionar vínculo</button>}
+            {tab === "descanso" && <><button onClick={() => setFormScreen("periodos")}>Programar descanso</button><ActionMenu items={[{ label: "Registrar ajuste", onSelect: () => setFormScreen("ajustes-descanso") }]} /></>}
+            {tab === "beneficios" && <><button onClick={() => setFormScreen("beneficios-vinculo")}>Adicionar benefício</button><ActionMenu items={[{ label: "Nova competência", onSelect: () => setFormScreen("competencias") }, { label: "Registrar ajuste", onSelect: () => setFormScreen("ajustes-beneficios") }]} /></>}
+            {tab === "documentos" && <><button onClick={() => setFormScreen("documentos")}>Adicionar documento</button><button className="secondary" onClick={() => setFormScreen("seguros")}>Adicionar seguro</button></>}
+          </div>
+        )}
         {tab === "visao" && (
           <div className="profile-grid">
             <InfoCard
@@ -1057,17 +1079,9 @@ function OperationalList({
         }
       />
       {error && <Notice text={error} error />}
-      {formScreen && (
-        <RecordForm
-          screen={screens.find((screen) => screen.path === formScreen)!}
-          record={null}
-          onClose={() => setFormScreen(null)}
-          onSaved={() => {
-            setFormScreen(null);
-            setVersion(version + 1);
-          }}
-        />
-      )}
+      <FormSheet open={Boolean(formScreen)} onOpenChange={(open) => { if (!open) setFormScreen(null); }} title={screens.find((screen) => screen.path === formScreen)?.title ?? "Novo registro"} description="Preencha os dados desta operação.">
+        {formScreen && <RecordForm embedded screen={screens.find((screen) => screen.path === formScreen)!} record={null} onClose={() => setFormScreen(null)} onSaved={() => { setFormScreen(null); setVersion(version + 1); }} />}
+      </FormSheet>
       {loading && !hasLoaded ? (
         <LoadingSkeleton
           variant="metrics"
@@ -1215,6 +1229,7 @@ function OperationalList({
           <RefreshingContent refreshing={loading}>
             <DataTable
               rows={rows}
+              primaryKey="pessoa"
               columns={columns}
               onRow={(row) => {
                 const personId =
@@ -1372,17 +1387,9 @@ export function RegistryDetail({
             <button onClick={() => setEditing(true)}>Editar cadastro</button>
           }
         />
-        {editing && (
-          <RecordForm
-            screen={screen}
-            record={record}
-            onClose={() => setEditing(false)}
-            onSaved={() => {
-              setEditing(false);
-              setVersion(version + 1);
-            }}
-          />
-        )}
+        <FormDialog open={editing} onOpenChange={setEditing} title={`Editar · ${screen.title}`} description={screen.description}>
+          {editing && <RecordForm embedded screen={screen} record={record} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); setVersion(version + 1); }} />}
+        </FormDialog>
         <InfoCard
           title="Cadastro"
           rows={screen.columns.map((key) => [
