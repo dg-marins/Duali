@@ -7,6 +7,7 @@ import { balance } from "./leave-domain.js";
 import { internshipAlerts } from "./internship.js";
 import { benefitAlerts, benefitCalculation } from "./benefits.js";
 import { leaveAlerts } from "./leave.js";
+import { allPendings } from "./pendings.js";
 export const reportKinds = [
   "pessoas",
   "estagios",
@@ -15,6 +16,15 @@ export const reportKinds = [
   "inconsistencias",
 ] as const;
 const kindSchema = z.enum(reportKinds);
+const dashboardQuerySchema = z
+  .object({
+    unidadeId: z.string().uuid().optional(),
+    competencia: z
+      .string()
+      .regex(/^\d{4}-\d{2}-01$/)
+      .optional(),
+  })
+  .strict();
 type Query = ReturnType<typeof listSchema.parse>;
 function linkWhere(q: Query): Prisma.VinculoWhereInput {
   return {
@@ -210,42 +220,136 @@ export async function exportRows(rows: Row[], format: "csv" | "xlsx") {
 }
 export function registerReporting(app: FastifyInstance, db: PrismaClient) {
   app.get("/api/dashboard", async (req) => {
-    const q = listSchema.parse(req.query),
-      where = linkWhere(q);
-    const [pessoas, clt, estagios, aprendizes, alerts, recent, imports] =
-      await Promise.all([
-        db.pessoa.count({
-          where: { vinculos: { some: { ...where, status: "ATIVO" } } },
-        }),
-        db.vinculo.count({ where: { ...where, tipo: "CLT", status: "ATIVO" } }),
-        db.vinculo.count({
-          where: { ...where, tipo: "ESTAGIO", status: "ATIVO" },
-        }),
-        db.vinculo.count({
-          where: { ...where, tipo: "APRENDIZ", status: "ATIVO" },
-        }),
-        operationalAlerts(db),
-        db.auditoria.findMany({
-          orderBy: { criadoEm: "desc" },
-          take: 10,
-          select: {
-            id: true,
-            acao: true,
-            entidade: true,
-            criadoEm: true,
-            usuario: { select: { nome: true } },
-          },
-        }),
-        db.importacao.count({
-          where: { status: { in: ["UPLOAD", "REVISAO", "PARCIAL"] } },
-        }),
-      ]);
+    const q = dashboardQuerySchema.parse(req.query),
+      where: Prisma.VinculoWhereInput = q.unidadeId
+        ? { unidadeId: q.unidadeId }
+        : {},
+      today = new Date(),
+      competence = q.competencia
+        ? new Date(`${q.competencia}T00:00:00.000Z`)
+        : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)),
+      inThirtyDays = new Date(today);
+    today.setUTCHours(0, 0, 0, 0);
+    inThirtyDays.setUTCHours(0, 0, 0, 0);
+    inThirtyDays.setUTCDate(inThirtyDays.getUTCDate() + 30);
+    const benefitWhere = {
+      competencia: competence,
+      beneficioVinculo: { vinculo: where },
+    } satisfies Prisma.BeneficioCompetenciaWhereInput;
+    const [
+      pessoas,
+      clt,
+      estagios,
+      aprendizes,
+      alerts,
+      recent,
+      imports,
+      pendings,
+      contracts,
+      tces,
+      benefits,
+    ] = await Promise.all([
+      db.pessoa.count({
+        where: { vinculos: { some: { ...where, status: "ATIVO" } } },
+      }),
+      db.vinculo.count({ where: { ...where, tipo: "CLT", status: "ATIVO" } }),
+      db.vinculo.count({
+        where: { ...where, tipo: "ESTAGIO", status: "ATIVO" },
+      }),
+      db.vinculo.count({
+        where: { ...where, tipo: "APRENDIZ", status: "ATIVO" },
+      }),
+      operationalAlerts(db),
+      db.auditoria.findMany({
+        orderBy: { criadoEm: "desc" },
+        take: 10,
+        select: {
+          id: true,
+          acao: true,
+          entidade: true,
+          criadoEm: true,
+          usuario: { select: { nome: true } },
+        },
+      }),
+      db.importacao.count({
+        where: { status: { in: ["UPLOAD", "REVISAO", "PARCIAL"] } },
+      }),
+      allPendings(db),
+      db.estagio.findMany({
+        where: {
+          vinculo: { ...where, tipo: "ESTAGIO", status: "ATIVO" },
+          dataTerminoPrevista: { gte: today, lte: inThirtyDays },
+        },
+        include: {
+          vinculo: { include: { pessoa: true, unidade: true } },
+        },
+        orderBy: { dataTerminoPrevista: "asc" },
+      }),
+      db.documentoVinculo.findMany({
+        where: {
+          tipo: "TCE",
+          status: "PENDENTE",
+          vinculo: { ...where, tipo: "ESTAGIO", status: "ATIVO" },
+        },
+        include: {
+          vinculo: { include: { pessoa: true, unidade: true } },
+        },
+        orderBy: { fimVigencia: "asc" },
+      }),
+      db.beneficioCompetencia.findMany({
+        where: benefitWhere,
+        include: {
+          ajustes: true,
+          configuracao: true,
+          beneficioVinculo: true,
+          transporteItens: true,
+        },
+      }),
+    ]);
     const selected = (
         await db.vinculo.findMany({ where, select: { id: true } })
       ).map((v) => v.id),
       ids = new Set(selected),
-      filtered = alerts.filter((a) => ids.has(a.vinculoId));
+      filtered = alerts.filter((a) => ids.has(a.vinculoId)),
+      filteredPendings = pendings
+        .filter((item) => !q.unidadeId || item.unidadeId === q.unidadeId)
+        .sort((left, right) => {
+          const severity = {
+            CRITICA: 0,
+            ATENCAO: 1,
+            REVISAO: 2,
+            INFORMATIVA: 3,
+          };
+          return (
+            severity[left.severidade] - severity[right.severidade] ||
+            (left.prazo?.getTime() ?? Number.MAX_SAFE_INTEGER) -
+              (right.prazo?.getTime() ?? Number.MAX_SAFE_INTEGER)
+          );
+        }),
+      benefitTotals = benefits.reduce(
+        (totals, row) => {
+          const calculation = benefitCalculation(row),
+            value = new Prisma.Decimal(String(calculation.valorFinal ?? 0));
+          totals.total = totals.total.plus(value);
+          totals.byType[row.beneficioVinculo.tipo] = (
+            totals.byType[row.beneficioVinculo.tipo] ?? new Prisma.Decimal(0)
+          ).plus(value);
+          if (
+            row.status === "PENDENTE" ||
+            row.transporteRevisaoPendente ||
+            Number(calculation.divergencia ?? 0) !== 0
+          )
+            totals.divergences++;
+          return totals;
+        },
+        {
+          total: new Prisma.Decimal(0),
+          byType: {} as Record<string, Prisma.Decimal>,
+          divergences: 0,
+        },
+      );
     return {
+      competencia: competence.toISOString().slice(0, 10),
       pessoasAtivas: pessoas,
       cltsAtivos: clt,
       estagiariosAtivos: estagios,
@@ -266,6 +370,77 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
         .length,
       inconsistencias: filtered.length,
       importacoesPendentes: imports,
+      pendenciasCriticas: filteredPendings.filter(
+        (item) => item.severidade === "CRITICA",
+      ).length,
+      contratosVencendo: contracts.length,
+      tcesAguardandoAssinatura: tces.length,
+      feriasAtencao: filtered.filter((a) => a.tipo === "DESCANSO").length,
+      custoBeneficios: benefitTotals.total.toFixed(2),
+      divergenciasBeneficios: benefitTotals.divergences,
+      distribuicaoVinculos: {
+        CLT: clt,
+        ESTAGIO: estagios,
+        APRENDIZ: aprendizes,
+      },
+      custosPorBeneficio: Object.fromEntries(
+        Object.entries(benefitTotals.byType).map(([type, value]) => [
+          type,
+          value.toFixed(2),
+        ]),
+      ),
+      pendenciasPrioritarias: filteredPendings.slice(0, 20),
+      kpiDetalhes: {
+        pendenciasCriticas: filteredPendings.filter(
+          (item) => item.severidade === "CRITICA",
+        ),
+        contratosVencendo: contracts.map((item) => ({
+          id: item.id,
+          pessoa: item.vinculo.pessoa.nomeCompleto,
+          unidade: item.vinculo.unidade.nome,
+          descricao: "Fim previsto do estágio",
+          prazo: item.dataTerminoPrevista,
+          href: `/app/pessoas/${item.vinculo.pessoaId}`,
+        })),
+        tcesAguardandoAssinatura: tces.map((item) => ({
+          id: item.id,
+          pessoa: item.vinculo.pessoa.nomeCompleto,
+          unidade: item.vinculo.unidade.nome,
+          descricao: "TCE aguardando assinatura",
+          prazo: item.fimVigencia,
+          href: `/app/pessoas/${item.vinculo.pessoaId}`,
+        })),
+        feriasAtencao: filtered
+          .filter((item) => item.tipo === "DESCANSO")
+          .map((item) => ({
+            id: item.id,
+            pessoa: item.pessoa,
+            descricao: item.mensagem,
+            prazo: item.prazo,
+            href: `/app/pessoas?vinculoId=${item.vinculoId}`,
+          })),
+        custoBeneficios: benefits.map((item) => ({
+          id: item.id,
+          descricao: `${item.beneficioVinculo.tipo} · ${item.componente}`,
+          valor: benefitCalculation(item).valorFinal,
+          href: "/app/beneficios",
+        })),
+        divergenciasBeneficios: benefits
+          .filter((item) => {
+            const calculation = benefitCalculation(item);
+            return (
+              item.status === "PENDENTE" ||
+              item.transporteRevisaoPendente ||
+              Number(calculation.divergencia ?? 0) !== 0
+            );
+          })
+          .map((item) => ({
+            id: item.id,
+            descricao: `${item.beneficioVinculo.tipo} · ${item.componente}`,
+            valor: benefitCalculation(item).divergencia,
+            href: "/app/pendencias?modulo=BENEFICIO",
+          })),
+      },
       alertas: filtered.slice(0, 100),
       atividades: recent,
     };

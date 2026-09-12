@@ -599,3 +599,11 @@ export function maskCpf(value: unknown) {
     ? `***.${digits.slice(3, 6)}.${digits.slice(6, 9)}-**`
     : "—";
 }
+export function maskPhone(value: unknown) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length === 11)
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  if (digits.length === 10)
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return digits || "—";
+}

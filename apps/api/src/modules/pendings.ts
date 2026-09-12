@@ -45,7 +45,7 @@ function legacyCode(status: string, messages: unknown): string {
   return "APONTAMENTO_NAO_CLASSIFICADO";
 }
 
-async function allPendings(db: PrismaClient): Promise<PendingItem[]> {
+export async function allPendings(db: PrismaClient): Promise<PendingItem[]> {
   const [imports, internship, leave, benefits, activeLinks] = await Promise.all(
     [
       db.importacaoItem.findMany({

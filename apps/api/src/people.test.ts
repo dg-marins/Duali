@@ -189,6 +189,11 @@ test("estágio ativo aceita término previsto e rejeita data anterior à admiss�
         where: { vinculoId: created.vinculo.id, tipo: "TCE" },
       }),
     ).toMatchObject({ status: "PENDENTE" });
+    expect(
+      await f.db.documentoVinculo.count({
+        where: { vinculoId: created.vinculo.id, tipo: "RENOVACAO" },
+      }),
+    ).toBe(3);
     const invalid = await f.app.inject({
       method: "POST",
       url: "/api/pessoas-com-vinculo",

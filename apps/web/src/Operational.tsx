@@ -1,4 +1,4 @@
-import {
+﻿import {
   useEffect,
   useMemo,
   useState,
@@ -15,6 +15,7 @@ import {
   MetricCard,
   money,
   maskCpf,
+  maskPhone,
   PageHeader,
   Pagination,
   RefreshingContent,
@@ -357,7 +358,14 @@ function PersonForm({
           0,
           type === "date" ? 10 : undefined,
         )}
-        onChange={(e) => setData({ ...data, [key]: e.target.value || null })}
+        onChange={(e) =>
+          setData({
+            ...data,
+            [key]: ["cpf", "rg", "telefone"].includes(key)
+              ? e.target.value.replace(/\D/g, "") || null
+              : e.target.value || null,
+          })
+        }
       />
     </label>
   );
@@ -686,6 +694,7 @@ export function PersonProfile({
     [loading, setLoading] = useState(true),
     [formScreen, setFormScreen] = useState<string | null>(null),
     [editingLink, setEditingLink] = useState<Row | null>(null),
+    [editingDocument, setEditingDocument] = useState<Row | null>(null),
     [version, setVersion] = useState(0);
   const options = useOptions();
   useEffect(() => {
@@ -757,7 +766,23 @@ export function PersonProfile({
           }
           description="Preencha os dados desta operação."
         >
-          {formScreen && editingLink ? (
+          {formScreen && editingDocument ? (
+            <RecordForm
+              embedded
+              screen={screens.find((screen) => screen.path === "documentos")!}
+              record={editingDocument}
+              defaults={{ vinculoId: editingDocument.vinculoId }}
+              onClose={() => {
+                setFormScreen(null);
+                setEditingDocument(null);
+              }}
+              onSaved={() => {
+                setFormScreen(null);
+                setEditingDocument(null);
+                setVersion(version + 1);
+              }}
+            />
+          ) : formScreen && editingLink ? (
             <LinkEditorForm
               link={editingLink}
               options={options}
@@ -865,7 +890,7 @@ export function PersonProfile({
               rows={[
                 ["CPF", maskCpf(person.cpf)],
                 ["Nascimento", formatDate(person.dataNascimento)],
-                ["Telefone", display(person.telefone)],
+                ["Telefone", maskPhone(person.telefone)],
                 ["E-mail", display(person.email)],
               ]}
             />
@@ -1005,52 +1030,46 @@ export function PersonProfile({
             ))}
           </div>
         )}
-        {tab === "beneficios" && (
-          <div className="stack">
-            {links
-              .flatMap((link) => link.beneficios as Row[])
-              .map((benefit) => (
-                <section className="panel" key={String(benefit.id)}>
-                  <h2>
-                    {String(benefit.tipo)}{" "}
-                    <StatusBadge value={benefit.status} />
-                  </h2>
-                  <Timeline
-                    items={(benefit.competencias as Row[]).map((item) => ({
-                      date: item.competencia,
-                      title: `${String(item.componente)} · ${money(item.valorInformado)}`,
-                      detail: display((item.configuracao as Row)?.fornecedor),
-                    }))}
-                  />
-                </section>
-              ))}
-          </div>
-        )}
         {tab === "documentos" && (
           <div className="profile-grid">
             {links.map((link) => (
               <section className="panel" key={String(link.id)}>
-                <h2>Documentos e seguro · {String(link.tipo)}</h2>
+                <h2>Documentos e seguro ? {String(link.tipo)}</h2>
+                {(link.documentos as Row[]).map((item) => {
+                  const status =
+                    item.tipo === "TCE" && item.status === "VIGENTE"
+                      ? "Assinado"
+                      : item.tipo === "TCE" && item.status === "PENDENTE"
+                        ? "Aguardando assinatura"
+                        : String(item.status);
+                  return (
+                    <div className="section-heading" key={String(item.id)}>
+                      <div>
+                        <strong>{String(item.tipo)}</strong>
+                        <p>{status}</p>
+                        <p>
+                          In?cio: {formatDate(item.inicioVigencia)} ? Fim:{" "}
+                          {formatDate(item.fimVigencia)}
+                        </p>
+                      </div>
+                      <button
+                        className="secondary"
+                        onClick={() => {
+                          setEditingDocument(item);
+                          setFormScreen("documentos");
+                        }}
+                      >
+                        Editar documento
+                      </button>
+                    </div>
+                  );
+                })}
                 <Timeline
-                  items={[
-                    ...(link.documentos as Row[]).map((item) => ({
-                      date: item.dataReferencia ?? item.fimVigencia,
-                      title: String(item.tipo),
-                      detail: `${item.status} · ${display(item.observacoes)}`,
-                    })),
-                    ...(link.seguros as Row[]).flatMap((insurance) => [
-                      {
-                        date: insurance.inicioVigencia,
-                        title: `Seguro · ${insurance.seguradora}`,
-                        detail: String(insurance.status),
-                      },
-                      ...(insurance.movimentacoes as Row[]).map((movement) => ({
-                        date: movement.dataMovimentacao,
-                        title: String(movement.tipo),
-                        detail: display(movement.observacoes),
-                      })),
-                    ]),
-                  ]}
+                  items={(link.seguros as Row[]).map((insurance) => ({
+                    date: insurance.inicioVigencia,
+                    title: `Seguro ? ${insurance.seguradora}`,
+                    detail: String(insurance.status),
+                  }))}
                 />
               </section>
             ))}

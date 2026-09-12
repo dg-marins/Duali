@@ -40,7 +40,7 @@ test("dashboard reserva o layout enquanto os indicadores carregam", async ({
   const db = new PrismaClient({ datasourceUrl: testDatabaseUrl() });
   const { user, password } = await credentials(db);
   const response = deferred();
-  await page.route("**/api/dashboard", async (route) => {
+  await page.route("**/api/dashboard*", async (route) => {
     await response.promise;
     await route.fulfill({
       status: 200,
@@ -57,6 +57,15 @@ test("dashboard reserva o layout enquanto os indicadores carregam", async ({
         beneficiosPendentes: 0,
         inconsistencias: 0,
         importacoesPendentes: 0,
+        pendenciasCriticas: 0,
+        contratosVencendo: 0,
+        tcesAguardandoAssinatura: 0,
+        feriasAtencao: 0,
+        custoBeneficios: "0.00",
+        divergenciasBeneficios: 0,
+        distribuicaoVinculos: { CLT: 2, ESTAGIO: 1, APRENDIZ: 0 },
+        custosPorBeneficio: {},
+        pendenciasPrioritarias: [],
         alertas: [],
         atividades: [],
       }),

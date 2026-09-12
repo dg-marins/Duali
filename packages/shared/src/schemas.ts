@@ -38,10 +38,23 @@ export const pessoaSchema = z
       .refine(validCpf, "CPF inválido")
       .nullable()
       .optional(),
-    rg: z.string().max(120).nullable().optional(),
+    rg: z
+      .string()
+      .max(120)
+      .transform((v) => v.replace(/\D/g, ""))
+      .nullable()
+      .optional(),
     dataNascimento: optionalDate,
     email: z.string().email().max(180).nullable().optional(),
-    telefone: z.string().max(80).nullable().optional(),
+    telefone: z
+      .string()
+      .transform((v) => v.replace(/\D/g, ""))
+      .refine(
+        (v) => v === "" || v.length === 10 || v.length === 11,
+        "Telefone inválido",
+      )
+      .nullable()
+      .optional(),
     endereco: optionalText,
     cep: z.string().trim().max(9).nullable().optional(),
     logradouro: optionalText,

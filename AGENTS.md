@@ -2,6 +2,68 @@
 
 Este arquivo orienta agentes de programação que atuem no repositório Duali.
 
+## 0. EngineeringOS
+
+Este projeto utiliza a EngineeringOS como baseline global de engenharia.
+
+Localização relativa da EngineeringOS a partir da raiz deste repositório:
+
+`../../EngineeringOS`
+
+Antes de iniciar uma tarefa, o agente deve carregar e respeitar o contexto aplicável da EngineeringOS.
+
+Ordem inicial de leitura:
+
+1. `../../EngineeringOS/README.md`
+2. `../../EngineeringOS/constitution/engineering-constitution.md`
+3. políticas aplicáveis em `../../EngineeringOS/policies/`
+4. comportamentos aplicáveis em `../../EngineeringOS/behaviors/`
+5. `../../EngineeringOS/risk/risk-model.md`
+6. `../../EngineeringOS/orquestrador/decisoes-v0.1.md`
+7. `../../EngineeringOS/workflows/fluxo-base-v0.1.md`
+8. skills necessárias em `../../EngineeringOS/skills/`
+9. contexto local em `.engineering/`
+10. este `AGENTS.md` e a documentação do Duali.
+
+Não é necessário carregar todas as skills em toda tarefa.
+Carregue somente as skills relevantes para o trabalho atual.
+
+### Precedência
+
+Em caso de conflito:
+
+1. regras explicitamente sobrescritas pelo Duali em `.engineering/`;
+2. regras e decisões específicas documentadas do Duali;
+3. Constituição e policies da EngineeringOS;
+4. behaviors da EngineeringOS;
+5. skills da EngineeringOS;
+6. instruções da tarefa atual, desde que não contradigam regras superiores.
+
+O projeto Duali é soberano sobre a baseline global quando uma sobrescrita estiver explicitamente documentada.
+
+### Escopo
+
+A EngineeringOS não autoriza expansão automática de escopo.
+
+Problemas encontrados fora da tarefa devem ser registrados e reportados, mas não corrigidos automaticamente.
+
+### Modo auditoria
+
+Quando a tarefa declarar `modo: auditoria`:
+
+- não modificar código;
+- não modificar documentação;
+- não criar migrations;
+- não instalar dependências;
+- não realizar commits;
+- não corrigir automaticamente problemas encontrados;
+- analisar o projeto e produzir somente relatório;
+- diferenciar fato, evidência, inferência e recomendação;
+- informar arquivos consultados;
+- classificar riscos quando aplicável;
+- registrar divergências entre o Duali e a EngineeringOS;
+- respeitar sobrescritas locais.
+
 ## 1. Fontes de verdade
 
 Antes de implementar qualquer funcionalidade, leia os documentos relevantes:

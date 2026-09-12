@@ -564,6 +564,124 @@ legend {
   border-left: 4px solid #c28b16;
 }
 
+.dashboard-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px);
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+}
+
+.dashboard-filters label {
+  gap: 4px;
+}
+
+.dashboard-filters select,
+.dashboard-filters input {
+  min-height: 38px;
+  padding-block: 7px;
+}
+
+.dashboard-kpi {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.dashboard-kpi .metric-card {
+  height: 100%;
+  cursor: pointer;
+}
+
+.dashboard-kpi:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.dashboard-kpi[aria-pressed="true"] .metric-card {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.dashboard-drilldown {
+  padding: 18px 20px;
+}
+
+.dashboard-drilldown .section-heading {
+  margin-bottom: 12px;
+}
+
+.dashboard-attention {
+  padding: 18px 20px;
+}
+
+.dashboard-attention h2 {
+  margin-bottom: 10px;
+}
+
+.dashboard-hidden {
+  display: none;
+}
+
+.dashboard-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.distribution-list,
+.cost-list {
+  display: grid;
+  gap: 14px;
+}
+
+.summary-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.summary-total strong {
+  font-size: 1.5rem;
+}
+
+.distribution-list > div,
+.cost-list > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.distribution-list progress {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 8px;
+  accent-color: var(--brand);
+}
+
+@media (max-width: 720px) {
+  .dashboard-filters,
+  .dashboard-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 460px) {
+  .dashboard-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
 .dialog-overlay {
   position: fixed;
   inset: 0;
@@ -1308,4 +1426,30 @@ th {
     max-height: none;
     overflow: auto;
   }
+}
+
+.brand img {
+  display: block;
+  width: 180px;
+  max-width: 100%;
+  height: auto;
+}
+.login .brand img {
+  width: 260px;
+  margin: 0 auto;
+}
+.sidebar-collapsed .brand img {
+  width: 42px;
+  object-fit: cover;
+  object-position: left;
+}
+
+.brand img {
+  background: #fff;
+  border-radius: 50%;
+  padding: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+.sidebar-collapsed .brand img {
+  padding: 5px;
 }

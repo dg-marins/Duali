@@ -22,6 +22,48 @@ async function requireInternship(tx: Tx, data: Row, previous: Row | null) {
   if (!v || v.tipo !== "ESTAGIO")
     throw new DomainError(422, "Selecione um vínculo de estágio.");
 }
+
+function addMonths(date: Date, months: number) {
+  const result = new Date(date);
+  const day = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() + months);
+  const last = new Date(
+    Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  result.setUTCDate(Math.min(day, last));
+  return result;
+}
+
+async function validateDocument(tx: Tx, data: Row, previous: Row | null) {
+  await requireInternship(tx, data, previous);
+  if (data.tipo !== "TCE" && data.tipo !== "RENOVACAO") return;
+  if (
+    !(data.inicioVigencia instanceof Date) ||
+    Number.isNaN(data.inicioVigencia.getTime())
+  ) {
+    const vinculo = await tx.vinculo.findUnique({
+      where: { id: String(data.vinculoId) },
+      select: { dataAdmissao: true },
+    });
+    if (vinculo?.dataAdmissao) data.inicioVigencia = vinculo.dataAdmissao;
+  }
+  if (
+    !(data.inicioVigencia instanceof Date) ||
+    Number.isNaN(data.inicioVigencia.getTime())
+  )
+    throw new DomainError(
+      422,
+      "Informe o início da vigência para este documento.",
+    );
+  if (data.fimVigencia == null && !previous)
+    data.fimVigencia = addMonths(data.inicioVigencia, 6);
+  if (data.fimVigencia != null && data.fimVigencia < data.inicioVigencia)
+    throw new DomainError(
+      422,
+      "O fim da vigência não pode ser anterior ao início.",
+    );
+}
 export const internshipResources: Resource[] = [
   {
     path: "regras-estagio-instituicoes",
@@ -55,7 +97,7 @@ export const internshipResources: Resource[] = [
     dates: ["dataReferencia", "inicioVigencia", "fimVigencia"],
     filters: ["vinculoId", "tipo", "status"],
     include: { vinculo: { include: { pessoa: true } } },
-    before: requireInternship,
+    before: validateDocument,
   },
   {
     path: "seguros",

@@ -116,6 +116,312 @@ const reportColumns: Record<
   ),
 };
 export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
+  const initial = new URLSearchParams(location.search);
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [unit, setUnit] = useState(initial.get("unidadeId") ?? "");
+  const [competence, setCompetence] = useState(
+    initial.get("competencia")?.slice(0, 7) ?? currentMonth,
+  );
+  const [units, setUnits] = useState<Row[]>([]);
+  const [data, setData] = useState<Row | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api<{ items: Row[] }>("unidades?pageSize=100")
+      .then((result) => setUnits(result.items))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const params = new URLSearchParams();
+    if (unit) params.set("unidadeId", unit);
+    params.set("competencia", `${competence}-01`);
+    history.replaceState(null, "", `${location.pathname}?${params}`);
+    setLoading(true);
+    void api<Row>(`dashboard?${params}`)
+      .then((result) => {
+        if (!active) return;
+        setData(result);
+        setError("");
+      })
+      .catch((e) => {
+        if (active) setError((e as Error).message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [unit, competence]);
+
+  const metrics = [
+    [
+      "pendenciasCriticas",
+      "Pendências críticas",
+      "/app/pendencias?severidade=CRITICA",
+      false,
+    ],
+    [
+      "contratosVencendo",
+      "Contratos vencendo em 30 dias",
+      "/app/estagiarios",
+      false,
+    ],
+    [
+      "tcesAguardandoAssinatura",
+      "TCEs aguardando assinatura",
+      "/app/pendencias?modulo=ESTAGIO",
+      false,
+    ],
+    ["feriasAtencao", "Férias exigindo atenção", "/app/ferias", false],
+    ["custoBeneficios", "Custo de benefícios no mês", "/app/beneficios", true],
+    [
+      "divergenciasBeneficios",
+      "Divergências de benefícios",
+      "/app/pendencias?modulo=BENEFICIO",
+      false,
+    ],
+  ] as const;
+  const pendings = (data?.pendenciasPrioritarias as Row[] | undefined) ?? [];
+  const metricDetails = selectedMetric
+    ? (((data?.kpiDetalhes as Row | undefined)?.[selectedMetric] as
+        | Row[]
+        | undefined) ?? [])
+    : [];
+  const selectedTitle = metrics.find(([key]) => key === selectedMetric)?.[1];
+  const distribution = (data?.distribuicaoVinculos as Row | undefined) ?? {};
+  const benefitCosts = (data?.custosPorBeneficio as Row | undefined) ?? {};
+  const totalLinks = Object.values(distribution).reduce<number>(
+    (sum, value) => sum + Number(value ?? 0),
+    0,
+  );
+
+  return (
+    <>
+      <PageHeader
+        title="Visão geral"
+        description="Acompanhe pessoas, prazos e pendências que precisam de atenção."
+      />
+      <Notice text={error} error />
+      <section
+        className="panel dashboard-filters"
+        aria-label="Filtros do dashboard"
+      >
+        <label>
+          <span>Unidade</span>
+          <select
+            value={unit}
+            onChange={(event) => setUnit(event.target.value)}
+          >
+            <option value="">Todas as unidades</option>
+            {units.map((item) => (
+              <option key={String(item.id)} value={String(item.id)}>
+                {display(item)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Competência</span>
+          <input
+            type="month"
+            value={competence}
+            onChange={(event) => setCompetence(event.target.value)}
+          />
+        </label>
+      </section>
+      {!data && loading ? (
+        <LoadingSkeleton variant="metrics" label="Carregando indicadores…" />
+      ) : (
+        data && (
+          <RefreshingContent refreshing={loading}>
+            <>
+              <div className="metrics dashboard-metrics">
+                {metrics.map(([key, title, , financial]) => (
+                  <button
+                    className="dashboard-kpi"
+                    key={key}
+                    aria-pressed={selectedMetric === key}
+                    onClick={() =>
+                      setSelectedMetric(selectedMetric === key ? null : key)
+                    }
+                  >
+                    <MetricCard
+                      label={title}
+                      value={financial ? money(data[key]) : display(data[key])}
+                      {...(Number(data[key]) > 0 && !financial
+                        ? { tone: "warning" }
+                        : {})}
+                    />
+                  </button>
+                ))}
+              </div>
+              {selectedMetric && (
+                <section
+                  className="panel dashboard-drilldown"
+                  aria-live="polite"
+                >
+                  <div className="section-heading">
+                    <h2>{selectedTitle}</h2>
+                    <button
+                      className="secondary"
+                      onClick={() => setSelectedMetric(null)}
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                  {metricDetails.length ? (
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Registro</th>
+                            <th>Detalhe</th>
+                            <th>Prazo</th>
+                            <th>Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {metricDetails.map((row) => (
+                            <tr key={String(row.id)}>
+                              <td>
+                                <button
+                                  className="link-button"
+                                  onClick={() => navigate?.(String(row.href))}
+                                >
+                                  {display(row.pessoa ?? row.descricao)}
+                                </button>
+                              </td>
+                              <td>{display(row.unidade ?? row.descricao)}</td>
+                              <td>{formatDate(row.prazo)}</td>
+                              <td>
+                                {row.valor == null ? "—" : money(row.valor)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title="Nenhum registro"
+                      description="Não há itens para este indicador nos filtros selecionados."
+                    />
+                  )}
+                </section>
+              )}
+              <section className="panel dashboard-attention">
+                <h2>Atenção necessária</h2>
+                {pendings.length ? (
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Pessoa</th>
+                          <th>Severidade</th>
+                          <th>Pendência</th>
+                          <th>Prazo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendings.slice(0, 5).map((row) => (
+                          <tr key={String(row.id)}>
+                            <td>
+                              <button
+                                className="link-button"
+                                onClick={() => navigate?.(String(row.href))}
+                              >
+                                {display(row.pessoa)}
+                              </button>
+                            </td>
+                            <td>
+                              <StatusBadge value={row.severidade} />
+                            </td>
+                            <td className="wrap">{display(row.descricao)}</td>
+                            <td>{formatDate(row.prazo)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <EmptyState
+                    title="Nenhuma pendência encontrada"
+                    description="Tudo certo por aqui."
+                  />
+                )}
+              </section>
+              <div className="dashboard-summary-grid dashboard-hidden">
+                <section className="panel">
+                  <h2>Pessoas por vínculo</h2>
+                  <div className="summary-total">
+                    <span>Pessoas ativas</span>
+                    <strong>{display(data.pessoasAtivas)}</strong>
+                  </div>
+                  <div className="distribution-list">
+                    {Object.entries(distribution).map(([type, value]) => (
+                      <div key={type}>
+                        <span>{type === "ESTAGIO" ? "Estágio" : type}</span>
+                        <strong>{display(value)}</strong>
+                        <progress
+                          max={Math.max(totalLinks, 1)}
+                          value={Number(value)}
+                          aria-label={`${type}: ${value}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+                <section className="panel">
+                  <h2>Custos por benefício</h2>
+                  {Object.keys(benefitCosts).length ? (
+                    <div className="cost-list">
+                      {Object.entries(benefitCosts).map(([type, value]) => (
+                        <div key={type}>
+                          <span>{type.replaceAll("_", " ")}</span>
+                          <strong>{money(value)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title="Sem custos nesta competência"
+                      description="Nenhum lançamento de benefício foi encontrado para o período."
+                    />
+                  )}
+                </section>
+              </div>
+              <section className="panel dashboard-hidden">
+                <h2>Atividades recentes</h2>
+                {(data.atividades as Row[]).map((row) => (
+                  <div className="activity" key={String(row.id)}>
+                    <strong>
+                      {display(row.acao)} · {display(row.entidade)}
+                    </strong>
+                    <span>
+                      {display(row.usuario)} · {formatDate(row.criadoEm)}
+                    </span>
+                  </div>
+                ))}
+              </section>
+            </>
+          </RefreshingContent>
+        )
+      )}
+    </>
+  );
+}
+
+export function LegacyDashboard({
+  navigate,
+}: {
+  navigate?: (path: string) => void;
+}) {
   const [data, setData] = useState<Row | null>(null),
     [error, setError] = useState("");
   useEffect(() => {

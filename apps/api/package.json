@@ -11,7 +11,8 @@
     "admin:create": "tsx src/admin.ts create",
     "admin:reset": "tsx src/admin.ts reset",
     "verify:intern-import": "tsx src/verify-intern-import.ts",
-    "verify:audited-import": "tsx src/verify-audited-import.ts"
+    "verify:audited-import": "tsx src/verify-audited-import.ts",
+    "verify:document-validity": "tsx src/verify-document-validity.ts"
   },
   "dependencies": {
     "@duali/database": "workspace:*",

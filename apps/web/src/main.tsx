@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState, type FormEvent } from "react";
+import dualiBrand from "./assets/duali-brand.png";
+import dualiMark from "./assets/duali-mark.png";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
 import { ApiError, api, onUnauthorized, setCsrf, type Row } from "./api";
@@ -263,7 +265,10 @@ function App() {
       <div className="login">
         <section className="panel">
           <div className="brand">
-            duali<span>GESTÃO DE PESSOAS</span>
+            <img
+              src={collapsed ? dualiMark : dualiBrand}
+              alt="Duali Gestão de Pessoas"
+            />
           </div>
           <h1>Bem-vindo de volta</h1>
           <p>Entre para acompanhar sua operação.</p>
@@ -312,7 +317,10 @@ function App() {
       <aside className={drawer ? "drawer-open" : ""}>
         <div className="sidebar-head">
           <div className="brand">
-            duali<span>GESTÃO DE PESSOAS</span>
+            <img
+              src={collapsed ? dualiMark : dualiBrand}
+              alt="Duali Gestão de Pessoas"
+            />
           </div>
           <button
             className="icon-button collapse-button"

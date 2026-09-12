@@ -1,0 +1,43 @@
+engineering_os:
+  caminho: "../../EngineeringOS"
+  versao_base: "v0.1"
+
+projeto:
+  nome: "Duali"
+  tipo: "aplicacao-web"
+  idioma: "pt-BR"
+
+contexto:
+  arquitetura: "docs/architecture/arquitetura-inicial.md"
+  regras_negocio: "docs/product/regras-negocio-v1.md"
+  decisoes_produto: "docs/product/decisoes-mvp.md"
+  modelo_dados: "docs/data/modelo-dados-v1.md"
+  roadmap: "docs/planning/roadmap-mvp.md"
+  seguranca: "docs/engineering/seguranca.md"
+  definition_of_done: "docs/engineering/definition-of-done.md"
+
+skills:
+  disponiveis:
+    - product/product-discovery
+    - ui-ux/frontend-design
+    - testing/webapp-testing
+    - review/code-review
+    - meta/skill-creator
+
+  selecao:
+    modo: "por_tarefa"
+
+sobrescritas:
+  arquivo: ".engineering/sobrescritas.yml"
+
+orquestrador:
+  autonomia: "conservadora"
+  risco:
+    bloqueio_automatico_por_nivel: false
+
+  gates:
+    seguranca: "avaliar_sempre"
+    qualidade: "avaliar_sempre"
+    testes: "quando_aplicavel"
+    dados: "quando_aplicavel"
+    ui_ux: "quando_aplicavel"

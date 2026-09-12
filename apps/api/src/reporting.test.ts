@@ -39,6 +39,25 @@ test("report filters and export authentication and audit", async () => {
       headers: f.headers,
     });
     expect(dashboard.statusCode).toBe(200);
+    expect(dashboard.json()).toMatchObject({
+      pendenciasCriticas: expect.any(Number),
+      contratosVencendo: expect.any(Number),
+      tcesAguardandoAssinatura: expect.any(Number),
+      feriasAtencao: expect.any(Number),
+      custoBeneficios: expect.stringMatching(/^\d+\.\d{2}$/),
+      divergenciasBeneficios: expect.any(Number),
+      distribuicaoVinculos: expect.objectContaining({
+        CLT: expect.any(Number),
+        ESTAGIO: expect.any(Number),
+        APRENDIZ: expect.any(Number),
+      }),
+      pendenciasPrioritarias: expect.any(Array),
+    });
+    const invalidCompetence = await f.app.inject({
+      url: "/api/dashboard?competencia=2026-09-10",
+      headers: f.headers,
+    });
+    expect(invalidCompetence.statusCode).toBe(422);
   } finally {
     await f.app.close();
   }

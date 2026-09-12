@@ -45,8 +45,40 @@ function validateInternshipEnd(admission: Date, end: Date | null | undefined) {
   if (end && end < admission)
     throw new DomainError(
       422,
-      "O fim previsto do estÃ¡gio nÃ£o pode ser anterior Ã  admissÃ£o.",
+      "O fim previsto do estágio não pode ser anterior à admissão.",
     );
+}
+
+function addMonths(date: Date, months: number) {
+  const result = new Date(date);
+  const day = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() + months);
+  const last = new Date(
+    Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  result.setUTCDate(Math.min(day, last));
+  return result;
+}
+
+async function createDefaultRenewals(
+  tx: Tx,
+  vinculoId: string,
+  admission: Date,
+) {
+  for (const offset of [6, 12, 18]) {
+    const start = addMonths(admission, offset);
+    await tx.documentoVinculo.create({
+      data: {
+        vinculoId,
+        tipo: "RENOVACAO",
+        status: "VIGENTE",
+        dataReferencia: start,
+        inicioVigencia: start,
+        fimVigencia: addMonths(start, 6),
+      },
+    });
+  }
 }
 
 async function ensureTce(
@@ -54,6 +86,7 @@ async function ensureTce(
   vinculoId: string,
   status: "ASSINADO" | "AGUARDANDO_ASSINATURA",
   userId: string | null,
+  inicioVigencia?: Date,
 ) {
   const persistedStatus = status === "ASSINADO" ? "VIGENTE" : "PENDENTE";
   const existing = await tx.documentoVinculo.findFirst({
@@ -77,7 +110,14 @@ async function ensureTce(
     return updated;
   }
   const created = await tx.documentoVinculo.create({
-    data: { vinculoId, tipo: "TCE", status: persistedStatus },
+    data: {
+      vinculoId,
+      tipo: "TCE",
+      status: persistedStatus,
+      ...(inicioVigencia
+        ? { inicioVigencia, fimVigencia: addMonths(inicioVigencia, 6) }
+        : {}),
+    },
   });
   await audit(
     tx,
@@ -154,7 +194,14 @@ export function registerPeopleComposite(
         const { tceStatus, ...stagePayload } = body.estagio;
         const data = dateData(
           {
-            ...estagioCadastroSchema.parse(stagePayload),
+            ...estagioCadastroSchema.parse({
+              ...stagePayload,
+              dataTerminoPrevista:
+                stagePayload.dataTerminoPrevista ??
+                addMonths(linkData.dataAdmissao as Date, 24)
+                  .toISOString()
+                  .slice(0, 10),
+            }),
             vinculoId: vinculo.id,
           },
           ["dataTerminoPrevista"],
@@ -180,7 +227,18 @@ export function registerPeopleComposite(
           undefined,
           estagio,
         );
-        await ensureTce(tx, vinculo.id, tceStatus, req.userId);
+        await ensureTce(
+          tx,
+          vinculo.id,
+          tceStatus,
+          req.userId,
+          linkData.dataAdmissao as Date,
+        );
+        await createDefaultRenewals(
+          tx,
+          vinculo.id,
+          linkData.dataAdmissao as Date,
+        );
       }
       return { pessoa, vinculo, estagio };
     });
