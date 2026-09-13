@@ -11,6 +11,8 @@ model Usuario {
  ajustes DescansoAjuste[]
  consumos DescansoConsumo[]
  fechamentosBeneficios FechamentoCompetenciaBeneficio[]
+ aquisicoesBeneficios AquisicaoBeneficio[]
+ movimentacoesAquisicoesBeneficios MovimentacaoAquisicaoBeneficio[]
  id String @id @default(uuid()) @db.Uuid
  nome String @db.VarChar(180)
  email String @unique @db.VarChar(180)
@@ -48,6 +50,7 @@ model Pessoa {
 model Unidade {
  configuracoesBeneficios ConfiguracaoBeneficio[]
  fechamentosBeneficios FechamentoCompetenciaBeneficio[]
+ aquisicoesBeneficios AquisicaoBeneficio[]
  regrasEstagio InstituicaoRegraEstagio[]
  id String @id @default(uuid()) @db.Uuid
  nome String
@@ -221,6 +224,21 @@ enum StatusLancamentoBeneficio {
  PAGO
  CANCELADO
 }
+enum StatusAquisicaoBeneficio {
+ PENDENTE
+ CONFIRMADA
+ CANCELADA
+}
+enum StatusItemAquisicaoBeneficio {
+ PENDENTE
+ CONFIRMADO
+ REJEITADO
+ CANCELADO
+}
+enum TipoMovimentacaoAquisicaoBeneficio {
+ CONFIRMACAO
+ REVERSAO
+}
 enum StatusFechamentoBeneficio {
  ABERTA
  EM_REVISAO
@@ -370,6 +388,7 @@ model Fornecedor {
  nome String @unique
  ativo Boolean @default(true)
  configuracoes ConfiguracaoBeneficio[]
+ aquisicoes AquisicaoBeneficio[]
 }
 enum TipoConducao {
  ONIBUS
@@ -385,6 +404,7 @@ model CartaoTransporte {
  atualizadoEm DateTime @updatedAt
  itens BeneficioTransporteItem[]
  snapshots BeneficioTransporteCompetenciaItem[]
+ aquisicoes AquisicaoBeneficio[]
 }
 model ConfiguracaoBeneficio {
  id String @id @default(uuid()) @db.Uuid
@@ -396,6 +416,7 @@ model ConfiguracaoBeneficio {
  ativa Boolean @default(true)
  observacoes String?
  competencias BeneficioCompetencia[]
+ beneficiosRecorrentes BeneficioVinculo[] @relation("ConfiguracaoRecorrenteBeneficio")
  @@unique([unidadeId,tipo,fornecedorId])
 }
 model BeneficioVinculo {
@@ -407,6 +428,11 @@ model BeneficioVinculo {
  fimVigencia DateTime? @db.Date
  status StatusBeneficioVinculo @default(ATIVO)
  observacoes String?
+  configuracaoRecorrenteId String? @db.Uuid
+  configuracaoRecorrente ConfiguracaoBeneficio? @relation("ConfiguracaoRecorrenteBeneficio", fields:[configuracaoRecorrenteId],references:[id])
+  valorDiario Decimal? @db.Decimal(12,2)
+  quantidadeRecorrente Decimal? @db.Decimal(7,2)
+  valorUnitarioRecorrente Decimal? @db.Decimal(12,2)
  competencias BeneficioCompetencia[]
  periodosHistoricos BeneficioPeriodoHistorico[]
  transporteItens BeneficioTransporteItem[]
@@ -429,8 +455,62 @@ model BeneficioCompetencia {
  ajustes BeneficioAjuste[]
  transporteItens BeneficioTransporteCompetenciaItem[]
  transporteRevisaoPendente Boolean @default(false)
+ aquisicaoItens AquisicaoBeneficioItem[]
  @@unique([beneficioVinculoId,configuracaoId,competencia,componente])
  @@index([competencia,status])
+}
+model AquisicaoBeneficio {
+ id String @id @default(uuid()) @db.Uuid
+ unidadeId String @db.Uuid
+ unidade Unidade @relation(fields:[unidadeId],references:[id])
+ competencia DateTime @db.Date
+ tipo TipoBeneficio
+ fornecedorId String @db.Uuid
+ fornecedor Fornecedor @relation(fields:[fornecedorId],references:[id])
+ cartaoTransporteId String? @db.Uuid
+ cartaoTransporte CartaoTransporte? @relation(fields:[cartaoTransporteId],references:[id])
+ status StatusAquisicaoBeneficio @default(PENDENTE)
+ referenciaExterna String? @db.VarChar(180)
+ dataCompra DateTime? @db.Date
+ observacoes String?
+ criadoPorId String @db.Uuid
+ criadoPor Usuario @relation(fields:[criadoPorId],references:[id])
+ criadoEm DateTime @default(now())
+ atualizadoEm DateTime @updatedAt
+ itens AquisicaoBeneficioItem[]
+ @@index([unidadeId,competencia,tipo,status])
+ @@index([fornecedorId,cartaoTransporteId])
+}
+model AquisicaoBeneficioItem {
+ id String @id @default(uuid()) @db.Uuid
+ aquisicaoId String @db.Uuid
+ aquisicao AquisicaoBeneficio @relation(fields:[aquisicaoId],references:[id])
+ competenciaId String @db.Uuid
+ competencia BeneficioCompetencia @relation(fields:[competenciaId],references:[id])
+ vinculoId String @db.Uuid
+ pessoaNome String @db.VarChar(180)
+ equipeNome String? @db.VarChar(180)
+ destino String @db.VarChar(180)
+ valorPrevisto Decimal @db.Decimal(12,2)
+ valorReservado Decimal @db.Decimal(12,2)
+ status StatusItemAquisicaoBeneficio @default(PENDENTE)
+ criadoEm DateTime @default(now())
+ movimentacoes MovimentacaoAquisicaoBeneficio[]
+ @@index([competenciaId,status])
+ @@index([vinculoId])
+}
+model MovimentacaoAquisicaoBeneficio {
+ id String @id @default(uuid()) @db.Uuid
+ itemId String @db.Uuid
+ item AquisicaoBeneficioItem @relation(fields:[itemId],references:[id])
+ tipo TipoMovimentacaoAquisicaoBeneficio
+ valor Decimal @db.Decimal(12,2)
+ data DateTime @db.Date
+ motivo String?
+ criadoPorId String @db.Uuid
+ criadoPor Usuario @relation(fields:[criadoPorId],references:[id])
+ criadoEm DateTime @default(now())
+ @@index([itemId,tipo])
 }
 model BeneficioTransporteItem {
  id String @id @default(uuid()) @db.Uuid

@@ -64,6 +64,10 @@ O seguro deve permitir histórico de vigência e movimentações, incluindo incl
 
 Benefícios devem ser registrados por vínculo e competência mensal. Janeiro, fevereiro etc. não serão colunas do banco.
 
+O cadastro em lote deve selecionar categoria, unidade, competência e fornecedor ativo configurado para a unidade. Apenas vínculos ativos participam. Alterar uma adesão em lote cria nova vigência no mês escolhido e encerra a anterior, preservando o histórico.
+
+Alimentação e transporte são calculados por dias; transporte mantém condução e cartão. Cesta básica, premiação e outros são calculados por quantidade e valor unitário. Valores ausentes devem permanecer como pendência explícita.
+
 O modelo deve suportar diferentes tipos/meios utilizados atualmente, como transporte, alimentação, premiação, Flash, Riocard, JAÉ, SPTrans, TDMax e Mobilidade, sem transformar cada fornecedor em uma coluna permanente.
 
 ## RN-012 — Valores calculados e informados

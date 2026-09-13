@@ -14,6 +14,7 @@ import { registerLeave, leaveAlerts } from "./modules/leave.js";
 import { synchronize } from "./modules/leave-domain.js";
 import { registerBenefits, benefitAlerts } from "./modules/benefits.js";
 import { registerTransport } from "./modules/transport.js";
+import { registerBenefitAcquisitions } from "./modules/benefit-acquisitions.js";
 import { registerImports } from "./modules/imports.js";
 import { registerReporting } from "./modules/reporting.js";
 import { registerOperational } from "./modules/operational.js";
@@ -121,6 +122,7 @@ export async function createApp(
   registerLeave(app, db);
   registerBenefits(app, db);
   registerTransport(app, db);
+  registerBenefitAcquisitions(app, db);
   await registerImports(app, db);
   registerReporting(app, db);
   registerOperational(app, db);

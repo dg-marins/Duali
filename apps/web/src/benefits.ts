@@ -72,6 +72,26 @@ export const benefitScreens: Screen[] = [
         options: ["ATIVO", "ENCERRADO"],
         default: "ATIVO",
       },
+      {
+        key: "configuracaoRecorrenteId",
+        label: "Fornecedor recorrente",
+        resource: "configuracoes-beneficios",
+      },
+      {
+        key: "valorDiario",
+        label: "Valor diário (alimentação)",
+        type: "number",
+      },
+      {
+        key: "quantidadeRecorrente",
+        label: "Quantidade recorrente",
+        type: "number",
+      },
+      {
+        key: "valorUnitarioRecorrente",
+        label: "Valor unitário recorrente",
+        type: "number",
+      },
       obs,
     ],
   },

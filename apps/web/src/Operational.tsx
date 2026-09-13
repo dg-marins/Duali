@@ -694,6 +694,7 @@ export function PersonProfile({
     [loading, setLoading] = useState(true),
     [formScreen, setFormScreen] = useState<string | null>(null),
     [editingLink, setEditingLink] = useState<Row | null>(null),
+    [editingBenefit, setEditingBenefit] = useState<Row | null>(null),
     [editingDocument, setEditingDocument] = useState<Row | null>(null),
     [version, setVersion] = useState(0);
   const options = useOptions();
@@ -782,6 +783,23 @@ export function PersonProfile({
                 setVersion(version + 1);
               }}
             />
+          ) : formScreen === "beneficios-vinculo" && editingBenefit ? (
+            <RecordForm
+              embedded
+              screen={
+                screens.find((screen) => screen.path === "beneficios-vinculo")!
+              }
+              record={editingBenefit}
+              onClose={() => {
+                setFormScreen(null);
+                setEditingBenefit(null);
+              }}
+              onSaved={() => {
+                setFormScreen(null);
+                setEditingBenefit(null);
+                setVersion(version + 1);
+              }}
+            />
           ) : formScreen && editingLink ? (
             <LinkEditorForm
               link={editingLink}
@@ -789,10 +807,12 @@ export function PersonProfile({
               onClose={() => {
                 setFormScreen(null);
                 setEditingLink(null);
+                setEditingBenefit(null);
               }}
               onSaved={() => {
                 setFormScreen(null);
                 setEditingLink(null);
+                setEditingBenefit(null);
                 setVersion(version + 1);
               }}
             />
@@ -1028,6 +1048,94 @@ export function PersonProfile({
                 />
               </section>
             ))}
+          </div>
+        )}
+        {tab === "beneficios" && (
+          <div className="stack">
+            {links.flatMap((link) =>
+              ((link.beneficios as Row[] | undefined) ?? []).map((benefit) => {
+                const config = benefit.configuracaoRecorrente as
+                  | Row
+                  | undefined;
+                const competencies =
+                  (benefit.competencias as Row[] | undefined) ?? [];
+                return (
+                  <section className="panel" key={String(benefit.id)}>
+                    <div className="section-heading">
+                      <div>
+                        <h2>{String(benefit.tipo)}</h2>
+                        <p>
+                          {display(config?.fornecedor)} ·{" "}
+                          {String(benefit.status)}
+                        </p>
+                      </div>
+                      <button
+                        className="secondary"
+                        onClick={() => {
+                          setEditingBenefit(benefit);
+                          setFormScreen("beneficios-vinculo");
+                        }}
+                      >
+                        Editar benefício
+                      </button>
+                    </div>
+                    <div className="info-list">
+                      <p>
+                        Vínculo: {display(link.pessoa)} · {display(link.tipo)}
+                      </p>
+                      <p>
+                        Vigência: {formatDate(benefit.inicioVigencia)} até{" "}
+                        {formatDate(benefit.fimVigencia)}
+                      </p>
+                      {benefit.tipo === "ALIMENTACAO" && (
+                        <p>Valor diário: {money(benefit.valorDiario)}</p>
+                      )}
+                      {!["ALIMENTACAO", "TRANSPORTE"].includes(
+                        String(benefit.tipo),
+                      ) && (
+                        <p>
+                          Quantidade recorrente:{" "}
+                          {display(benefit.quantidadeRecorrente)} · Valor
+                          unitário: {money(benefit.valorUnitarioRecorrente)}
+                        </p>
+                      )}
+                      {benefit.tipo === "TRANSPORTE" && (
+                        <p>
+                          Transportes:{" "}
+                          {(
+                            (benefit.transporteItens as Row[] | undefined) ?? []
+                          )
+                            .map(
+                              (item) =>
+                                `${display(item.tipoConducao)} · ${display((item.cartaoTransporte as Row | undefined)?.nome)} · ${money(item.valorDiario)}`,
+                            )
+                            .join(" | ") || "Não configurado"}
+                        </p>
+                      )}
+                    </div>
+                    {competencies.length > 0 && (
+                      <p className="muted">
+                        Competências:{" "}
+                        {competencies
+                          .map(
+                            (item) =>
+                              `${formatDate(item.competencia)} · ${money(item.valorFinal ?? item.valorInformado)}`,
+                          )
+                          .join(" | ")}
+                      </p>
+                    )}
+                  </section>
+                );
+              }),
+            )}
+            {!links.some(
+              (link) => ((link.beneficios as Row[] | undefined) ?? []).length,
+            ) && (
+              <EmptyState
+                title="Nenhum benefício cadastrado"
+                description="Adicione um benefício a este vínculo ou use o cadastro em lote."
+              />
+            )}
           </div>
         )}
         {tab === "documentos" && (
@@ -1847,6 +1955,12 @@ export const LeavePage = ({ navigate }: { navigate: Navigate }) => (
 export const BenefitsPage = ({ navigate }: { navigate: Navigate }) => (
   <>
     <div className="form-actions">
+      <button onClick={() => navigate("/app/beneficios/lote")}>
+        Cadastrar benefícios em lote
+      </button>
+      <button onClick={() => navigate("/app/beneficios/aquisicao")}>
+        Aquisição mensal
+      </button>
       <button onClick={() => navigate("/app/beneficios/fechamento")}>
         Fechamento por competência
       </button>

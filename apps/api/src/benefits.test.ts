@@ -317,3 +317,219 @@ test("structured transport snapshots calculate by card and conduction with Decim
     await f.app.close();
   }
 });
+
+test("monthly acquisition reserves, confirms partially and preserves reversals", async () => {
+  const f = await fixture();
+  try {
+    const pessoa = await f.db.pessoa.create({
+      data: { nomeCompleto: "Pessoa aquisição" },
+    });
+    const unidade = await f.db.unidade.create({
+      data: {
+        nome: "Unidade aquisição",
+        sigla: f.suffix.slice(0, 8),
+        uf: "RJ",
+      },
+    });
+    const vinculo = await f.db.vinculo.create({
+      data: {
+        pessoaId: pessoa.id,
+        unidadeId: unidade.id,
+        tipo: "CLT",
+        dataAdmissao: new Date("2025-01-01"),
+      },
+    });
+    const fornecedor = await f.db.fornecedor.create({
+      data: { nome: `Fornecedor aquisição ${f.suffix}` },
+    });
+    const config = await f.db.configuracaoBeneficio.create({
+      data: {
+        unidadeId: unidade.id,
+        fornecedorId: fornecedor.id,
+        tipo: "ALIMENTACAO",
+      },
+    });
+    await f.db.beneficioVinculo.create({
+      data: {
+        vinculoId: vinculo.id,
+        tipo: "ALIMENTACAO",
+        inicioVigencia: new Date("2025-01-01"),
+        configuracaoRecorrenteId: config.id,
+        valorDiario: "25.50",
+      },
+    });
+    const prepared = await f.app.inject({
+      method: "POST",
+      url: "/api/aquisicoes-beneficios/preparar",
+      headers: f.headers,
+      payload: {
+        unidadeId: unidade.id,
+        competencia: "2026-02-01",
+        diasAlimentacao: 20,
+      },
+    });
+    expect(prepared.statusCode, prepared.body).toBe(200);
+    expect(prepared.json<{ criadas: number }>().criadas).toBe(1);
+    const repeat = await f.app.inject({
+      method: "POST",
+      url: "/api/aquisicoes-beneficios/preparar",
+      headers: f.headers,
+      payload: {
+        unidadeId: unidade.id,
+        competencia: "2026-02-01",
+        diasAlimentacao: 20,
+      },
+    });
+    expect(repeat.json<{ criadas: number }>().criadas).toBe(0);
+    const previous = await f.app.inject({
+      method: "GET",
+      url: `/api/aquisicoes-beneficios/previa?unidadeId=${unidade.id}&competencia=2026-02-01`,
+      headers: f.headers,
+    });
+    const row = previous.json<Array<{ id: string; previsto: string }>>()[0]!;
+    expect(row.previsto).toBe("510.00");
+    const order = await f.app.inject({
+      method: "POST",
+      url: "/api/aquisicoes-beneficios",
+      headers: f.headers,
+      payload: {
+        unidadeId: unidade.id,
+        competencia: "2026-02-01",
+        tipo: "ALIMENTACAO",
+        fornecedorId: fornecedor.id,
+        itens: [{ competenciaId: row.id, valor: 500 }],
+      },
+    });
+    expect(order.statusCode, order.body).toBe(201);
+    const itemId = order.json<{ itens: Array<{ id: string }> }>().itens[0]!.id;
+    const confirmed = await f.app.inject({
+      method: "POST",
+      url: `/api/aquisicoes-beneficios/${order.json<{ id: string }>().id}/confirmar`,
+      headers: f.headers,
+      payload: {
+        dataCompra: "2026-02-01",
+        itens: [
+          {
+            itemId,
+            valor: 450,
+            status: "CONFIRMADO",
+            motivo: "Crédito parcial confirmado pela operadora",
+          },
+        ],
+      },
+    });
+    expect(confirmed.statusCode, confirmed.body).toBe(200);
+    const reversed = await f.app.inject({
+      method: "POST",
+      url: `/api/aquisicoes-beneficios/itens/${itemId}/reverter`,
+      headers: f.headers,
+      payload: { valor: 50, data: "2026-02-03", motivo: "Crédito devolvido" },
+    });
+    expect(reversed.statusCode, reversed.body).toBe(200);
+    const after = await f.app.inject({
+      method: "GET",
+      url: `/api/aquisicoes-beneficios/previa?unidadeId=${unidade.id}&competencia=2026-02-01`,
+      headers: f.headers,
+    });
+    const final =
+      after.json<Array<{ compradoLiquido: string; disponivel: string }>>()[0]!;
+    expect(final.compradoLiquido).toBe("400.00");
+    expect(final.disponivel).toBe("110.00");
+    expect(
+      await f.db.auditoria.count({ where: { entidade: "aquisicaoBeneficio" } }),
+    ).toBeGreaterThanOrEqual(2);
+  } finally {
+    await f.app.close();
+  }
+});
+
+test("batch benefit registration preserves history and prepares non-daily acquisition", async () => {
+  const f = await fixture();
+  try {
+    const pessoa = await f.db.pessoa.create({
+      data: { nomeCompleto: "Pessoa lote" },
+    });
+    const unidade = await f.db.unidade.create({
+      data: { nome: "Unidade lote", sigla: f.suffix.slice(0, 8), uf: "RJ" },
+    });
+    const vinculo = await f.db.vinculo.create({
+      data: {
+        pessoaId: pessoa.id,
+        unidadeId: unidade.id,
+        tipo: "CLT",
+        dataAdmissao: new Date("2025-01-01"),
+      },
+    });
+    const fornecedor = await f.db.fornecedor.create({
+      data: { nome: `Fornecedor lote ${f.suffix}` },
+    });
+    const configuracao = await f.db.configuracaoBeneficio.create({
+      data: {
+        unidadeId: unidade.id,
+        fornecedorId: fornecedor.id,
+        tipo: "CESTA_BASICA",
+      },
+    });
+    const first = await f.app.inject({
+      method: "POST",
+      url: "/api/beneficios/lote",
+      headers: f.headers,
+      payload: {
+        unidadeId: unidade.id,
+        tipo: "CESTA_BASICA",
+        competencia: "2026-09-01",
+        configuracaoId: configuracao.id,
+        itens: [{ vinculoId: vinculo.id, quantidade: 2, valorUnitario: 50 }],
+      },
+    });
+    expect(first.statusCode, first.body).toBe(201);
+    const repeat = await f.app.inject({
+      method: "POST",
+      url: "/api/beneficios/lote",
+      headers: f.headers,
+      payload: {
+        unidadeId: unidade.id,
+        tipo: "CESTA_BASICA",
+        competencia: "2026-09-01",
+        configuracaoId: configuracao.id,
+        itens: [{ vinculoId: vinculo.id, quantidade: 3, valorUnitario: 50 }],
+      },
+    });
+    expect(repeat.statusCode, repeat.body).toBe(201);
+    const benefits = await f.db.beneficioVinculo.findMany({
+      where: { vinculoId: vinculo.id },
+    });
+    expect(benefits).toHaveLength(1);
+    const competence = await f.db.beneficioCompetencia.findFirstOrThrow({
+      where: {
+        beneficioVinculoId: benefits[0]!.id,
+        competencia: new Date("2026-09-01"),
+      },
+      include: { ajustes: true },
+    });
+    expect(benefitCalculation(competence).valorFinal).toBe("150.00");
+    const next = await f.app.inject({
+      method: "POST",
+      url: "/api/beneficios/lote",
+      headers: f.headers,
+      payload: {
+        unidadeId: unidade.id,
+        tipo: "CESTA_BASICA",
+        competencia: "2026-10-01",
+        configuracaoId: configuracao.id,
+        itens: [{ vinculoId: vinculo.id, quantidade: 1, valorUnitario: 75 }],
+      },
+    });
+    expect(next.statusCode, next.body).toBe(201);
+    expect(
+      await f.db.beneficioVinculo.count({ where: { vinculoId: vinculo.id } }),
+    ).toBe(2);
+    expect(
+      await f.db.auditoria.count({
+        where: { acao: "CADASTRAR_BENEFICIO_EM_LOTE" },
+      }),
+    ).toBeGreaterThanOrEqual(2);
+  } finally {
+    await f.app.close();
+  }
+});

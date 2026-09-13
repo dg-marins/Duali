@@ -167,10 +167,15 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
             ajustes: { orderBy: { criadoEm: "desc" } },
             beneficios: {
               include: {
+                configuracaoRecorrente: { include: { fornecedor: true } },
+                transporteItens: { include: { cartaoTransporte: true } },
                 competencias: {
                   include: {
                     configuracao: { include: { fornecedor: true } },
                     ajustes: true,
+                    aquisicaoItens: {
+                      include: { aquisicao: true, movimentacoes: true },
+                    },
                   },
                   orderBy: { competencia: "desc" },
                 },

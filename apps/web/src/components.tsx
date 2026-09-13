@@ -62,9 +62,17 @@ export function Lookup({
   const optionLabel = (row: Row) =>
     field.resource === "instituicoes" && row.nome
       ? `${String(row.sigla ?? "").trim() ? `${String(row.sigla).trim()} - ` : ""}${String(row.nome)}`
-      : row.pessoa
-        ? display(row.pessoa) + " · " + display(row.tipo)
-        : display(row);
+      : field.resource === "configuracoes-beneficios"
+        ? [
+            display(row.unidade),
+            String(row.tipo ?? "").replaceAll("_", " "),
+            display(row.fornecedor),
+          ]
+            .filter((part) => part && part !== "—")
+            .join(" · ")
+        : row.pessoa
+          ? display(row.pessoa) + " · " + display(row.tipo)
+          : display(row);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {

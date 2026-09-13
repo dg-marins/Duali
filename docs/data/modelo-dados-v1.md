@@ -236,6 +236,8 @@ A taxonomia deverá distinguir conceito de benefício de fornecedor/meio quando 
 - `status`
 - `observacoes`
 
+Para categorias calculadas por quantidade, a adesão recorrente pode registrar `quantidade_recorrente` e `valor_unitario_recorrente`. Esses valores orientam competências futuras e não substituem os snapshots e valores efetivamente adquiridos no mês.
+
 `beneficio_competencia`
 
 - `id`

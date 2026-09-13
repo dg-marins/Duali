@@ -106,6 +106,33 @@ const reportColumns: Record<
           : undefined,
     mobile: index === 0 ? "primary" : index > 5 ? "hidden" : "secondary",
   })),
+  "aquisicoes-beneficios": [
+    "Pessoa",
+    "Unidade",
+    "Equipe",
+    "Competência",
+    "Benefício",
+    "Fornecedor",
+    "Cartão",
+    "Destino",
+    "Previsto",
+    "Reservado",
+    "Comprado bruto",
+    "Revertido",
+    "Comprado líquido",
+    "Situação",
+    "Referência externa",
+    "Data da compra",
+  ].map((key, index) => ({
+    key,
+    label: key,
+    format: /Previsto|Reservado|Comprado|Revertido/.test(key)
+      ? "money"
+      : /Competência|Data da compra/.test(key)
+        ? "date"
+        : undefined,
+    mobile: index === 0 ? "primary" : index > 5 ? "hidden" : "secondary",
+  })),
   inconsistencias: ["Pessoa", "Tipo", "Mensagem", "Prazo"].map(
     (key, index) => ({
       key,
@@ -662,6 +689,9 @@ export function Reporting() {
               <option value="estagios">Estagiários</option>
               <option value="descansos">Férias</option>
               <option value="beneficios">Benefícios</option>
+              <option value="aquisicoes-beneficios">
+                Aquisições de benefícios
+              </option>
               <option value="inconsistencias">Inconsistências</option>
             </select>
           </label>

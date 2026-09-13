@@ -13,6 +13,7 @@ export const reportKinds = [
   "estagios",
   "descansos",
   "beneficios",
+  "aquisicoes-beneficios",
   "inconsistencias",
 ] as const;
 const kindSchema = z.enum(reportKinds);
@@ -101,6 +102,56 @@ export async function report(
         Observações: r.observacoes ?? "",
       };
     });
+  } else if (kind === "aquisicoes-beneficios") {
+    const purchases = await db.aquisicaoBeneficio.findMany({
+      where: {
+        ...(q.unidadeId ? { unidadeId: q.unidadeId } : {}),
+        ...(q.inicio || q.fim ? { competencia: range(q) } : {}),
+      },
+      include: {
+        unidade: true,
+        fornecedor: true,
+        cartaoTransporte: true,
+        itens: { include: { movimentacoes: true } },
+      },
+      orderBy: { competencia: "desc" },
+      take: 10001,
+    });
+    rows = purchases.flatMap((purchase) =>
+      purchase.itens.map((item) => {
+        const gross = item.movimentacoes
+          .filter((movement) => movement.tipo === "CONFIRMACAO")
+          .reduce(
+            (sum, movement) => sum.plus(movement.valor),
+            new Prisma.Decimal(0),
+          );
+        const reversed = item.movimentacoes
+          .filter((movement) => movement.tipo === "REVERSAO")
+          .reduce(
+            (sum, movement) => sum.plus(movement.valor),
+            new Prisma.Decimal(0),
+          );
+        return {
+          Pessoa: item.pessoaNome,
+          Unidade: purchase.unidade.nome,
+          Equipe: item.equipeNome ?? "",
+          Competência: purchase.competencia.toISOString().slice(0, 10),
+          Benefício: purchase.tipo,
+          Fornecedor: purchase.fornecedor.nome,
+          Cartão: purchase.cartaoTransporte?.nome ?? "",
+          Destino: item.destino,
+          Previsto: item.valorPrevisto.toFixed(2),
+          Reservado: item.valorReservado.toFixed(2),
+          "Comprado bruto": gross.toFixed(2),
+          Revertido: reversed.toFixed(2),
+          "Comprado líquido": gross.minus(reversed).toFixed(2),
+          Situação: item.status,
+          "Referência externa": purchase.referenciaExterna ?? "",
+          "Data da compra":
+            purchase.dataCompra?.toISOString().slice(0, 10) ?? "",
+        };
+      }),
+    );
   } else if (kind === "inconsistencias") {
     const links = await db.vinculo.findMany({ where, select: { id: true } }),
       ids = new Set(links.map((v) => v.id));

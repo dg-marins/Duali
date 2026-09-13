@@ -1,12 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { Prisma, type PrismaClient } from "@duali/database";
 import {
+  z,
   fornecedorSchema,
   configuracaoBeneficioSchema,
   beneficioVinculoSchema,
   competenciaSchema,
   beneficioAjusteSchema,
   beneficioPeriodoSchema,
+  beneficioLoteSchema,
   fechamentoBeneficioSchema,
   reabrirBeneficioSchema,
 } from "@duali/shared";
@@ -86,12 +88,54 @@ export const benefitResources: Resource[] = [
     dates: ["inicioVigencia", "fimVigencia"],
     filters: ["vinculoId", "tipo", "status"],
     include: { vinculo: { include: { pessoa: true } } },
-    before: async (_tx, data, previous) => {
+    before: async (tx, data, previous) => {
       if (
         previous &&
         (data.vinculoId !== previous.vinculoId || data.tipo !== previous.tipo)
       )
         throw new DomainError(409, "Vínculo e tipo históricos são imutáveis.");
+      if (data.valorDiario != null && data.tipo !== "ALIMENTACAO")
+        throw new DomainError(
+          422,
+          "Valor diário recorrente é permitido somente para alimentação.",
+        );
+      if (
+        data.tipo === "ALIMENTACAO" &&
+        (data.quantidadeRecorrente != null ||
+          data.valorUnitarioRecorrente != null)
+      )
+        throw new DomainError(
+          422,
+          "Alimentação usa valor diário e dias da competência.",
+        );
+      if (
+        data.tipo === "TRANSPORTE" &&
+        (data.valorDiario != null ||
+          data.quantidadeRecorrente != null ||
+          data.valorUnitarioRecorrente != null)
+      )
+        throw new DomainError(
+          422,
+          "Transporte usa itens de condução e cartão.",
+        );
+      if (data.configuracaoRecorrenteId) {
+        const [config, benefit] = await Promise.all([
+          tx.configuracaoBeneficio.findUnique({
+            where: { id: String(data.configuracaoRecorrenteId) },
+          }),
+          tx.vinculo.findUnique({ where: { id: String(data.vinculoId) } }),
+        ]);
+        if (
+          !config ||
+          !benefit ||
+          config.unidadeId !== benefit.unidadeId ||
+          config.tipo !== data.tipo
+        )
+          throw new DomainError(
+            422,
+            "Fornecedor recorrente incompatível com vínculo e benefício.",
+          );
+      }
     },
   },
   {
@@ -189,6 +233,251 @@ export const benefitResources: Resource[] = [
 ];
 export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
   for (const resource of benefitResources) registerResource(app, db, resource);
+  app.get("/api/beneficios/lote/opcoes", async (req) => {
+    const query = z
+      .object({
+        unidadeId: z.string().uuid(),
+        tipo: z.enum([
+          "TRANSPORTE",
+          "ALIMENTACAO",
+          "CESTA_BASICA",
+          "PREMIACAO",
+          "OUTRO",
+        ]),
+      })
+      .parse(req.query);
+    const [vinculos, configuracoes, cartoes] = await Promise.all([
+      db.vinculo.findMany({
+        where: { unidadeId: query.unidadeId, status: "ATIVO" },
+        include: {
+          pessoa: true,
+          beneficios: {
+            where: { tipo: query.tipo, status: "ATIVO" },
+            include: {
+              configuracaoRecorrente: { include: { fornecedor: true } },
+            },
+            orderBy: { inicioVigencia: "desc" },
+          },
+        },
+        orderBy: { pessoa: { nomeCompleto: "asc" } },
+      }),
+      db.configuracaoBeneficio.findMany({
+        where: { unidadeId: query.unidadeId, tipo: query.tipo, ativa: true },
+        include: { fornecedor: true },
+        orderBy: { fornecedor: { nome: "asc" } },
+      }),
+      query.tipo === "TRANSPORTE"
+        ? db.cartaoTransporte.findMany({
+            where: { ativo: true },
+            orderBy: { nome: "asc" },
+          })
+        : Promise.resolve([]),
+    ]);
+    return { vinculos, configuracoes, cartoes };
+  });
+  app.post("/api/beneficios/lote", async (req, reply) => {
+    const body = beneficioLoteSchema.parse(req.body);
+    const month = new Date(body.competencia);
+    const previousDay = new Date(
+      Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 0),
+    );
+    const result = await transaction(db, async (tx) => {
+      await ensureOpen(tx, body.unidadeId, month);
+      const config = await tx.configuracaoBeneficio.findFirst({
+        where: {
+          id: body.configuracaoId,
+          unidadeId: body.unidadeId,
+          tipo: body.tipo,
+          ativa: true,
+        },
+      });
+      if (!config)
+        throw new DomainError(
+          422,
+          "Selecione um fornecedor ativo da unidade e categoria.",
+        );
+      const ids = body.itens.map((item) => item.vinculoId);
+      if (new Set(ids).size !== ids.length)
+        throw new DomainError(422, "Não repita vínculos na mesma operação.");
+      const links = await tx.vinculo.findMany({
+        where: { id: { in: ids }, unidadeId: body.unidadeId, status: "ATIVO" },
+      });
+      if (links.length !== ids.length)
+        throw new DomainError(
+          422,
+          "Selecione apenas vínculos ativos da unidade.",
+        );
+      const created: string[] = [];
+      for (const item of body.itens) {
+        if (
+          body.tipo === "ALIMENTACAO" &&
+          (item.valorDiario == null || item.quantidadeDias == null)
+        )
+          throw new DomainError(
+            422,
+            "Informe valor diário e dias para alimentação.",
+          );
+        if (
+          body.tipo === "TRANSPORTE" &&
+          (!item.quantidadeDias || !item.transporteItens.length)
+        )
+          throw new DomainError(
+            422,
+            "Informe dias e ao menos um transporte por pessoa.",
+          );
+        if (
+          !["ALIMENTACAO", "TRANSPORTE"].includes(body.tipo) &&
+          (item.quantidade == null || item.valorUnitario == null)
+        )
+          throw new DomainError(422, "Informe quantidade e valor unitário.");
+        const active = await tx.beneficioVinculo.findMany({
+          where: {
+            vinculoId: item.vinculoId,
+            tipo: body.tipo,
+            status: "ATIVO",
+            inicioVigencia: { lte: month },
+            OR: [{ fimVigencia: null }, { fimVigencia: { gte: month } }],
+          },
+          orderBy: { inicioVigencia: "desc" },
+        });
+        let benefit = active.find(
+          (row) => row.inicioVigencia.getTime() === month.getTime(),
+        );
+        if (!benefit) {
+          for (const current of active)
+            await tx.beneficioVinculo.update({
+              where: { id: current.id },
+              data: { fimVigencia: previousDay, status: "ENCERRADO" },
+            });
+          benefit = await tx.beneficioVinculo.create({
+            data: {
+              vinculoId: item.vinculoId,
+              tipo: body.tipo,
+              inicioVigencia: month,
+              configuracaoRecorrenteId: config.id,
+              ...(body.tipo === "ALIMENTACAO"
+                ? { valorDiario: item.valorDiario ?? null }
+                : {}),
+              ...(!["ALIMENTACAO", "TRANSPORTE"].includes(body.tipo)
+                ? {
+                    quantidadeRecorrente: item.quantidade ?? null,
+                    valorUnitarioRecorrente: item.valorUnitario ?? null,
+                  }
+                : {}),
+            },
+          });
+          created.push(benefit.id);
+        } else {
+          await tx.beneficioVinculo.update({
+            where: { id: benefit.id },
+            data: {
+              configuracaoRecorrenteId: config.id,
+              ...(body.tipo === "ALIMENTACAO"
+                ? { valorDiario: item.valorDiario ?? null }
+                : {}),
+              ...(!["ALIMENTACAO", "TRANSPORTE"].includes(body.tipo)
+                ? {
+                    quantidadeRecorrente: item.quantidade ?? null,
+                    valorUnitarioRecorrente: item.valorUnitario ?? null,
+                  }
+                : {}),
+            },
+          });
+        }
+        const existing = await tx.beneficioCompetencia.findFirst({
+          where: {
+            beneficioVinculoId: benefit.id,
+            competencia: month,
+            componente: "Principal",
+          },
+          include: { aquisicaoItens: true },
+        });
+        if (existing?.aquisicaoItens.length)
+          throw new DomainError(
+            409,
+            "Não altere benefício com aquisição já emitida nesta competência.",
+          );
+        const data = {
+          configuracaoId: config.id,
+          quantidadeDias: ["ALIMENTACAO", "TRANSPORTE"].includes(body.tipo)
+            ? (item.quantidadeDias ?? null)
+            : null,
+          quantidade: !["ALIMENTACAO", "TRANSPORTE"].includes(body.tipo)
+            ? (item.quantidade ?? null)
+            : null,
+          valorUnitario:
+            body.tipo === "ALIMENTACAO"
+              ? (item.valorDiario ?? null)
+              : !["TRANSPORTE"].includes(body.tipo)
+                ? (item.valorUnitario ?? null)
+                : null,
+        };
+        const competence = existing
+          ? await tx.beneficioCompetencia.update({
+              where: { id: existing.id },
+              data,
+            })
+          : await tx.beneficioCompetencia.create({
+              data: {
+                beneficioVinculoId: benefit.id,
+                competencia: month,
+                componente: "Principal",
+                ...data,
+              },
+            });
+        if (body.tipo === "TRANSPORTE") {
+          const cards = await tx.cartaoTransporte.count({
+            where: {
+              id: {
+                in: item.transporteItens.map(
+                  (transport) => transport.cartaoTransporteId,
+                ),
+              },
+              ativo: true,
+            },
+          });
+          if (cards !== item.transporteItens.length)
+            throw new DomainError(
+              422,
+              "Selecione cartões de transporte ativos.",
+            );
+          await tx.beneficioTransporteItem.deleteMany({
+            where: { beneficioVinculoId: benefit.id, inicioVigencia: month },
+          });
+          await tx.beneficioTransporteItem.createMany({
+            data: item.transporteItens.map((transport) => ({
+              ...transport,
+              beneficioVinculoId: benefit.id,
+              inicioVigencia: month,
+            })),
+          });
+          await tx.beneficioTransporteCompetenciaItem.deleteMany({
+            where: { competenciaId: competence.id },
+          });
+          await tx.beneficioTransporteCompetenciaItem.createMany({
+            data: item.transporteItens.map((transport) => ({
+              competenciaId: competence.id,
+              tipoConducao: transport.tipoConducao,
+              cartaoTransporteId: transport.cartaoTransporteId,
+              valorDiario: transport.valorDiario,
+            })),
+          });
+        }
+        await audit(
+          tx,
+          req.userId,
+          "CADASTRAR_BENEFICIO_EM_LOTE",
+          "beneficioVinculo",
+          benefit.id,
+          undefined,
+          benefit,
+        );
+      }
+      return { criados: created.length, processados: body.itens.length };
+    });
+    reply.code(201);
+    return result;
+  });
   app.get("/api/beneficios/fechamentos", async (req) => {
     const query = fechamentoBeneficioSchema.partial().parse(req.query);
     return db.fechamentoCompetenciaBeneficio.findMany({
@@ -303,6 +592,20 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
             409,
             "Somente competência aberta pode entrar em revisão.",
           );
+        if (path === "fechar") {
+          const pendingPurchases = await tx.aquisicaoBeneficio.count({
+            where: {
+              unidadeId: before.unidadeId,
+              competencia: before.competencia,
+              status: "PENDENTE",
+            },
+          });
+          if (pendingPurchases)
+            throw new DomainError(
+              409,
+              "Resolva ou cancele os pedidos de aquisição pendentes antes de fechar.",
+            );
+        }
         const row = await tx.fechamentoCompetenciaBeneficio.update({
           where: { id },
           data: {
