@@ -80,10 +80,12 @@ async function validateCard(tx: Tx, id: string) {
 async function ensureConfig(tx: Tx, benefit: Row, configuracaoId: string) {
   const config = await tx.configuracaoBeneficio.findUnique({
     where: { id: configuracaoId },
+    include: { fornecedor: true },
   });
   if (
     !config ||
     !config.ativa ||
+    !config.fornecedor.ativo ||
     config.tipo !== "TRANSPORTE" ||
     config.unidadeId !== String((benefit.vinculo as Row).unidadeId)
   )
@@ -385,6 +387,13 @@ export function registerTransport(app: FastifyInstance, db: PrismaClient) {
         throw new DomainError(
           409,
           "Reabra a competência antes de alterar lançamentos.",
+        );
+      if (
+        await tx.aquisicaoBeneficioItem.count({ where: { competenciaId: id } })
+      )
+        throw new DomainError(
+          409,
+          "Não altere competência com pedido ou compra emitidos.",
         );
       await tx.beneficioCompetencia.update({
         where: { id },

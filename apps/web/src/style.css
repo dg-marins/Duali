@@ -322,6 +322,35 @@ nav button.active {
   align-items: end;
   gap: 12px;
 }
+.compact-filter-grid {
+  grid-template-columns: minmax(220px, 2fr) minmax(160px, 1fr) auto;
+  margin: 16px 0;
+}
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  font-weight: 650;
+}
+.benefit-batch-footer {
+  position: sticky;
+  bottom: 12px;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 94%, white);
+  box-shadow: var(--shadow-sm);
+}
+.review-panel {
+  border-color: var(--brand-soft);
+}
 .clear-filter {
   align-self: end;
 }

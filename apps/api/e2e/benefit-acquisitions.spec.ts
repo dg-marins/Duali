@@ -81,12 +81,12 @@ test("administra preparação, pedido e confirmação de aquisição mensal", as
     await expect(page.getByText(/R\$\s*561,00/).first()).toBeVisible();
     await page.getByLabel("Selecionar Colaboradora aquisição E2E").check();
     await page.getByRole("button", { name: /Gerar 1 pedido/ }).click();
-    await expect(page.getByText("PENDENTE", { exact: true })).toBeVisible();
+    await expect(page.getByText("Pendente", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Confirmar", exact: true }).click();
     await page
       .getByRole("button", { name: "Confirmar aquisição", exact: true })
       .click();
-    await expect(page.getByText("CONFIRMADA", { exact: true })).toBeVisible();
+    await expect(page.getByText("Confirmada", { exact: true })).toBeVisible();
   } finally {
     await db.$disconnect();
   }
@@ -149,11 +149,12 @@ test("cadastra alimentação em lote e a apresenta no perfil", async ({
     const inputs = page.locator('tbody input[type="number"]');
     await inputs.nth(0).fill("22");
     await inputs.nth(1).fill("25.50");
-    await page.getByRole("button", { name: "Cadastrar 1 pessoa(s)" }).click();
+    await page.getByRole("button", { name: "Revisar cadastro" }).click();
+    await page.getByRole("button", { name: "Confirmar cadastro" }).click();
     await expect(page).toHaveURL(/\/app\/beneficios\/aquisicao/);
     await page.goto(`/app/pessoas/${person.id}`);
     await page.getByRole("tab", { name: "Benefícios" }).click();
-    await expect(page.getByText("ALIMENTACAO", { exact: true })).toBeVisible();
+    await expect(page.getByText("Alimentação", { exact: true })).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Editar benefício" }),
     ).toBeVisible();

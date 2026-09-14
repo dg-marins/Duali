@@ -27,7 +27,7 @@ export class ApiError extends Error {
   }
 }
 
-type RequestOptions = { notifyUnauthorized?: boolean };
+type RequestOptions = { notifyUnauthorized?: boolean; idempotencyKey?: string };
 type ErrorPayload = {
   error?: {
     code?: string;
@@ -53,6 +53,9 @@ async function request(
           ? {}
           : { "Content-Type": "application/json" }),
         "X-CSRF-Token": csrf,
+        ...(options.idempotencyKey
+          ? { "Idempotency-Key": options.idempotencyKey }
+          : {}),
       },
       ...(body === undefined
         ? {}

@@ -29,6 +29,19 @@ import { Notice, RecordForm } from "./components";
 import { screens } from "./resources";
 
 type Navigate = (path: string) => void;
+const benefitLabels: Record<string, string> = {
+  ALIMENTACAO: "Alimentação",
+  TRANSPORTE: "Transporte",
+  CESTA_BASICA: "Cesta básica",
+  PREMIACAO: "Premiação",
+  OUTRO: "Outro",
+  ATIVO: "Ativo",
+  ENCERRADO: "Encerrado",
+  PENDENTE: "Pendente",
+  CONFERIDO: "Conferido",
+  PAGO: "Pago",
+  CANCELADO: "Cancelado",
+};
 type ListResult = {
   items: Row[];
   total: number;
@@ -1063,10 +1076,14 @@ export function PersonProfile({
                   <section className="panel" key={String(benefit.id)}>
                     <div className="section-heading">
                       <div>
-                        <h2>{String(benefit.tipo)}</h2>
+                        <h2>
+                          {benefitLabels[String(benefit.tipo)] ??
+                            String(benefit.tipo)}
+                        </h2>
                         <p>
                           {display(config?.fornecedor)} ·{" "}
-                          {String(benefit.status)}
+                          {benefitLabels[String(benefit.status)] ??
+                            String(benefit.status)}
                         </p>
                       </div>
                       <button
@@ -1142,7 +1159,7 @@ export function PersonProfile({
           <div className="profile-grid">
             {links.map((link) => (
               <section className="panel" key={String(link.id)}>
-                <h2>Documentos e seguro ? {String(link.tipo)}</h2>
+                <h2>Documentos e seguro · {String(link.tipo)}</h2>
                 {(link.documentos as Row[]).map((item) => {
                   const status =
                     item.tipo === "TCE" && item.status === "VIGENTE"
@@ -1156,7 +1173,7 @@ export function PersonProfile({
                         <strong>{String(item.tipo)}</strong>
                         <p>{status}</p>
                         <p>
-                          In?cio: {formatDate(item.inicioVigencia)} ? Fim:{" "}
+                          Início: {formatDate(item.inicioVigencia)} · Fim:{" "}
                           {formatDate(item.fimVigencia)}
                         </p>
                       </div>

@@ -12,12 +12,15 @@ export const date = z
 export const optionalText = z.string().trim().max(5000).nullable().optional();
 export const shortText = z.string().trim().min(1).max(180);
 export const optionalDate = date.nullable().optional();
-export const money = z.coerce
-  .number()
-  .finite()
-  .min(0)
-  .max(9999999999.99)
-  .multipleOf(0.01);
+export const money = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const text = value.trim();
+  if (!text) return Number.NaN;
+  if (/^-?\d{1,3}(\.\d{3})*(,\d{1,2})?$/.test(text))
+    return text.replace(/\./g, "").replace(",", ".");
+  if (/^-?\d+(\.\d{1,2})?$/.test(text)) return text;
+  return Number.NaN;
+}, z.coerce.number().finite().min(0).max(9999999999.99).multipleOf(0.01));
 export function validCpf(value: string): boolean {
   if (!/^\d{11}$/.test(value) || /^(\d)\1+$/.test(value)) return false;
   for (let n = 9; n <= 10; n++) {

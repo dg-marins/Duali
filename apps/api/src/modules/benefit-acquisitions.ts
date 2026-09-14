@@ -15,7 +15,7 @@ import {
   type Row,
   type Tx,
 } from "../core.js";
-import { benefitCalculation } from "./benefits.js";
+import { benefitCalculation, idempotencyKey, idempotent } from "./benefits.js";
 
 const monthEnd = (month: Date) =>
   new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0));
@@ -76,7 +76,11 @@ async function preview(tx: Tx, unitId: string, month: Date) {
       beneficioVinculo: { vinculo: { unidadeId: unitId } },
     },
     include: {
-      ajustes: true,
+      ajustes: {
+        include: {
+          distribuicoes: { include: { transporteCompetenciaItem: true } },
+        },
+      },
       configuracao: { include: { fornecedor: true } },
       beneficioVinculo: {
         include: { vinculo: { include: { pessoa: true, equipe: true } } },
@@ -110,7 +114,7 @@ async function preview(tx: Tx, unitId: string, month: Date) {
         gross: new Prisma.Decimal(0),
         reversed: new Prisma.Decimal(0),
       };
-      const planned = cardId
+      const base = cardId
         ? row.transporteItens
             .filter((item) => item.cartaoTransporteId === cardId)
             .reduce(
@@ -120,6 +124,33 @@ async function preview(tx: Tx, unitId: string, month: Date) {
             .times(row.quantidadeDias ?? 0)
             .toDecimalPlaces(2)
         : value(row);
+      const distributedAdjustments = cardId
+        ? row.ajustes.reduce(
+            (sum, adjustment) =>
+              sum.plus(
+                adjustment.distribuicoes
+                  .filter(
+                    (distribution) =>
+                      distribution.transporteCompetenciaItem
+                        .cartaoTransporteId === cardId,
+                  )
+                  .reduce(
+                    (partial, distribution) =>
+                      partial.plus(
+                        adjustment.tipo === "CREDITO"
+                          ? distribution.valor
+                          : new Prisma.Decimal(distribution.valor).negated(),
+                      ),
+                    new Prisma.Decimal(0),
+                  ),
+              ),
+            new Prisma.Decimal(0),
+          )
+        : new Prisma.Decimal(0);
+      const unallocatedTransportAdjustment =
+        cardId &&
+        row.ajustes.some((adjustment) => adjustment.distribuicoes.length === 0);
+      const planned = base.plus(distributedAdjustments).toDecimalPlaces(2);
       const net = purchased.gross.minus(purchased.reversed);
       return {
         id: row.id,
@@ -136,14 +167,17 @@ async function preview(tx: Tx, unitId: string, month: Date) {
         valorDiario: row.valorUnitario?.toFixed(2) ?? null,
         cartaoTransporteId: cardId,
         previsto: planned.toFixed(2),
+        valorBase: base.toFixed(2),
+        ajustes: distributedAdjustments.toFixed(2),
         compradoBruto: purchased.gross.toFixed(2),
         revertido: purchased.reversed.toFixed(2),
         compradoLiquido: net.toFixed(2),
         emPedido: purchased.reserved.toFixed(2),
         disponivel: planned.minus(net).minus(purchased.reserved).toFixed(2),
         cartoes: cardId ? [transportItem!.cartaoTransporte.nome] : [],
-        alerta:
-          row.beneficioVinculo.vinculo.status === "AFASTADO"
+        alerta: unallocatedTransportAdjustment
+          ? "Há ajuste de transporte sem distribuição por cartão. Revise antes de emitir pedido."
+          : row.beneficioVinculo.vinculo.status === "AFASTADO"
             ? "Vínculo afastado: confira os dias antes da compra."
             : null,
       };
@@ -170,153 +204,181 @@ export function registerBenefitAcquisitions(
   app.post("/api/aquisicoes-beneficios/preparar", async (req) => {
     const body = aquisicaoPrepararSchema.parse(req.body);
     const month = new Date(body.competencia);
-    return transaction(db, async (tx) => {
-      await ensureOpen(tx, body.unidadeId, month);
-      const override = new Map(
-        body.excecoes.map((item) => [
-          item.beneficioVinculoId,
-          item.quantidadeDias,
-        ]),
-      );
-      const benefits = await tx.beneficioVinculo.findMany({
-        where: {
-          tipo: {
-            in: [
-              "TRANSPORTE",
-              "ALIMENTACAO",
-              "CESTA_BASICA",
-              "PREMIACAO",
-              "OUTRO",
-            ],
-          },
-          status: "ATIVO",
-          inicioVigencia: { lte: monthEnd(month) },
-          OR: [{ fimVigencia: null }, { fimVigencia: monthWhere(month) }],
-          vinculo: {
-            unidadeId: body.unidadeId,
-            status: { in: ["ATIVO", "AFASTADO"] },
-          },
-        },
-        include: {
-          vinculo: true,
-          configuracaoRecorrente: true,
-          transporteItens: {
+    return transaction(db, async (tx) =>
+      idempotent(
+        tx,
+        idempotencyKey(req),
+        "PREPARAR_AQUISICAO_BENEFICIO",
+        body,
+        async () => {
+          await ensureOpen(tx, body.unidadeId, month);
+          const override = new Map(
+            body.excecoes.map((item) => [
+              item.beneficioVinculoId,
+              item.quantidadeDias,
+            ]),
+          );
+          const benefits = await tx.beneficioVinculo.findMany({
             where: {
-              ativo: true,
-              inicioVigencia: { lte: month },
+              tipo: {
+                in: [
+                  "TRANSPORTE",
+                  "ALIMENTACAO",
+                  "CESTA_BASICA",
+                  "PREMIACAO",
+                  "OUTRO",
+                ],
+              },
+              status: "ATIVO",
+              inicioVigencia: { lte: monthEnd(month) },
               OR: [{ fimVigencia: null }, { fimVigencia: monthWhere(month) }],
+              vinculo: {
+                unidadeId: body.unidadeId,
+                status: { in: ["ATIVO", "AFASTADO"] },
+              },
             },
-          },
-        },
-      });
-      const created: string[] = [],
-        pending: Row[] = [];
-      for (const benefit of benefits) {
-        const days =
-          override.get(benefit.id) ??
-          (benefit.tipo === "TRANSPORTE"
-            ? body.diasTransporte
-            : benefit.tipo === "ALIMENTACAO"
-              ? body.diasAlimentacao
-              : (benefit.quantidadeRecorrente ?? body.quantidadePadrao));
-        if (days === undefined) {
-          pending.push({
-            beneficioVinculoId: benefit.id,
-            motivo: "Informe os dias padrão ou a exceção individual.",
-          });
-          continue;
-        }
-        const config =
-          benefit.configuracaoRecorrente ??
-          (await tx.configuracaoBeneficio.findFirst({
-            where: {
-              unidadeId: body.unidadeId,
-              tipo: benefit.tipo,
-              ativa: true,
+            include: {
+              vinculo: true,
+              configuracaoRecorrente: { include: { fornecedor: true } },
+              transporteItens: {
+                where: {
+                  ativo: true,
+                  inicioVigencia: { lte: month },
+                  OR: [
+                    { fimVigencia: null },
+                    { fimVigencia: monthWhere(month) },
+                  ],
+                },
+              },
             },
-          }));
-        if (!config) {
-          pending.push({
-            beneficioVinculoId: benefit.id,
-            motivo: "Benefício sem fornecedor configurado.",
           });
-          continue;
-        }
-        if (benefit.tipo === "ALIMENTACAO" && benefit.valorDiario == null) {
-          pending.push({
-            beneficioVinculoId: benefit.id,
-            motivo: "Alimentação sem valor diário configurado.",
-          });
-          continue;
-        }
-        if (benefit.tipo === "TRANSPORTE" && !benefit.transporteItens.length) {
-          pending.push({
-            beneficioVinculoId: benefit.id,
-            motivo: "Transporte sem itens vigentes.",
-          });
-          continue;
-        }
-        if (
-          !["ALIMENTACAO", "TRANSPORTE"].includes(benefit.tipo) &&
-          benefit.valorUnitarioRecorrente == null
-        ) {
-          pending.push({
-            beneficioVinculoId: benefit.id,
-            motivo: "Benefício sem valor unitário configurado.",
-          });
-          continue;
-        }
-        const existing = await tx.beneficioCompetencia.findFirst({
-          where: { beneficioVinculoId: benefit.id, competencia: month },
-        });
-        if (existing) continue;
-        const competence = await tx.beneficioCompetencia.create({
-          data: {
-            beneficioVinculoId: benefit.id,
-            configuracaoId: config.id,
-            componente:
-              benefit.tipo === "TRANSPORTE" ? "Transporte" : "Alimentação",
-            competencia: month,
-            ...(benefit.tipo === "ALIMENTACAO" || benefit.tipo === "TRANSPORTE"
-              ? { quantidadeDias: days }
-              : {
-                  quantidade: days,
-                  valorUnitario: benefit.valorUnitarioRecorrente,
-                }),
-            ...(benefit.tipo === "ALIMENTACAO"
-              ? { valorUnitario: benefit.valorDiario }
-              : {}),
-            transporteRevisaoPendente: false,
-          },
-        });
-        if (benefit.tipo === "TRANSPORTE")
-          for (const item of benefit.transporteItens)
-            await tx.beneficioTransporteCompetenciaItem.create({
+          const created: string[] = [],
+            pending: Row[] = [];
+          for (const benefit of benefits) {
+            const days =
+              override.get(benefit.id) ??
+              (benefit.tipo === "TRANSPORTE"
+                ? body.diasTransporte
+                : benefit.tipo === "ALIMENTACAO"
+                  ? body.diasAlimentacao
+                  : (benefit.quantidadeRecorrente ?? body.quantidadePadrao));
+            if (days === undefined) {
+              pending.push({
+                beneficioVinculoId: benefit.id,
+                motivo: "Informe os dias padrão ou a exceção individual.",
+              });
+              continue;
+            }
+            const configurations = benefit.configuracaoRecorrente?.fornecedor
+              .ativo
+              ? [benefit.configuracaoRecorrente]
+              : await tx.configuracaoBeneficio.findMany({
+                  where: {
+                    unidadeId: body.unidadeId,
+                    tipo: benefit.tipo,
+                    ativa: true,
+                    fornecedor: { ativo: true },
+                  },
+                });
+            if (configurations.length > 1) {
+              pending.push({
+                beneficioVinculoId: benefit.id,
+                motivo:
+                  "Há mais de um fornecedor possível. Defina o fornecedor recorrente antes de preparar.",
+              });
+              continue;
+            }
+            const config = configurations[0];
+            if (!config) {
+              pending.push({
+                beneficioVinculoId: benefit.id,
+                motivo: "Benefício sem fornecedor configurado.",
+              });
+              continue;
+            }
+            if (benefit.tipo === "ALIMENTACAO" && benefit.valorDiario == null) {
+              pending.push({
+                beneficioVinculoId: benefit.id,
+                motivo: "Alimentação sem valor diário configurado.",
+              });
+              continue;
+            }
+            if (
+              benefit.tipo === "TRANSPORTE" &&
+              !benefit.transporteItens.length
+            ) {
+              pending.push({
+                beneficioVinculoId: benefit.id,
+                motivo: "Transporte sem itens vigentes.",
+              });
+              continue;
+            }
+            if (
+              !["ALIMENTACAO", "TRANSPORTE"].includes(benefit.tipo) &&
+              benefit.valorUnitarioRecorrente == null
+            ) {
+              pending.push({
+                beneficioVinculoId: benefit.id,
+                motivo: "Benefício sem valor unitário configurado.",
+              });
+              continue;
+            }
+            const existing = await tx.beneficioCompetencia.findFirst({
+              where: { beneficioVinculoId: benefit.id, competencia: month },
+            });
+            if (existing) continue;
+            const competence = await tx.beneficioCompetencia.create({
               data: {
-                competenciaId: competence.id,
-                origemItemId: item.id,
-                tipoConducao: item.tipoConducao,
-                cartaoTransporteId: item.cartaoTransporteId,
-                valorDiario: item.valorDiario,
+                beneficioVinculoId: benefit.id,
+                configuracaoId: config.id,
+                componente:
+                  benefit.tipo === "TRANSPORTE"
+                    ? "__RECORRENTE__"
+                    : "__RECORRENTE__",
+                competencia: month,
+                ...(benefit.tipo === "ALIMENTACAO" ||
+                benefit.tipo === "TRANSPORTE"
+                  ? { quantidadeDias: days }
+                  : {
+                      quantidade: days,
+                      valorUnitario: benefit.valorUnitarioRecorrente,
+                    }),
+                ...(benefit.tipo === "ALIMENTACAO"
+                  ? { valorUnitario: benefit.valorDiario }
+                  : {}),
+                transporteRevisaoPendente: false,
               },
             });
-        await audit(
-          tx,
-          req.userId,
-          "PREPARAR_AQUISICAO_BENEFICIO",
-          "beneficioCompetencia",
-          competence.id,
-          undefined,
-          competence,
-        );
-        created.push(competence.id);
-      }
-      return {
-        criadas: created.length,
-        pendencias: pending,
-        itens: await preview(tx, body.unidadeId, month),
-      };
-    });
+            if (benefit.tipo === "TRANSPORTE")
+              for (const item of benefit.transporteItens)
+                await tx.beneficioTransporteCompetenciaItem.create({
+                  data: {
+                    competenciaId: competence.id,
+                    origemItemId: item.id,
+                    tipoConducao: item.tipoConducao,
+                    cartaoTransporteId: item.cartaoTransporteId,
+                    valorDiario: item.valorDiario,
+                  },
+                });
+            await audit(
+              tx,
+              req.userId,
+              "PREPARAR_AQUISICAO_BENEFICIO",
+              "beneficioCompetencia",
+              competence.id,
+              undefined,
+              competence,
+            );
+            created.push(competence.id);
+          }
+          return {
+            criadas: created.length,
+            pendencias: pending,
+            itens: await preview(tx, body.unidadeId, month),
+          };
+        },
+      ),
+    );
   });
 
   app.get("/api/aquisicoes-beneficios", async (req) => {
@@ -346,93 +408,103 @@ export function registerBenefitAcquisitions(
   app.post("/api/aquisicoes-beneficios", async (req, reply) => {
     const body = aquisicaoPedidoSchema.parse(req.body);
     const month = new Date(body.competencia);
-    const result = await transaction(db, async (tx) => {
-      await ensureOpen(tx, body.unidadeId, month);
-      const valid = await preview(tx, body.unidadeId, month);
-      if (body.tipo === "TRANSPORTE" && !body.cartaoTransporteId)
-        throw new DomainError(
-          422,
-          "Selecione o cartão para o pedido de transporte.",
-        );
-      const byId = new Map(valid.map((item) => [String(item.chave), item]));
-      const selected = body.itens.map((item) => ({
-        input: item,
-        row: byId.get(`${item.competenciaId}:${body.cartaoTransporteId ?? ""}`),
-      }));
-      if (
-        new Set(body.itens.map((item) => item.competenciaId)).size !==
-        body.itens.length
-      )
-        throw new DomainError(
-          422,
-          "Uma competência não pode aparecer duas vezes no mesmo pedido.",
-        );
-      for (const item of selected) {
-        if (
-          !item.row ||
-          item.row.beneficio !== body.tipo ||
-          String((item.row.fornecedor as Row).id) !== body.fornecedorId ||
-          String(item.row.cartaoTransporteId ?? "") !==
-            String(body.cartaoTransporteId ?? "")
-        )
-          throw new DomainError(
-            422,
-            "Item não pertence ao fornecedor, tipo ou competência selecionados.",
-          );
-        if (
-          new Prisma.Decimal(item.input.valor).greaterThan(
-            new Prisma.Decimal(String(item.row.disponivel)),
-          )
-        )
-          throw new DomainError(
-            422,
-            "O valor do pedido excede o disponível para complementar.",
-          );
-      }
-      const order = await tx.aquisicaoBeneficio.create({
-        data: {
-          unidadeId: body.unidadeId,
-          competencia: month,
-          tipo: body.tipo,
-          fornecedorId: body.fornecedorId,
-          ...(body.cartaoTransporteId
-            ? { cartaoTransporteId: body.cartaoTransporteId }
-            : {}),
-          ...(body.observacoes !== undefined
-            ? { observacoes: body.observacoes }
-            : {}),
-          criadoPorId: req.userId!,
-        },
-      });
-      for (const item of selected)
-        await tx.aquisicaoBeneficioItem.create({
-          data: {
-            aquisicaoId: order.id,
-            competenciaId: item.input.competenciaId,
-            vinculoId: String(item.row!.vinculoId),
-            pessoaNome: String(item.row!.pessoa),
-            equipeNome: item.row!.equipe ? String(item.row!.equipe) : null,
-            destino:
-              body.cartaoTransporteId ??
-              String((item.row!.fornecedor as Row).nome),
-            valorPrevisto: String(item.row!.previsto),
-            valorReservado: item.input.valor,
-          },
-        });
-      await audit(
+    const result = await transaction(db, async (tx) =>
+      idempotent(
         tx,
-        req.userId,
+        idempotencyKey(req),
         "CRIAR_PEDIDO_AQUISICAO_BENEFICIO",
-        "aquisicaoBeneficio",
-        order.id,
-        undefined,
-        order,
-      );
-      return tx.aquisicaoBeneficio.findUniqueOrThrow({
-        where: { id: order.id },
-        include: { fornecedor: true, cartaoTransporte: true, itens: true },
-      });
-    });
+        body,
+        async () => {
+          await ensureOpen(tx, body.unidadeId, month);
+          const valid = await preview(tx, body.unidadeId, month);
+          if (body.tipo === "TRANSPORTE" && !body.cartaoTransporteId)
+            throw new DomainError(
+              422,
+              "Selecione o cartão para o pedido de transporte.",
+            );
+          const byId = new Map(valid.map((item) => [String(item.chave), item]));
+          const selected = body.itens.map((item) => ({
+            input: item,
+            row: byId.get(
+              `${item.competenciaId}:${body.cartaoTransporteId ?? ""}`,
+            ),
+          }));
+          if (
+            new Set(body.itens.map((item) => item.competenciaId)).size !==
+            body.itens.length
+          )
+            throw new DomainError(
+              422,
+              "Uma competência não pode aparecer duas vezes no mesmo pedido.",
+            );
+          for (const item of selected) {
+            if (
+              !item.row ||
+              item.row.beneficio !== body.tipo ||
+              String((item.row.fornecedor as Row).id) !== body.fornecedorId ||
+              String(item.row.cartaoTransporteId ?? "") !==
+                String(body.cartaoTransporteId ?? "")
+            )
+              throw new DomainError(
+                422,
+                "Item não pertence ao fornecedor, tipo ou competência selecionados.",
+              );
+            if (
+              new Prisma.Decimal(item.input.valor).greaterThan(
+                new Prisma.Decimal(String(item.row.disponivel)),
+              )
+            )
+              throw new DomainError(
+                422,
+                "O valor do pedido excede o disponível para complementar.",
+              );
+          }
+          const order = await tx.aquisicaoBeneficio.create({
+            data: {
+              unidadeId: body.unidadeId,
+              competencia: month,
+              tipo: body.tipo,
+              fornecedorId: body.fornecedorId,
+              ...(body.cartaoTransporteId
+                ? { cartaoTransporteId: body.cartaoTransporteId }
+                : {}),
+              ...(body.observacoes !== undefined
+                ? { observacoes: body.observacoes }
+                : {}),
+              criadoPorId: req.userId!,
+            },
+          });
+          for (const item of selected)
+            await tx.aquisicaoBeneficioItem.create({
+              data: {
+                aquisicaoId: order.id,
+                competenciaId: item.input.competenciaId,
+                vinculoId: String(item.row!.vinculoId),
+                pessoaNome: String(item.row!.pessoa),
+                equipeNome: item.row!.equipe ? String(item.row!.equipe) : null,
+                destino:
+                  body.cartaoTransporteId ??
+                  String((item.row!.fornecedor as Row).nome),
+                valorPrevisto: String(item.row!.previsto),
+                valorReservado: item.input.valor,
+              },
+            });
+          await audit(
+            tx,
+            req.userId,
+            "CRIAR_PEDIDO_AQUISICAO_BENEFICIO",
+            "aquisicaoBeneficio",
+            order.id,
+            undefined,
+            order,
+          );
+          return tx.aquisicaoBeneficio.findUniqueOrThrow({
+            where: { id: order.id },
+            include: { fornecedor: true, cartaoTransporte: true, itens: true },
+          });
+        },
+      ),
+    );
     reply.code(201);
     return result;
   });
@@ -440,154 +512,186 @@ export function registerBenefitAcquisitions(
   app.post("/api/aquisicoes-beneficios/:id/confirmar", async (req) => {
     const id = paramsId.parse(req.params).id,
       body = aquisicaoConfirmarSchema.parse(req.body);
-    return transaction(db, async (tx) => {
-      const order = await tx.aquisicaoBeneficio.findUnique({
-        where: { id },
-        include: { itens: { include: { movimentacoes: true } } },
-      });
-      if (!order) throw new DomainError(404, "Pedido não encontrado.");
-      if (order.status !== "PENDENTE")
-        throw new DomainError(409, "Pedido já foi encerrado.");
-      await ensureOpen(tx, order.unidadeId, order.competencia);
-      const items = new Map(order.itens.map((item) => [item.id, item]));
-      for (const update of body.itens) {
-        const item = items.get(update.itemId);
-        if (!item || item.status !== "PENDENTE")
-          throw new DomainError(422, "Item inválido para confirmação.");
-        if (new Prisma.Decimal(update.valor).greaterThan(item.valorReservado))
-          throw new DomainError(
-            422,
-            "Valor confirmado excede o valor reservado.",
-          );
-        if (update.status === "REJEITADO" && !update.motivo)
-          throw new DomainError(422, "Informe o motivo da rejeição.");
-        if (
-          update.status === "CONFIRMADO" &&
-          !new Prisma.Decimal(update.valor).equals(item.valorReservado) &&
-          !update.motivo
-        )
-          throw new DomainError(
-            422,
-            "Informe o motivo quando o valor confirmado for diferente do reservado.",
-          );
-        await tx.aquisicaoBeneficioItem.update({
-          where: { id: item.id },
-          data: { status: update.status },
-        });
-        if (update.status === "CONFIRMADO")
-          await tx.movimentacaoAquisicaoBeneficio.create({
+    return transaction(db, async (tx) =>
+      idempotent(
+        tx,
+        idempotencyKey(req),
+        "CONFIRMAR_AQUISICAO_BENEFICIO",
+        body,
+        async () => {
+          const order = await tx.aquisicaoBeneficio.findUnique({
+            where: { id },
+            include: { itens: { include: { movimentacoes: true } } },
+          });
+          if (!order) throw new DomainError(404, "Pedido não encontrado.");
+          if (order.status !== "PENDENTE")
+            throw new DomainError(409, "Pedido já foi encerrado.");
+          await ensureOpen(tx, order.unidadeId, order.competencia);
+          const items = new Map(order.itens.map((item) => [item.id, item]));
+          for (const update of body.itens) {
+            const item = items.get(update.itemId);
+            if (!item || item.status !== "PENDENTE")
+              throw new DomainError(422, "Item inválido para confirmação.");
+            if (
+              new Prisma.Decimal(update.valor).greaterThan(item.valorReservado)
+            )
+              throw new DomainError(
+                422,
+                "Valor confirmado excede o valor reservado.",
+              );
+            if (update.status === "REJEITADO" && !update.motivo)
+              throw new DomainError(422, "Informe o motivo da rejeição.");
+            if (
+              update.status === "CONFIRMADO" &&
+              !new Prisma.Decimal(update.valor).equals(item.valorReservado) &&
+              !update.motivo
+            )
+              throw new DomainError(
+                422,
+                "Informe o motivo quando o valor confirmado for diferente do reservado.",
+              );
+            await tx.aquisicaoBeneficioItem.update({
+              where: { id: item.id },
+              data: { status: update.status },
+            });
+            if (update.status === "CONFIRMADO")
+              await tx.movimentacaoAquisicaoBeneficio.create({
+                data: {
+                  itemId: item.id,
+                  tipo: "CONFIRMACAO",
+                  valor: update.valor,
+                  data: new Date(body.dataCompra),
+                  criadoPorId: req.userId!,
+                },
+              });
+          }
+          const remaining = await tx.aquisicaoBeneficioItem.count({
+            where: { aquisicaoId: id, status: "PENDENTE" },
+          });
+          const current = await tx.aquisicaoBeneficio.update({
+            where: { id },
             data: {
-              itemId: item.id,
-              tipo: "CONFIRMACAO",
-              valor: update.valor,
-              data: new Date(body.dataCompra),
-              criadoPorId: req.userId!,
+              ...(remaining === 0 ? { status: "CONFIRMADA" } : {}),
+              ...(body.referenciaExterna !== undefined
+                ? { referenciaExterna: body.referenciaExterna }
+                : {}),
+              dataCompra: new Date(body.dataCompra),
             },
           });
-      }
-      const remaining = await tx.aquisicaoBeneficioItem.count({
-        where: { aquisicaoId: id, status: "PENDENTE" },
-      });
-      const current = await tx.aquisicaoBeneficio.update({
-        where: { id },
-        data: {
-          ...(remaining === 0 ? { status: "CONFIRMADA" } : {}),
-          ...(body.referenciaExterna !== undefined
-            ? { referenciaExterna: body.referenciaExterna }
-            : {}),
-          dataCompra: new Date(body.dataCompra),
+          await audit(
+            tx,
+            req.userId,
+            "CONFIRMAR_AQUISICAO_BENEFICIO",
+            "aquisicaoBeneficio",
+            id,
+            order,
+            current,
+          );
+          return current;
         },
-      });
-      await audit(
-        tx,
-        req.userId,
-        "CONFIRMAR_AQUISICAO_BENEFICIO",
-        "aquisicaoBeneficio",
-        id,
-        order,
-        current,
-      );
-      return current;
-    });
+      ),
+    );
   });
 
   app.post("/api/aquisicoes-beneficios/:id/cancelar", async (req) => {
     const id = paramsId.parse(req.params).id;
-    return transaction(db, async (tx) => {
-      const order = await tx.aquisicaoBeneficio.findUnique({ where: { id } });
-      if (!order) throw new DomainError(404, "Pedido não encontrado.");
-      if (order.status !== "PENDENTE")
-        throw new DomainError(
-          409,
-          "Somente pedidos pendentes podem ser cancelados.",
-        );
-      await ensureOpen(tx, order.unidadeId, order.competencia);
-      await tx.aquisicaoBeneficioItem.updateMany({
-        where: { aquisicaoId: id, status: "PENDENTE" },
-        data: { status: "CANCELADO" },
-      });
-      const current = await tx.aquisicaoBeneficio.update({
-        where: { id },
-        data: { status: "CANCELADA" },
-      });
-      await audit(
+    return transaction(db, async (tx) =>
+      idempotent(
         tx,
-        req.userId,
+        idempotencyKey(req),
         "CANCELAR_AQUISICAO_BENEFICIO",
-        "aquisicaoBeneficio",
-        id,
-        order,
-        current,
-      );
-      return current;
-    });
+        { id },
+        async () => {
+          const order = await tx.aquisicaoBeneficio.findUnique({
+            where: { id },
+          });
+          if (!order) throw new DomainError(404, "Pedido não encontrado.");
+          if (order.status !== "PENDENTE")
+            throw new DomainError(
+              409,
+              "Somente pedidos pendentes podem ser cancelados.",
+            );
+          await ensureOpen(tx, order.unidadeId, order.competencia);
+          await tx.aquisicaoBeneficioItem.updateMany({
+            where: { aquisicaoId: id, status: "PENDENTE" },
+            data: { status: "CANCELADO" },
+          });
+          const current = await tx.aquisicaoBeneficio.update({
+            where: { id },
+            data: { status: "CANCELADA" },
+          });
+          await audit(
+            tx,
+            req.userId,
+            "CANCELAR_AQUISICAO_BENEFICIO",
+            "aquisicaoBeneficio",
+            id,
+            order,
+            current,
+          );
+          return current;
+        },
+      ),
+    );
   });
 
   app.post("/api/aquisicoes-beneficios/itens/:id/reverter", async (req) => {
     const id = paramsId.parse(req.params).id,
       body = aquisicaoReverterSchema.parse(req.body);
-    return transaction(db, async (tx) => {
-      const item = await tx.aquisicaoBeneficioItem.findUnique({
-        where: { id },
-        include: { aquisicao: true, movimentacoes: true },
-      });
-      if (!item) throw new DomainError(404, "Item não encontrado.");
-      await ensureOpen(
+    return transaction(db, async (tx) =>
+      idempotent(
         tx,
-        item.aquisicao.unidadeId,
-        item.aquisicao.competencia,
-      );
-      const confirmed = item.movimentacoes
-        .filter((m) => m.tipo === "CONFIRMACAO")
-        .reduce((sum, m) => sum.plus(m.valor), new Prisma.Decimal(0));
-      const reversed = item.movimentacoes
-        .filter((m) => m.tipo === "REVERSAO")
-        .reduce((sum, m) => sum.plus(m.valor), new Prisma.Decimal(0));
-      if (new Prisma.Decimal(body.valor).greaterThan(confirmed.minus(reversed)))
-        throw new DomainError(
-          422,
-          "A reversão excede o crédito líquido confirmado.",
-        );
-      const movement = await tx.movimentacaoAquisicaoBeneficio.create({
-        data: {
-          itemId: id,
-          tipo: "REVERSAO",
-          valor: body.valor,
-          data: new Date(body.data),
-          motivo: body.motivo,
-          criadoPorId: req.userId!,
-        },
-      });
-      await audit(
-        tx,
-        req.userId,
+        idempotencyKey(req),
         "REVERTER_AQUISICAO_BENEFICIO",
-        "movimentacaoAquisicaoBeneficio",
-        movement.id,
-        undefined,
-        movement,
-      );
-      return movement;
-    });
+        body,
+        async () => {
+          const item = await tx.aquisicaoBeneficioItem.findUnique({
+            where: { id },
+            include: { aquisicao: true, movimentacoes: true },
+          });
+          if (!item) throw new DomainError(404, "Item não encontrado.");
+          await ensureOpen(
+            tx,
+            item.aquisicao.unidadeId,
+            item.aquisicao.competencia,
+          );
+          const confirmed = item.movimentacoes
+            .filter((m) => m.tipo === "CONFIRMACAO")
+            .reduce((sum, m) => sum.plus(m.valor), new Prisma.Decimal(0));
+          const reversed = item.movimentacoes
+            .filter((m) => m.tipo === "REVERSAO")
+            .reduce((sum, m) => sum.plus(m.valor), new Prisma.Decimal(0));
+          if (
+            new Prisma.Decimal(body.valor).greaterThan(
+              confirmed.minus(reversed),
+            )
+          )
+            throw new DomainError(
+              422,
+              "A reversão excede o crédito líquido confirmado.",
+            );
+          const movement = await tx.movimentacaoAquisicaoBeneficio.create({
+            data: {
+              itemId: id,
+              tipo: "REVERSAO",
+              valor: body.valor,
+              data: new Date(body.data),
+              motivo: body.motivo,
+              criadoPorId: req.userId!,
+            },
+          });
+          await audit(
+            tx,
+            req.userId,
+            "REVERTER_AQUISICAO_BENEFICIO",
+            "movimentacaoAquisicaoBeneficio",
+            movement.id,
+            undefined,
+            movement,
+          );
+          return movement;
+        },
+      ),
+    );
   });
 }

@@ -208,7 +208,7 @@ export const aquisicaoConfirmarSchema = z
         z
           .object({
             itemId: id,
-            valor: money.min(0),
+            valor: money.refine((value) => value >= 0),
             status: z.enum(["CONFIRMADO", "REJEITADO"]),
             motivo: optionalText,
           })
@@ -269,6 +269,24 @@ export const beneficioAjusteSchema = z
     tipo: z.enum(["CREDITO", "DEBITO"]),
     valor: money.refine((v) => v > 0),
     motivo: shortText,
+  })
+  .strict();
+export const beneficioAjusteDistribuicaoSchema = z
+  .object({
+    competenciaId: id,
+    tipo: z.enum(["CREDITO", "DEBITO"]),
+    valor: money.refine((v) => v > 0),
+    motivo: shortText,
+    distribuicoes: z
+      .array(
+        z
+          .object({
+            transporteCompetenciaItemId: id,
+            valor: money.refine((v) => v > 0),
+          })
+          .strict(),
+      )
+      .default([]),
   })
   .strict();
 export const fechamentoBeneficioSchema = z

@@ -1,6 +1,33 @@
 import { test, expect } from "vitest";
 import { fixture } from "./test-helper.js";
 import { benefitCalculation } from "./modules/benefits.js";
+import { beneficioLoteSchema } from "@duali/shared";
+
+test("batch validation keeps missing monetary values explicit and accepts Brazilian decimals", () => {
+  const base = {
+    unidadeId: "11111111-1111-4111-8111-111111111111",
+    tipo: "ALIMENTACAO" as const,
+    competencia: "2026-09-01",
+    configuracaoId: "22222222-2222-4222-8222-222222222222",
+    itens: [
+      {
+        vinculoId: "33333333-3333-4333-8333-333333333333",
+        quantidadeDias: "22",
+      },
+    ],
+  };
+  expect(
+    beneficioLoteSchema.safeParse({
+      ...base,
+      itens: [{ ...base.itens[0], valorDiario: "" }],
+    }).success,
+  ).toBe(false);
+  const parsed = beneficioLoteSchema.parse({
+    ...base,
+    itens: [{ ...base.itens[0], valorDiario: "10,50" }],
+  });
+  expect(parsed.itens[0]?.valorDiario).toBe(10.5);
+});
 test("benefit amounts use decimal arithmetic and retain discrepancies", () => {
   const result = benefitCalculation({
     quantidadeDias: "3",
@@ -13,6 +40,98 @@ test("benefit amounts use decimal arithmetic and retain discrepancies", () => {
   expect(result.valorFinal).toBe("0.35");
   expect(result.valorCalculado).toBe("0.30");
   expect(result.divergencia).toBe("0.15");
+});
+test("transport adjustment requires an explicit distribution that totals the adjustment", async () => {
+  const f = await fixture();
+  try {
+    const person = await f.db.pessoa.create({
+      data: { nomeCompleto: "Pessoa ajuste transporte" },
+    });
+    const unit = await f.db.unidade.create({
+      data: { nome: "Unidade ajuste", sigla: f.suffix.slice(0, 8), uf: "RJ" },
+    });
+    const link = await f.db.vinculo.create({
+      data: {
+        pessoaId: person.id,
+        unidadeId: unit.id,
+        tipo: "CLT",
+        dataAdmissao: new Date("2025-01-01"),
+      },
+    });
+    const supplier = await f.db.fornecedor.create({
+      data: { nome: `Fornecedor ajuste ${f.suffix}` },
+    });
+    const config = await f.db.configuracaoBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        fornecedorId: supplier.id,
+        tipo: "TRANSPORTE",
+      },
+    });
+    const benefit = await f.db.beneficioVinculo.create({
+      data: {
+        vinculoId: link.id,
+        tipo: "TRANSPORTE",
+        inicioVigencia: new Date("2025-01-01"),
+      },
+    });
+    const card = await f.db.cartaoTransporte.findFirstOrThrow({
+      where: { ativo: true },
+    });
+    const competence = await f.db.beneficioCompetencia.create({
+      data: {
+        beneficioVinculoId: benefit.id,
+        configuracaoId: config.id,
+        competencia: new Date("2026-09-01"),
+        quantidadeDias: 22,
+      },
+    });
+    const snapshot = await f.db.beneficioTransporteCompetenciaItem.create({
+      data: {
+        competenciaId: competence.id,
+        tipoConducao: "ONIBUS",
+        cartaoTransporteId: card.id,
+        valorDiario: "10.00",
+      },
+    });
+    const invalid = await f.app.inject({
+      method: "POST",
+      url: "/api/ajustes-beneficios/distribuido",
+      headers: f.headers,
+      payload: {
+        competenciaId: competence.id,
+        tipo: "CREDITO",
+        valor: "10,00",
+        motivo: "Complemento",
+        distribuicoes: [
+          { transporteCompetenciaItemId: snapshot.id, valor: "9,00" },
+        ],
+      },
+    });
+    expect(invalid.statusCode).toBe(422);
+    const created = await f.app.inject({
+      method: "POST",
+      url: "/api/ajustes-beneficios/distribuido",
+      headers: f.headers,
+      payload: {
+        competenciaId: competence.id,
+        tipo: "CREDITO",
+        valor: "10,00",
+        motivo: "Complemento",
+        distribuicoes: [
+          { transporteCompetenciaItemId: snapshot.id, valor: "10,00" },
+        ],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect(
+      await f.db.beneficioAjusteTransporteItem.count({
+        where: { ajusteId: created.json<{ id: string }>().id },
+      }),
+    ).toBe(1);
+  } finally {
+    await f.app.close();
+  }
 });
 test("unit configuration supports multiple monthly components and rejects incompatible unit", async () => {
   const f = await fixture();

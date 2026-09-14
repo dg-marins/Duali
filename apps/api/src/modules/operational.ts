@@ -4,6 +4,7 @@ import { listSchema, z } from "@duali/shared";
 import { paramsId } from "../core.js";
 import { balance } from "./leave-domain.js";
 import { operationalAlerts } from "./reporting.js";
+import { benefitCalculation } from "./benefits.js";
 
 const operationalListSchema = listSchema.extend({
   instituicaoId: z.string().uuid().optional(),
@@ -172,7 +173,8 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
                 competencias: {
                   include: {
                     configuracao: { include: { fornecedor: true } },
-                    ajustes: true,
+                    ajustes: { include: { distribuicoes: true } },
+                    transporteItens: { include: { cartaoTransporte: true } },
                     aquisicaoItens: {
                       include: { aquisicao: true, movimentacoes: true },
                     },
@@ -210,9 +212,25 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
         orderBy: { criadoEm: "desc" },
         take: 100,
       });
+    const presented = {
+      ...person,
+      vinculos: person.vinculos.map((link) => ({
+        ...link,
+        beneficios: link.beneficios.map((benefit) => ({
+          ...benefit,
+          competencias: benefit.competencias.map((competence) =>
+            benefitCalculation({
+              ...competence,
+              beneficioVinculo: { tipo: benefit.tipo },
+            }),
+          ),
+        })),
+      })),
+    };
     return {
-      pessoa: person,
-      vinculoAtual: current,
+      pessoa: presented,
+      vinculoAtual:
+        presented.vinculos.find((link) => link.id === current?.id) ?? current,
       saldos: balances,
       alertas: alerts,
       historico: audits,

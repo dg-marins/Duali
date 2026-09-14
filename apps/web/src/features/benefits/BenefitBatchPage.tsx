@@ -13,6 +13,17 @@ const types = [
   "OUTRO",
 ];
 const transportTypes = ["ONIBUS", "ONIBUS_INTER", "BARCA", "METRO"];
+const labels: Record<string, string> = {
+  ALIMENTACAO: "Alimentação",
+  TRANSPORTE: "Transporte",
+  CESTA_BASICA: "Cesta básica",
+  PREMIACAO: "Premiação",
+  OUTRO: "Outro",
+  ONIBUS: "Ônibus",
+  ONIBUS_INTER: "Ônibus intermunicipal",
+  BARCA: "Barca",
+  METRO: "Metrô",
+};
 const monthToday = () => new Date().toISOString().slice(0, 7);
 
 type BatchItem = {
@@ -44,7 +55,12 @@ export function BenefitBatchPage({
     [items, setItems] = useState<Record<string, BatchItem>>({}),
     [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [search, setSearch] = useState(""),
+    [team, setTeam] = useState(""),
+    [dirty, setDirty] = useState(false),
+    [review, setReview] = useState(false),
+    [rowErrors, setRowErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     void api<{ items: Row[]; total: number }>("unidades?pageSize=100&page=1")
@@ -104,16 +120,52 @@ export function BenefitBatchPage({
           ),
         );
         setError("");
+        setDirty(false);
+        setRowErrors({});
       })
       .catch((reason) => setError((reason as Error).message))
       .finally(() => setLoading(false));
   }, [unitId, type]);
+  useEffect(() => {
+    const protect = (event: BeforeUnloadEvent) => {
+      if (!dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", protect);
+    return () => window.removeEventListener("beforeunload", protect);
+  }, [dirty]);
   const selected = useMemo(
     () => links.filter((link) => items[String(link.id)]?.selected),
     [items, links],
   );
-  const update = (id: string, patch: Partial<BatchItem>) =>
-    setItems((all) => ({ ...all, [id]: { ...all[id]!, ...patch } }));
+  const teams = useMemo(
+    () =>
+      [
+        ...new Set(
+          links
+            .map((link) => display(link.equipe))
+            .filter((value) => value !== "—"),
+        ),
+      ].sort(),
+    [links],
+  );
+  const visibleLinks = useMemo(
+    () =>
+      links.filter(
+        (link) =>
+          (!search ||
+            display(link.pessoa)
+              .toLocaleLowerCase("pt-BR")
+              .includes(search.toLocaleLowerCase("pt-BR"))) &&
+          (!team || display(link.equipe) === team),
+      ),
+    [links, search, team],
+  );
+  const update = (id: string, patch: Partial<BatchItem>) => (
+    setDirty(true),
+    setItems((all) => ({ ...all, [id]: { ...all[id]!, ...patch } }))
+  );
   const updateTransport = (
     id: string,
     index: number,
@@ -128,42 +180,83 @@ export function BenefitBatchPage({
   };
   async function submit() {
     if (!selected.length || !configId) return;
+    const errors: Record<string, string> = {};
+    for (const link of selected) {
+      const item = items[String(link.id)]!;
+      if (
+        type === "ALIMENTACAO" &&
+        (!item.valorDiario.trim() || !item.quantidadeDias.trim())
+      )
+        errors[String(link.id)] = "Informe valor diário e dias.";
+      if (
+        type === "TRANSPORTE" &&
+        (!item.quantidadeDias.trim() ||
+          !item.transporteItens.length ||
+          item.transporteItens.some(
+            (transport) =>
+              !transport.cartaoTransporteId || !transport.valorDiario.trim(),
+          ))
+      )
+        errors[String(link.id)] =
+          "Informe dias, cartão e valor para cada condução.";
+      if (
+        !["ALIMENTACAO", "TRANSPORTE"].includes(type) &&
+        (!item.quantidade.trim() || !item.valorUnitario.trim())
+      )
+        errors[String(link.id)] = "Informe quantidade e valor unitário.";
+    }
+    if (Object.keys(errors).length) {
+      setRowErrors(errors);
+      setError("Revise os campos obrigatórios destacados.");
+      setReview(false);
+      return;
+    }
     setSaving(true);
     setError("");
     try {
-      await api("beneficios/lote", "POST", {
-        unidadeId: unitId,
-        tipo: type,
-        competencia: `${month}-01`,
-        configuracaoId: configId,
-        itens: selected.map((link) => {
-          const item = items[String(link.id)]!;
-          return {
-            vinculoId: link.id,
-            ...(type === "ALIMENTACAO"
-              ? {
-                  valorDiario: Number(item.valorDiario),
-                  quantidadeDias: Number(item.quantidadeDias),
-                }
-              : type === "TRANSPORTE"
+      await api(
+        "beneficios/lote",
+        "POST",
+        {
+          unidadeId: unitId,
+          tipo: type,
+          competencia: `${month}-01`,
+          configuracaoId: configId,
+          itens: selected.map((link) => {
+            const item = items[String(link.id)]!;
+            return {
+              vinculoId: link.id,
+              ...(type === "ALIMENTACAO"
                 ? {
-                    quantidadeDias: Number(item.quantidadeDias),
-                    transporteItens: item.transporteItens.map((transport) => ({
-                      ...transport,
-                      valorDiario: Number(transport.valorDiario),
-                    })),
+                    valorDiario: item.valorDiario,
+                    quantidadeDias: item.quantidadeDias,
                   }
-                : {
-                    quantidade: Number(item.quantidade),
-                    valorUnitario: Number(item.valorUnitario),
-                  }),
-          };
-        }),
-      });
+                : type === "TRANSPORTE"
+                  ? {
+                      quantidadeDias: item.quantidadeDias,
+                      transporteItens: item.transporteItens.map(
+                        (transport) => ({
+                          ...transport,
+                          valorDiario: transport.valorDiario,
+                        }),
+                      ),
+                    }
+                  : {
+                      quantidade: item.quantidade,
+                      valorUnitario: item.valorUnitario,
+                    }),
+            };
+          }),
+        },
+        { idempotencyKey: crypto.randomUUID() },
+      );
       toast.success(
         `${selected.length} benefício(s) cadastrados ou atualizados.`,
       );
-      navigate("/app/beneficios/aquisicao");
+      setDirty(false);
+      navigate(
+        `/app/beneficios/aquisicao?unidadeId=${unitId}&competencia=${month}-01`,
+      );
     } catch (reason) {
       setError((reason as Error).message);
     } finally {
@@ -191,7 +284,7 @@ export function BenefitBatchPage({
               onChange={(event) => setType(event.target.value)}
             >
               {types.map((option) => (
-                <option key={option}>{option}</option>
+                <option key={option}>{labels[option]}</option>
               ))}
             </select>
           </label>
@@ -238,12 +331,65 @@ export function BenefitBatchPage({
         <RefreshingContent refreshing={saving}>
           <section className="panel">
             <h2>Colaboradores ativos</h2>
+            <p className="muted">
+              Selecione pessoas, revise exceções por linha e confirme ao final.
+            </p>
             {!configs.length && (
               <Notice
                 text="Não há fornecedor ativo configurado para esta unidade e categoria."
                 error
               />
             )}
+            <div className="filter-grid compact-filter-grid">
+              <label>
+                <span>Buscar pessoa</span>
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Nome do colaborador"
+                />
+              </label>
+              <label>
+                <span>Equipe</span>
+                <select
+                  value={team}
+                  onChange={(event) => setTeam(event.target.value)}
+                >
+                  <option value="">Todas</option>
+                  {teams.map((option) => (
+                    <option key={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  aria-label="Selecionar resultados filtrados"
+                  checked={
+                    visibleLinks.length > 0 &&
+                    visibleLinks.every(
+                      (link) => items[String(link.id)]?.selected,
+                    )
+                  }
+                  onChange={(event) => {
+                    setDirty(true);
+                    setItems((all) => ({
+                      ...all,
+                      ...Object.fromEntries(
+                        visibleLinks.map((link) => [
+                          String(link.id),
+                          {
+                            ...all[String(link.id)]!,
+                            selected: event.target.checked,
+                          },
+                        ]),
+                      ),
+                    }));
+                  }}
+                />{" "}
+                Selecionar resultados filtrados ({visibleLinks.length})
+              </label>
+            </div>
             <div className="table-wrap">
               <table>
                 <thead>
@@ -267,7 +413,7 @@ export function BenefitBatchPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {links.map((link) => {
+                  {visibleLinks.map((link) => {
                     const item = items[String(link.id)]!;
                     const existing = (
                       link.beneficios as Row[] | undefined
@@ -367,7 +513,9 @@ export function BenefitBatchPage({
                                   }
                                 >
                                   {transportTypes.map((option) => (
-                                    <option key={option}>{option}</option>
+                                    <option key={option}>
+                                      {labels[option]}
+                                    </option>
                                   ))}
                                 </select>
                                 <select
@@ -437,6 +585,11 @@ export function BenefitBatchPage({
                             </button>
                           </td>
                         )}
+                        {rowErrors[String(link.id)] && (
+                          <td className="field-error" role="alert">
+                            {rowErrors[String(link.id)]}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -444,15 +597,33 @@ export function BenefitBatchPage({
               </table>
             </div>
             {!links.length && <p>Nenhum vínculo ativo nesta unidade.</p>}
-            <div className="form-actions">
+            <div className="benefit-batch-footer" aria-live="polite">
+              <span>{selected.length} pessoa(s) selecionada(s)</span>
               <Button
                 disabled={saving || !selected.length || !configId}
-                onClick={() => void submit()}
+                onClick={() => setReview(true)}
               >
-                Cadastrar {selected.length} pessoa(s)
+                Revisar cadastro
               </Button>
             </div>
           </section>
+          {review && (
+            <section className="panel review-panel">
+              <h2>Revisar cadastro</h2>
+              <p>
+                {selected.length} adesão(ões) serão criadas ou atualizadas a
+                partir de 01/{month}. O histórico anterior será preservado.
+              </p>
+              <div className="form-actions">
+                <Button variant="outline" onClick={() => setReview(false)}>
+                  Continuar editando
+                </Button>
+                <Button disabled={saving} onClick={() => void submit()}>
+                  Confirmar cadastro
+                </Button>
+              </div>
+            </section>
+          )}
         </RefreshingContent>
       )}
     </div>

@@ -11,9 +11,22 @@ import {
 } from "../../ui";
 
 const money = (value: unknown) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
-    Number(value ?? 0),
-  );
+  value === null || value === undefined || value === ""
+    ? "Não informado"
+    : new Intl.NumberFormat("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      }).format(Number(value));
+const labels: Record<string, string> = {
+  ALIMENTACAO: "Alimentação",
+  TRANSPORTE: "Transporte",
+  CESTA_BASICA: "Cesta básica",
+  PREMIACAO: "Premiação",
+  OUTRO: "Outro",
+  PENDENTE: "Pendente",
+  CONFIRMADA: "Confirmada",
+  CANCELADA: "Cancelada",
+};
 
 export function BenefitAcquisitionPage({
   navigate,
@@ -21,8 +34,15 @@ export function BenefitAcquisitionPage({
   navigate: (path: string) => void;
 }) {
   const [units, setUnits] = useState<Row[]>([]),
-    [unit, setUnit] = useState(""),
-    [month, setMonth] = useState(new Date().toISOString().slice(0, 7)),
+    [unit, setUnit] = useState(
+      () => new URLSearchParams(window.location.search).get("unidadeId") ?? "",
+    ),
+    [month, setMonth] = useState(() =>
+      (
+        new URLSearchParams(window.location.search).get("competencia") ??
+        new Date().toISOString().slice(0, 7)
+      ).slice(0, 7),
+    ),
     [daysTransport, setDaysTransport] = useState("22"),
     [daysFood, setDaysFood] = useState("22"),
     [rows, setRows] = useState<Row[]>([]),
@@ -92,9 +112,10 @@ export function BenefitAcquisitionPage({
         {
           unidadeId: unit,
           competencia,
-          diasTransporte: Number(daysTransport),
-          diasAlimentacao: Number(daysFood),
+          diasTransporte: daysTransport,
+          diasAlimentacao: daysFood,
         },
+        { idempotencyKey: crypto.randomUUID() },
       );
       toast.success(
         result.criadas
@@ -143,17 +164,22 @@ export function BenefitAcquisitionPage({
       for (const group of groups) {
         const first = group.items[0]!,
           supplier = first.fornecedor as Row;
-        await api("aquisicoes-beneficios", "POST", {
-          unidadeId: unit,
-          competencia,
-          tipo: String(first.beneficio),
-          fornecedorId: supplier.id,
-          ...(group.cardId ? { cartaoTransporteId: group.cardId } : {}),
-          itens: group.items.map((row) => ({
-            competenciaId: row.id,
-            valor: row.disponivel,
-          })),
-        });
+        await api(
+          "aquisicoes-beneficios",
+          "POST",
+          {
+            unidadeId: unit,
+            competencia,
+            tipo: String(first.beneficio),
+            fornecedorId: supplier.id,
+            ...(group.cardId ? { cartaoTransporteId: group.cardId } : {}),
+            itens: group.items.map((row) => ({
+              competenciaId: row.id,
+              valor: row.disponivel,
+            })),
+          },
+          { idempotencyKey: crypto.randomUUID() },
+        );
       }
       toast.success(`${groups.length} pedido(s) criado(s).`);
       await load();
@@ -183,15 +209,20 @@ export function BenefitAcquisitionPage({
     if (!confirming) return;
     setWorking(true);
     try {
-      await api(`aquisicoes-beneficios/${confirming.id}/confirmar`, "POST", {
-        dataCompra: new Date().toISOString().slice(0, 10),
-        itens: Object.entries(confirmationItems).map(([itemId, item]) => ({
-          itemId,
-          valor: Number(item.valor),
-          status: item.status,
-          ...(item.motivo ? { motivo: item.motivo } : {}),
-        })),
-      });
+      await api(
+        `aquisicoes-beneficios/${confirming.id}/confirmar`,
+        "POST",
+        {
+          dataCompra: new Date().toISOString().slice(0, 10),
+          itens: Object.entries(confirmationItems).map(([itemId, item]) => ({
+            itemId,
+            valor: item.valor,
+            status: item.status,
+            ...(item.motivo ? { motivo: item.motivo } : {}),
+          })),
+        },
+        { idempotencyKey: crypto.randomUUID() },
+      );
       toast.success("Compra confirmada por colaborador.");
       setConfirming(null);
       await load();
@@ -209,10 +240,11 @@ export function BenefitAcquisitionPage({
         `aquisicoes-beneficios/itens/${reversal.itemId}/reverter`,
         "POST",
         {
-          valor: Number(reversal.valor),
+          valor: reversal.valor,
           data: new Date().toISOString().slice(0, 10),
           motivo: reversal.motivo,
         },
+        { idempotencyKey: crypto.randomUUID() },
       );
       toast.success("Reversão registrada.");
       setReversing(null);
@@ -226,7 +258,14 @@ export function BenefitAcquisitionPage({
   async function cancel(order: Row) {
     setWorking(true);
     try {
-      await api(`aquisicoes-beneficios/${order.id}/cancelar`, "POST", {});
+      await api(
+        `aquisicoes-beneficios/${order.id}/cancelar`,
+        "POST",
+        {},
+        {
+          idempotencyKey: crypto.randomUUID(),
+        },
+      );
       toast.success("Pedido cancelado e valores liberados.");
       await load();
     } catch (reason) {
@@ -354,7 +393,10 @@ export function BenefitAcquisitionPage({
                         )}
                       </td>
                       <td>{display(row.equipe)}</td>
-                      <td>{display(row.beneficio)}</td>
+                      <td>
+                        {labels[String(row.beneficio)] ??
+                          display(row.beneficio)}
+                      </td>
                       <td>{display((row.fornecedor as Row).nome)}</td>
                       <td>{display(row.dias)}</td>
                       <td>{money(row.previsto)}</td>
@@ -386,8 +428,13 @@ export function BenefitAcquisitionPage({
                     {orders.map((order) => (
                       <tr key={String(order.id)}>
                         <td>{display(order.fornecedor)}</td>
-                        <td>{display(order.tipo)}</td>
-                        <td>{display(order.status)}</td>
+                        <td>
+                          {labels[String(order.tipo)] ?? display(order.tipo)}
+                        </td>
+                        <td>
+                          {labels[String(order.status)] ??
+                            display(order.status)}
+                        </td>
                         <td>
                           {Array.isArray(order.itens) ? order.itens.length : 0}
                         </td>
