@@ -39,6 +39,21 @@ test("internship records, renewals and expiry alerts preserve history", async ()
     expect(
       (await internshipAlerts(f.db)).filter((a) => a.vinculoId === v.id),
     ).toHaveLength(3);
+    const aditivo = await f.app.inject({
+      method: "POST",
+      url: "/api/documentos",
+      headers: f.headers,
+      payload: {
+        vinculoId: v.id,
+        tipo: "ADITIVO",
+        inicioVigencia: "2026-08-01",
+        status: "PENDENTE",
+      },
+    });
+    expect(aditivo.statusCode, aditivo.body).toBe(201);
+    expect(
+      aditivo.json<{ fimVigencia: string }>().fimVigencia.slice(0, 10),
+    ).toBe("2027-02-01");
     const invalid = await f.app.inject({
       method: "POST",
       url: "/api/seguros",

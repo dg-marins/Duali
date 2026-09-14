@@ -43,16 +43,22 @@ export async function idempotent<T>(
   operation: string,
   payload: unknown,
   work: () => Promise<T>,
+  context: { userId?: string | null; scope?: string } = {},
 ): Promise<T> {
   if (!key) return work();
   const hash = createHash("sha256")
     .update(JSON.stringify(payload))
     .digest("hex");
-  const existing = await tx.chaveIdempotencia.findUnique({
-    where: { chave: key },
+  const existing = await tx.chaveIdempotencia.findFirst({
+    where: {
+      chave: key,
+      operacao: operation,
+      escopo: context.scope ?? "global",
+      usuarioId: context.userId ?? null,
+    },
   });
   if (existing) {
-    if (existing.operacao !== operation || existing.hashPayload !== hash)
+    if (existing.hashPayload !== hash)
       throw new DomainError(409, "Esta chave já foi usada com outra operação.");
     return existing.resposta as T;
   }
@@ -61,6 +67,8 @@ export async function idempotent<T>(
     data: {
       chave: key,
       operacao: operation,
+      escopo: context.scope ?? "global",
+      usuarioId: context.userId ?? null,
       hashPayload: hash,
       resposta: result as Prisma.InputJsonValue,
     },
@@ -607,6 +615,10 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
           }
           return { criados: created.length, processados: body.itens.length };
         },
+        {
+          userId: req.userId,
+          scope: `${body.unidadeId}:${body.competencia}:${body.tipo}`,
+        },
       ),
     );
     reply.code(201);
@@ -695,6 +707,7 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
           );
           return adjustment;
         },
+        { userId: req.userId, scope: body.competenciaId },
       ),
     );
     reply.code(201);

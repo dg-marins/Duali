@@ -54,7 +54,19 @@ Observações como `descontar 01 dia de férias` não devem permanecer apenas co
 
 ## RN-009 — Documentos do estágio
 
-TCE, renovação, aditivo, distrato e documentos semelhantes são registros históricos. Não haverá campos fixos `1ª renovação`, `2ª renovação`, `3ª renovação`.
+O TCE é o documento inicial do estágio. Não existe PCA no domínio do Duali. As renovações posteriores são aditivos ao TCE; documentos legados classificados como `RENOVACAO` continuam preservados como histórico.
+
+Um ciclo documental tem início e fim de vigência. A periodicidade sugerida é de seis meses, mas pode ser escolhida no cadastro ou definida por regra ativa da instituição e unidade. A alteração dessa regra só afeta documentos novos; documentos já materializados não são recalculados.
+
+O fim da vigência é a data calculada de início mais a periodicidade: por exemplo, `01/08 + 6 meses = 01/02`. Um documento futuro é apresentado como planejado; ao iniciar a vigência, permanece aguardando assinatura enquanto estiver pendente e só pode ser apresentado como assinado após validação manual. A assinatura não altera o contrato, o desligamento ou as datas de vigência.
+
+O documento atual é aquele cuja vigência contém a data de consulta. Sobreposição, falta de datas ou um ciclo vencido sem sucessor geram pendência para revisão, sem alteração automática de registros históricos.
+
+## RN-009.1 — Contrato de estágio
+
+`Estagio.dataTerminoPrevista` representa o fim planejado do contrato e `Vinculo.dataDesligamento` representa somente o encerramento efetivo do vínculo. Os ciclos contratuais e documentais são independentes. A ausência de instituição não bloqueia a admissão, mas gera pendência operacional.
+
+Alertas de contrato são emitidos para 90, 60 e 30 dias, além de término ultrapassado. Um documento pode terminar depois do contrato sem bloqueio automático, pois o contrato é a referência do término efetivo.
 
 ## RN-010 — Seguro de estágio
 
@@ -69,6 +81,12 @@ O cadastro em lote deve selecionar categoria, unidade, competência e fornecedor
 Alimentação e transporte são calculados por dias; transporte mantém condução e cartão. Cesta básica, premiação e outros são calculados por quantidade e valor unitário. Valores ausentes devem permanecer como pendência explícita.
 
 O modelo deve suportar diferentes tipos/meios utilizados atualmente, como transporte, alimentação, premiação, Flash, Riocard, JAÉ, SPTrans, TDMax e Mobilidade, sem transformar cada fornecedor em uma coluna permanente.
+
+## RN-011.1 — Preparação e aquisição mensal
+
+Uma competência é preparada quando as categorias aplicáveis estão sem impedimentos. Transporte e alimentação são operados e fechados independentemente por unidade e categoria. Cada categoria pode estar não preparada, com pendências, preparada, com pedido emitido, parcialmente confirmada, confirmada ou fechada. Categoria sem adesão elegível é não aplicável.
+
+Dias de alimentação são definidos na competência e podem ser ajustados manualmente com auditoria. Escala registrada no vínculo é uma referência operacional de dias trabalhados, mas não altera automaticamente competências já preparadas. Férias, faltas, feriados, admissões e afastamentos não aplicam descontos automáticos: a correção mensal é explícita e auditada.
 
 ## RN-012 — Valores calculados e informados
 

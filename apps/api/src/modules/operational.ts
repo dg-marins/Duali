@@ -5,6 +5,7 @@ import { paramsId } from "../core.js";
 import { balance } from "./leave-domain.js";
 import { operationalAlerts } from "./reporting.js";
 import { benefitCalculation } from "./benefits.js";
+import { presentDocument, resolveDocumentCycle } from "./internship-cycle.js";
 
 const operationalListSchema = listSchema.extend({
   instituicaoId: z.string().uuid().optional(),
@@ -21,6 +22,7 @@ const linkInclude = {
   unidade: true,
   equipe: true,
   estagio: { include: { instituicaoEnsino: true } },
+  documentos: true,
 } satisfies Prisma.VinculoInclude;
 
 function currentLink<T extends { status: string; dataAdmissao: Date }>(
@@ -111,6 +113,7 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
     return {
       items: records.map((person) => {
         const link = currentLink(person.vinculos);
+        const cycle = link ? resolveDocumentCycle(link.documentos) : null;
         return {
           id: person.id,
           nomeCompleto: person.nomeCompleto,
@@ -121,6 +124,12 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
           unidade: link?.unidade ?? null,
           equipe: link?.equipe ?? null,
           admissao: iso(link?.dataAdmissao),
+          terminoPrevisto: iso(link?.estagio?.dataTerminoPrevista),
+          escala: link?.escala ?? null,
+          documentoAtual: cycle?.atual ? presentDocument(cycle.atual) : null,
+          proximoDocumento: cycle?.proximo
+            ? presentDocument(cycle.proximo)
+            : null,
           status: link?.status ?? (person.ativa ? "SEM_VINCULO" : "INATIVO"),
           vinculosAtivos: person.vinculos.filter(
             (item) => item.status === "ATIVO",
@@ -216,6 +225,10 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
       ...person,
       vinculos: person.vinculos.map((link) => ({
         ...link,
+        documentos: link.documentos.map((document) =>
+          presentDocument(document),
+        ),
+        cicloDocumental: resolveDocumentCycle(link.documentos),
         beneficios: link.beneficios.map((benefit) => ({
           ...benefit,
           competencias: benefit.competencias.map((competence) =>

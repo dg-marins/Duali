@@ -77,10 +77,33 @@ export function Lookup({
     let active = true;
     const timer = setTimeout(() => {
       setLoading(true);
-      void api<{ items: Row[] }>(
-        field.resource + "?pageSize=100&q=" + encodeURIComponent(q),
+      void api<{ items: Row[]; total?: number; pageSize?: number }>(
+        field.resource + "?page=1&pageSize=100&q=" + encodeURIComponent(q),
       )
         .then(async (result) => {
+          const pages = Math.ceil(
+            (result.total ?? result.items.length) / (result.pageSize ?? 100),
+          );
+          const remaining = await Promise.all(
+            Array.from({ length: Math.max(0, pages - 1) }, (_, index) =>
+              api<{ items: Row[] }>(
+                field.resource +
+                  `?page=${index + 2}&pageSize=100&q=${encodeURIComponent(q)}`,
+              ),
+            ),
+          );
+          result.items = [
+            ...result.items,
+            ...remaining.flatMap((page) => page.items),
+          ];
+          if (q && !/^[0-9a-f-]{36}$/i.test(q)) {
+            const normalized = q.toLocaleLowerCase("pt-BR");
+            result.items = result.items.filter((row) =>
+              `${optionLabel(row)} ${String(row.id)}`
+                .toLocaleLowerCase("pt-BR")
+                .includes(normalized),
+            );
+          }
           if (
             /^[0-9a-f-]{36}$/i.test(q) &&
             !result.items.some((r) => String(r.id) === q)

@@ -61,7 +61,14 @@ export async function registerAuth(
   });
   app.post(
     "/api/auth/login",
-    { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } },
+    {
+      config: {
+        rateLimit: {
+          max: config.NODE_ENV === "test" ? 1000 : 10,
+          timeWindow: "15 minutes",
+        },
+      },
+    },
     async (req, reply) => {
       const body = loginSchema.parse(req.body);
       const user = await db.usuario.findUnique({

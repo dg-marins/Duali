@@ -80,7 +80,7 @@ test("dashboard reserva o layout enquanto os indicadores carregam", async ({
     await expect(page.locator(".shell")).toBeVisible();
     response.release();
     await expect(
-      page.getByText("Pessoas ativas", { exact: true }),
+      page.getByText("Pendências críticas", { exact: true }),
     ).toBeVisible();
     await expect(page.getByTestId("loading-skeleton-metrics")).toHaveCount(0);
   } finally {

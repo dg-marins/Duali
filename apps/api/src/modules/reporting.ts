@@ -6,6 +6,7 @@ import { audit, DomainError, type Row } from "../core.js";
 import { balance } from "./leave-domain.js";
 import { internshipAlerts } from "./internship.js";
 import { benefitAlerts, benefitCalculation } from "./benefits.js";
+import { monthlyReadiness } from "./benefit-acquisitions.js";
 import { leaveAlerts } from "./leave.js";
 import { allPendings } from "./pendings.js";
 export const reportKinds = [
@@ -275,14 +276,10 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       where: Prisma.VinculoWhereInput = q.unidadeId
         ? { unidadeId: q.unidadeId }
         : {},
-      today = new Date(),
+      now = new Date(),
       competence = q.competencia
         ? new Date(`${q.competencia}T00:00:00.000Z`)
-        : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)),
-      inThirtyDays = new Date(today);
-    today.setUTCHours(0, 0, 0, 0);
-    inThirtyDays.setUTCHours(0, 0, 0, 0);
-    inThirtyDays.setUTCDate(inThirtyDays.getUTCDate() + 30);
+        : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const benefitWhere = {
       competencia: competence,
       beneficioVinculo: { vinculo: where },
@@ -293,12 +290,10 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       estagios,
       aprendizes,
       alerts,
-      recent,
       imports,
       pendings,
-      contracts,
-      tces,
       benefits,
+      readiness,
     ] = await Promise.all([
       db.pessoa.count({
         where: { vinculos: { some: { ...where, status: "ATIVO" } } },
@@ -311,42 +306,10 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
         where: { ...where, tipo: "APRENDIZ", status: "ATIVO" },
       }),
       operationalAlerts(db),
-      db.auditoria.findMany({
-        orderBy: { criadoEm: "desc" },
-        take: 10,
-        select: {
-          id: true,
-          acao: true,
-          entidade: true,
-          criadoEm: true,
-          usuario: { select: { nome: true } },
-        },
-      }),
       db.importacao.count({
         where: { status: { in: ["UPLOAD", "REVISAO", "PARCIAL"] } },
       }),
       allPendings(db),
-      db.estagio.findMany({
-        where: {
-          vinculo: { ...where, tipo: "ESTAGIO", status: "ATIVO" },
-          dataTerminoPrevista: { gte: today, lte: inThirtyDays },
-        },
-        include: {
-          vinculo: { include: { pessoa: true, unidade: true } },
-        },
-        orderBy: { dataTerminoPrevista: "asc" },
-      }),
-      db.documentoVinculo.findMany({
-        where: {
-          tipo: "TCE",
-          status: "PENDENTE",
-          vinculo: { ...where, tipo: "ESTAGIO", status: "ATIVO" },
-        },
-        include: {
-          vinculo: { include: { pessoa: true, unidade: true } },
-        },
-        orderBy: { fimVigencia: "asc" },
-      }),
       db.beneficioCompetencia.findMany({
         where: benefitWhere,
         include: {
@@ -356,6 +319,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
           transporteItens: true,
         },
       }),
+      monthlyReadiness(db, competence, q.unidadeId),
     ]);
     const selected = (
         await db.vinculo.findMany({ where, select: { id: true } })
@@ -377,6 +341,14 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
               (right.prazo?.getTime() ?? Number.MAX_SAFE_INTEGER)
           );
         }),
+      contractPendings = filteredPendings.filter(
+        (item) =>
+          item.codigo.startsWith("CONTRATO_TERMINANDO_") ||
+          item.codigo === "CONTRATO_TERMINO_ULTRAPASSADO",
+      ),
+      signaturePendings = filteredPendings.filter(
+        (item) => item.codigo === "TCE_ADITIVO_AGUARDANDO_ASSINATURA",
+      ),
       benefitTotals = benefits.reduce(
         (totals, row) => {
           const calculation = benefitCalculation(row),
@@ -424,8 +396,10 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       pendenciasCriticas: filteredPendings.filter(
         (item) => item.severidade === "CRITICA",
       ).length,
-      contratosVencendo: contracts.length,
-      tcesAguardandoAssinatura: tces.length,
+      contratosVencendo: contractPendings.filter(
+        (item) => item.codigo === "CONTRATO_TERMINANDO_30_DIAS",
+      ).length,
+      tcesAguardandoAssinatura: signaturePendings.length,
       feriasAtencao: filtered.filter((a) => a.tipo === "DESCANSO").length,
       custoBeneficios: benefitTotals.total.toFixed(2),
       divergenciasBeneficios: benefitTotals.divergences,
@@ -440,27 +414,16 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
           value.toFixed(2),
         ]),
       ),
+      prontidaoMensal: readiness,
       pendenciasPrioritarias: filteredPendings.slice(0, 20),
       kpiDetalhes: {
         pendenciasCriticas: filteredPendings.filter(
           (item) => item.severidade === "CRITICA",
         ),
-        contratosVencendo: contracts.map((item) => ({
-          id: item.id,
-          pessoa: item.vinculo.pessoa.nomeCompleto,
-          unidade: item.vinculo.unidade.nome,
-          descricao: "Fim previsto do estágio",
-          prazo: item.dataTerminoPrevista,
-          href: `/app/pessoas/${item.vinculo.pessoaId}`,
-        })),
-        tcesAguardandoAssinatura: tces.map((item) => ({
-          id: item.id,
-          pessoa: item.vinculo.pessoa.nomeCompleto,
-          unidade: item.vinculo.unidade.nome,
-          descricao: "TCE aguardando assinatura",
-          prazo: item.fimVigencia,
-          href: `/app/pessoas/${item.vinculo.pessoaId}`,
-        })),
+        contratosVencendo: contractPendings.filter(
+          (item) => item.codigo === "CONTRATO_TERMINANDO_30_DIAS",
+        ),
+        tcesAguardandoAssinatura: signaturePendings,
         feriasAtencao: filtered
           .filter((item) => item.tipo === "DESCANSO")
           .map((item) => ({
@@ -493,7 +456,6 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
           })),
       },
       alertas: filtered.slice(0, 100),
-      atividades: recent,
     };
   });
   app.get("/api/relatorios/:tipo", async (req) => {

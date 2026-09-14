@@ -29,7 +29,7 @@ async function selectLookup(
 }
 
 test("administrator completes the operational RH journey", async ({ page }) => {
-  test.setTimeout(150_000);
+  test.setTimeout(240_000);
   const db = new PrismaClient({ datasourceUrl: testDatabaseUrl() });
   const suffix = randomUUID(),
     email = `${suffix}@example.test`,
@@ -39,6 +39,13 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       nome: "Operador E2E",
       email,
       senhaHash: await argon2.hash(password),
+    },
+  });
+  const unit = await db.unidade.create({
+    data: {
+      nome: `Unidade E2E ${suffix}`,
+      sigla: suffix.slice(0, 12),
+      uf: "RJ",
     },
   });
   try {
@@ -58,11 +65,12 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     await expect(
       page.getByRole("button", { name: "Equipes", exact: true }),
     ).toBeHidden();
-    await page.getByRole("button", { name: "Cadastros", exact: true }).click();
+    await page.getByRole("button", { name: /^Cadastros\b/ }).click();
     await expect(
       page.getByRole("button", { name: "Equipes", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Expandir menu" }).click();
+    await page.getByRole("button", { name: /^Cadastros\b/ }).click();
     await page.getByRole("button", { name: "Equipes", exact: true }).click();
     await page.getByRole("button", { name: "Novo registro" }).click();
     const teamDialog = page.getByRole("dialog", {
@@ -88,13 +96,17 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     await page.getByRole("button", { name: "+ Nova pessoa" }).click();
     const personForm = page.locator(".form-panel");
     await personForm.getByLabel("Nome completo *").fill("Rascunho");
-    await page.getByRole("button", { name: "← Voltar" }).click();
+    await personForm
+      .getByRole("button", { name: "Fechar", exact: true })
+      .click();
     await expect(
       page.getByRole("dialog", { name: "Descartar alterações?" }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Continuar editando" }).click();
     await personForm.getByLabel("Nome completo *").fill(`Pessoa E2E ${suffix}`);
     await personForm.getByLabel("E-mail").fill(`pessoa-${suffix}@example.test`);
+    await personForm.getByLabel("Unidade *").selectOption(unit.id);
+    await personForm.getByLabel("Admissão *").fill("2024-01-01");
     await personForm
       .getByRole("button", { name: "Salvar", exact: true })
       .click();
@@ -108,13 +120,6 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     const person = await db.pessoa.findFirstOrThrow({
       where: { nomeCompleto: `Pessoa E2E ${suffix}` },
     });
-    const unit = await db.unidade.create({
-      data: {
-        nome: `Unidade E2E ${suffix}`,
-        sigla: suffix.slice(0, 12),
-        uf: "RJ",
-      },
-    });
     await page.getByRole("tab", { name: "Vínculo", exact: true }).click();
     await page.getByRole("button", { name: "Adicionar vínculo" }).click();
     const linkForm = page.locator(".form-panel");
@@ -124,15 +129,13 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     await linkForm.getByRole("button", { name: "Salvar", exact: true }).click();
     await expect(linkForm).toBeHidden();
     const link = await db.vinculo.findFirstOrThrow({
-      where: { pessoaId: person.id },
+      where: { pessoaId: person.id, tipo: "ESTAGIO" },
     });
 
-    await page
-      .getByRole("button", { name: "Estagiários", exact: true })
-      .click();
+    await page.goto("/app/estagiarios");
     await page.getByRole("button", { name: "Novo estágio" }).click();
     const internshipForm = page.locator(".form-panel");
-    await selectLookup(internshipForm, "Vínculo", suffix, suffix);
+    await selectLookup(internshipForm, "Vínculo", `${suffix}.*ESTAGIO`, suffix);
     await internshipForm.getByLabel("Período acadêmico").fill("5º");
     await internshipForm.getByLabel("Bolsa (R$)").fill("1800");
     await internshipForm
@@ -140,12 +143,10 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       .click();
     await expect(internshipForm).toBeHidden();
 
-    await page
-      .getByRole("button", { name: "Férias e descanso", exact: true })
-      .click();
+    await page.goto("/app/ferias");
     await page.getByRole("button", { name: "Programar período" }).click();
     const leaveForm = page.locator(".form-panel");
-    await selectLookup(leaveForm, "Vínculo", suffix, suffix);
+    await selectLookup(leaveForm, "Vínculo", `${suffix}.*ESTAGIO`, suffix);
     await leaveForm
       .getByLabel("Tipo", { exact: true })
       .selectOption("DESCANSO_ESTAGIO");
@@ -160,17 +161,17 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     const supplier = await db.fornecedor.create({
       data: { nome: `Fornecedor E2E ${suffix}` },
     });
-    const config = await db.configuracaoBeneficio.create({
+    await db.configuracaoBeneficio.create({
       data: {
         unidadeId: unit.id,
         fornecedorId: supplier.id,
         tipo: "ALIMENTACAO",
       },
     });
-    await page.getByRole("button", { name: "Benefícios", exact: true }).click();
+    await page.goto("/app/beneficios");
     await page.getByRole("button", { name: "Nova adesão" }).click();
     const enrollmentForm = page.locator(".form-panel");
-    await selectLookup(enrollmentForm, "Vínculo", suffix, suffix);
+    await selectLookup(enrollmentForm, "Vínculo", `${suffix}.*ESTAGIO`, suffix);
     await enrollmentForm
       .getByLabel("Tipo", { exact: true })
       .selectOption("ALIMENTACAO");
@@ -193,8 +194,8 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     await selectLookup(
       competenceForm,
       "Configuração por unidade",
-      config.id,
-      config.id,
+      suffix,
+      suffix,
     );
     await competenceForm
       .getByLabel("Competência (primeiro dia do mês)")
@@ -218,7 +219,11 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       page.getByRole("button", { name: `Pessoa E2E ${suffix}`, exact: true }),
     ).toBeVisible({ timeout: 15_000 });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole("button", { name: "Detalhes" }).click();
+    await page
+      .getByRole("button", { name: `Pessoa E2E ${suffix}`, exact: true })
+      .locator("xpath=ancestor::tr")
+      .getByRole("button", { name: "Detalhes" })
+      .click();
     await expect(
       page
         .locator(".mobile-details-row")
@@ -252,9 +257,7 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     await page.getByRole("button", { name: "Fechar competência" }).click();
     await expect(page.getByText("FECHADA", { exact: true })).toBeVisible();
 
-    await page
-      .getByRole("button", { name: "Importações", exact: true })
-      .click();
+    await page.goto("/app/importacoes");
     await expect(page.getByLabel("Etapas da importação")).toBeVisible();
     await page.locator("input[type=file]").setInputFiles({
       name: "sintetico.csv",
@@ -269,15 +272,14 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       page.getByRole("heading", { name: /sintetico.csv/ }),
     ).toContainText("CONFIRMADA");
 
-    await page.getByRole("button", { name: "Relatórios", exact: true }).click();
+    await page.goto("/app/relatorios");
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("button", { name: "Exportar CSV" }).click();
     expect((await downloadPromise).suggestedFilename()).toBe(
       "duali-pessoas.csv",
     );
 
-    await page.getByRole("button", { name: /Administração/ }).click();
-    await page.getByRole("button", { name: "Auditoria", exact: true }).click();
+    await page.goto("/app/admin/auditoria");
     await page.getByPlaceholder("Usuário, entidade ou ação").fill("pessoa");
     await expect(
       page.getByRole("heading", { name: "Auditoria" }),

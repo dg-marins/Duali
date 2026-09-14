@@ -13,6 +13,9 @@ export const optionalText = z.string().trim().max(5000).nullable().optional();
 export const shortText = z.string().trim().min(1).max(180);
 export const optionalDate = date.nullable().optional();
 export const money = z.preprocess((value) => {
+  if (value === null || typeof value === "boolean") return Number.NaN;
+  if (typeof value === "number")
+    return Number.isFinite(value) ? value : Number.NaN;
   if (typeof value !== "string") return value;
   const text = value.trim();
   if (!text) return Number.NaN;
@@ -21,6 +24,13 @@ export const money = z.preprocess((value) => {
   if (/^-?\d+(\.\d{1,2})?$/.test(text)) return text;
   return Number.NaN;
 }, z.coerce.number().finite().min(0).max(9999999999.99).multipleOf(0.01));
+export function nonNegativeNumber(max = 99999) {
+  return z.preprocess((value) => {
+    if (value === null || value === "" || typeof value === "boolean")
+      return Number.NaN;
+    return value;
+  }, z.coerce.number().finite().min(0).max(max).multipleOf(0.01));
+}
 export function validCpf(value: string): boolean {
   if (!/^\d{11}$/.test(value) || /^(\d)\1+$/.test(value)) return false;
   for (let n = 9; n <= 10; n++) {

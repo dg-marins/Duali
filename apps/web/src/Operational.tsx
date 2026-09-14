@@ -1,4 +1,4 @@
-﻿import {
+import {
   useEffect,
   useMemo,
   useState,
@@ -42,6 +42,13 @@ const benefitLabels: Record<string, string> = {
   PAGO: "Pago",
   CANCELADO: "Cancelado",
 };
+const documentLabels: Record<string, string> = {
+  TCE: "TCE",
+  ADITIVO: "Aditivo ao TCE",
+  RENOVACAO: "Renovação histórica",
+  DISTRATO: "Distrato",
+  OUTRO: "Outro documento",
+};
 type ListResult = {
   items: Row[];
   total: number;
@@ -56,18 +63,23 @@ function useOptions() {
     suppliers: Row[];
   }>({ units: [], teams: [], institutions: [], suppliers: [] });
   useEffect(() => {
+    const loadAll = async (resource: string) => {
+      const first = await api<ListResult>(`${resource}?page=1&pageSize=100`);
+      const pages = Math.ceil(first.total / first.pageSize);
+      const remaining = await Promise.all(
+        Array.from({ length: Math.max(0, pages - 1) }, (_, index) =>
+          api<ListResult>(`${resource}?page=${index + 2}&pageSize=100`),
+        ),
+      );
+      return [...first.items, ...remaining.flatMap((page) => page.items)];
+    };
     void Promise.all([
-      api<ListResult>("unidades?pageSize=100"),
-      api<ListResult>("equipes?pageSize=100"),
-      api<ListResult>("instituicoes?pageSize=100"),
-      api<ListResult>("fornecedores?pageSize=100"),
+      loadAll("unidades"),
+      loadAll("equipes"),
+      loadAll("instituicoes"),
+      loadAll("fornecedores"),
     ]).then(([units, teams, institutions, suppliers]) =>
-      setOptions({
-        units: units.items,
-        teams: teams.items,
-        institutions: institutions.items,
-        suppliers: suppliers.items,
-      }),
+      setOptions({ units, teams, institutions, suppliers }),
     );
   }, []);
   return options;
@@ -349,6 +361,7 @@ function PersonForm({
       periodoAcademico: "",
       valorBolsa: "",
       dataTerminoPrevista: "",
+      periodicidadeDocumentoMeses: "6",
       tceStatus: "AGUARDANDO_ASSINATURA",
       ...person,
     }),
@@ -408,6 +421,7 @@ function PersonForm({
                 "periodoAcademico",
                 "valorBolsa",
                 "dataTerminoPrevista",
+                "periodicidadeDocumentoMeses",
                 "tceStatus",
               ].includes(key),
           )
@@ -439,6 +453,10 @@ function PersonForm({
                       data.dataTerminoPrevista === ""
                         ? null
                         : data.dataTerminoPrevista,
+                    periodicidadeDocumentoMeses:
+                      data.periodicidadeDocumentoMeses === ""
+                        ? undefined
+                        : data.periodicidadeDocumentoMeses,
                     tceStatus: data.tceStatus || "AGUARDANDO_ASSINATURA",
                   },
                 }
@@ -578,6 +596,11 @@ function PersonForm({
                 {field("periodoAcademico", "Período acadêmico")}
                 {field("valorBolsa", "Bolsa (R$)", "number")}
                 {field(
+                  "periodicidadeDocumentoMeses",
+                  "Periodicidade do TCE/aditivo (meses)",
+                  "number",
+                )}
+                {field(
                   "dataTerminoPrevista",
                   "Fim previsto do estágio",
                   "date",
@@ -594,7 +617,10 @@ function PersonForm({
                     <option value="AGUARDANDO_ASSINATURA">
                       Aguardando assinatura
                     </option>
-                    <option value="ASSINADO">Assinado</option>
+                    {new Date(String(data.dataAdmissao)).setHours(0, 0, 0, 0) <=
+                      new Date().setHours(0, 0, 0, 0) && (
+                      <option value="ASSINADO">Assinado</option>
+                    )}
                   </select>
                 </label>
               </div>
@@ -702,7 +728,9 @@ export function PersonProfile({
   navigate: Navigate;
 }) {
   const [profile, setProfile] = useState<Row | null>(null),
-    [tab, setTab] = useState("visao"),
+    [tab, setTab] = useState(
+      () => new URLSearchParams(location.search).get("tab") ?? "visao",
+    ),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
     [formScreen, setFormScreen] = useState<string | null>(null),
@@ -962,6 +990,30 @@ export function PersonProfile({
                 ],
               ]}
             />
+            <InfoCard
+              title="Documento atual"
+              rows={(() => {
+                const cycle = current?.cicloDocumental as Row | undefined;
+                const document = cycle?.atual as Row | undefined;
+                const next = cycle?.proximo as Row | undefined;
+                return [
+                  [
+                    "Atual",
+                    document
+                      ? `${documentLabels[String(document.tipo)] ?? display(document.tipo)} · ${display(document.estadoOperacional)}`
+                      : "Nenhum em vigência",
+                  ],
+                  [
+                    "Vigência",
+                    document
+                      ? `${formatDate(document.inicioVigencia)} até ${formatDate(document.fimVigencia)}`
+                      : next
+                        ? `Próximo: ${formatDate(next.inicioVigencia)}`
+                        : "—",
+                  ],
+                ] as [string, ReactNode][];
+              })()}
+            />
             <section className="panel">
               <h2>Alertas</h2>
               {alerts.length ? (
@@ -1161,16 +1213,24 @@ export function PersonProfile({
               <section className="panel" key={String(link.id)}>
                 <h2>Documentos e seguro · {String(link.tipo)}</h2>
                 {(link.documentos as Row[]).map((item) => {
+                  const statusLabels: Record<string, string> = {
+                    PLANEJADO: "Planejado",
+                    AGUARDANDO_ASSINATURA: "Aguardando assinatura",
+                    ASSINADO: "Assinado",
+                    VENCIDO: "Vencido",
+                    CANCELADO: "Cancelado",
+                    VIGENCIA_INCOMPLETA: "Vigência incompleta",
+                  };
                   const status =
-                    item.tipo === "TCE" && item.status === "VIGENTE"
-                      ? "Assinado"
-                      : item.tipo === "TCE" && item.status === "PENDENTE"
-                        ? "Aguardando assinatura"
-                        : String(item.status);
+                    statusLabels[String(item.estadoOperacional)] ??
+                    String(item.status);
                   return (
                     <div className="section-heading" key={String(item.id)}>
                       <div>
-                        <strong>{String(item.tipo)}</strong>
+                        <strong>
+                          {documentLabels[String(item.tipo)] ??
+                            String(item.tipo)}
+                        </strong>
                         <p>{status}</p>
                         <p>
                           Início: {formatDate(item.inicioVigencia)} · Fim:{" "}

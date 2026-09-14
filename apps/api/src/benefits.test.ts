@@ -489,6 +489,20 @@ test("monthly acquisition reserves, confirms partially and preserves reversals",
     });
     expect(prepared.statusCode, prepared.body).toBe(200);
     expect(prepared.json<{ criadas: number }>().criadas).toBe(1);
+    const readinessAfterPreparation = await f.app.inject({
+      method: "GET",
+      url: `/api/aquisicoes-beneficios/prontidao?unidadeId=${unidade.id}&competencia=2026-02-01`,
+      headers: f.headers,
+    });
+    expect(
+      readinessAfterPreparation.statusCode,
+      readinessAfterPreparation.body,
+    ).toBe(200);
+    expect(
+      readinessAfterPreparation
+        .json<Array<{ tipo: string; estado: string }>>()
+        .find((item) => item.tipo === "ALIMENTACAO")?.estado,
+    ).toBe("PREPARADA");
     const repeat = await f.app.inject({
       method: "POST",
       url: "/api/aquisicoes-beneficios/preparar",
@@ -538,6 +552,16 @@ test("monthly acquisition reserves, confirms partially and preserves reversals",
       },
     });
     expect(confirmed.statusCode, confirmed.body).toBe(200);
+    const readinessAfterPartialPurchase = await f.app.inject({
+      method: "GET",
+      url: `/api/aquisicoes-beneficios/prontidao?unidadeId=${unidade.id}&competencia=2026-02-01`,
+      headers: f.headers,
+    });
+    expect(
+      readinessAfterPartialPurchase
+        .json<Array<{ tipo: string; estado: string }>>()
+        .find((item) => item.tipo === "ALIMENTACAO")?.estado,
+    ).toBe("COMPRA_PARCIAL");
     const reversed = await f.app.inject({
       method: "POST",
       url: `/api/aquisicoes-beneficios/itens/${itemId}/reverter`,
@@ -553,7 +577,7 @@ test("monthly acquisition reserves, confirms partially and preserves reversals",
     const final =
       after.json<Array<{ compradoLiquido: string; disponivel: string }>>()[0]!;
     expect(final.compradoLiquido).toBe("400.00");
-    expect(final.disponivel).toBe("110.00");
+    expect(final.disponivel).toBe("60.00");
     expect(
       await f.db.auditoria.count({ where: { entidade: "aquisicaoBeneficio" } }),
     ).toBeGreaterThanOrEqual(2);

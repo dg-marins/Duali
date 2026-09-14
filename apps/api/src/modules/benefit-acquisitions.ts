@@ -19,7 +19,6 @@ import { benefitCalculation, idempotencyKey, idempotent } from "./benefits.js";
 
 const monthEnd = (month: Date) =>
   new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0));
-const monthWhere = (month: Date) => ({ lte: monthEnd(month) });
 
 async function ensureOpen(tx: Tx, unitId: string, month: Date) {
   const closing = await tx.fechamentoCompetenciaBeneficio.findUnique({
@@ -185,6 +184,98 @@ async function preview(tx: Tx, unitId: string, month: Date) {
   });
 }
 
+export async function monthlyReadiness(
+  db: PrismaClient,
+  month: Date,
+  unitId?: string,
+) {
+  const units = await db.unidade.findMany({
+    where: { ativa: true, ...(unitId ? { id: unitId } : {}) },
+    orderBy: { nome: "asc" },
+  });
+  const rows = await db.beneficioVinculo.findMany({
+    where: {
+      status: "ATIVO",
+      inicioVigencia: { lte: monthEnd(month) },
+      OR: [{ fimVigencia: null }, { fimVigencia: { gte: month } }],
+      vinculo: { unidadeId: { in: units.map((unit) => unit.id) } },
+    },
+    include: {
+      vinculo: true,
+      competencias: {
+        where: { competencia: month, status: { not: "CANCELADO" } },
+        include: {
+          ajustes: { include: { distribuicoes: true } },
+          transporteItens: true,
+          aquisicaoItens: { include: { aquisicao: true, movimentacoes: true } },
+        },
+      },
+    },
+  });
+  const closings = await db.fechamentoCompetenciaBeneficio.findMany({
+    where: {
+      competencia: month,
+      unidadeId: { in: units.map((unit) => unit.id) },
+    },
+  });
+  return units.flatMap((unit) => {
+    const byType = new Map<string, typeof rows>();
+    for (const row of rows.filter((row) => row.vinculo.unidadeId === unit.id))
+      byType.set(row.tipo, [...(byType.get(row.tipo) ?? []), row]);
+    return [
+      "TRANSPORTE",
+      "ALIMENTACAO",
+      "CESTA_BASICA",
+      "PREMIACAO",
+      "OUTRO",
+    ].map((tipo) => {
+      const benefits = byType.get(tipo) ?? [];
+      const competence = benefits.flatMap((benefit) => benefit.competencias);
+      const closed =
+        closings.find((closing) => closing.unidadeId === unit.id)?.status ===
+        "FECHADA";
+      const items = competence.flatMap((row) => row.aquisicaoItens);
+      const purchased = items.some((item) =>
+        item.movimentacoes.some((movement) => movement.tipo === "CONFIRMACAO"),
+      );
+      const pendingOrder = items.some(
+        (item) =>
+          item.aquisicao.status === "PENDENTE" && item.status === "PENDENTE",
+      );
+      const pending = competence.some((row) => {
+        const calculation = benefitCalculation({
+          ...row,
+          beneficioVinculo: { tipo },
+        });
+        return calculation.valorFinal == null || row.transporteRevisaoPendente;
+      });
+      const state = !benefits.length
+        ? "NAO_APLICAVEL"
+        : closed
+          ? "FECHADA"
+          : competence.length < benefits.length
+            ? "NAO_PREPARADA"
+            : pending
+              ? "COM_PENDENCIAS"
+              : pendingOrder && purchased
+                ? "COMPRA_PARCIAL"
+                : pendingOrder
+                  ? "PEDIDO_EMITIDO"
+                  : purchased
+                    ? "COMPRA_CONFIRMADA"
+                    : "PREPARADA";
+      return {
+        unidadeId: unit.id,
+        unidade: unit.nome,
+        tipo,
+        estado: state,
+        beneficiosElegiveis: benefits.length,
+        competenciasPreparadas: competence.length,
+      };
+    });
+  });
+}
+
 export function registerBenefitAcquisitions(
   app: FastifyInstance,
   db: PrismaClient,
@@ -199,6 +290,15 @@ export function registerBenefitAcquisitions(
     return transaction(db, (tx) =>
       preview(tx, q.unidadeId, new Date(q.competencia)),
     );
+  });
+  app.get("/api/aquisicoes-beneficios/prontidao", async (req) => {
+    const query = z
+      .object({
+        unidadeId: z.string().uuid().optional(),
+        competencia: z.string().regex(/^\d{4}-\d{2}-01$/),
+      })
+      .parse(req.query);
+    return monthlyReadiness(db, new Date(query.competencia), query.unidadeId);
   });
 
   app.post("/api/aquisicoes-beneficios/preparar", async (req) => {
@@ -231,7 +331,7 @@ export function registerBenefitAcquisitions(
               },
               status: "ATIVO",
               inicioVigencia: { lte: monthEnd(month) },
-              OR: [{ fimVigencia: null }, { fimVigencia: monthWhere(month) }],
+              OR: [{ fimVigencia: null }, { fimVigencia: { gte: month } }],
               vinculo: {
                 unidadeId: body.unidadeId,
                 status: { in: ["ATIVO", "AFASTADO"] },
@@ -244,10 +344,7 @@ export function registerBenefitAcquisitions(
                 where: {
                   ativo: true,
                   inicioVigencia: { lte: month },
-                  OR: [
-                    { fimVigencia: null },
-                    { fimVigencia: monthWhere(month) },
-                  ],
+                  OR: [{ fimVigencia: null }, { fimVigencia: { gte: month } }],
                 },
               },
             },
@@ -377,6 +474,10 @@ export function registerBenefitAcquisitions(
             itens: await preview(tx, body.unidadeId, month),
           };
         },
+        {
+          userId: req.userId,
+          scope: `${body.unidadeId}:${body.competencia}`,
+        },
       ),
     );
   });
@@ -503,6 +604,10 @@ export function registerBenefitAcquisitions(
             include: { fornecedor: true, cartaoTransporte: true, itens: true },
           });
         },
+        {
+          userId: req.userId,
+          scope: `${body.unidadeId}:${body.competencia}:${body.tipo}:${body.fornecedorId}:${body.cartaoTransporteId ?? ""}`,
+        },
       ),
     );
     reply.code(201);
@@ -528,6 +633,11 @@ export function registerBenefitAcquisitions(
             throw new DomainError(409, "Pedido já foi encerrado.");
           await ensureOpen(tx, order.unidadeId, order.competencia);
           const items = new Map(order.itens.map((item) => [item.id, item]));
+          if (
+            new Set(body.itens.map((item) => item.itemId)).size !==
+            body.itens.length
+          )
+            throw new DomainError(422, "Não repita item na confirmação.");
           for (const update of body.itens) {
             const item = items.get(update.itemId);
             if (!item || item.status !== "PENDENTE")
@@ -550,9 +660,18 @@ export function registerBenefitAcquisitions(
                 422,
                 "Informe o motivo quando o valor confirmado for diferente do reservado.",
               );
+            const confirmed = new Prisma.Decimal(update.valor);
+            const partial =
+              update.status === "CONFIRMADO" &&
+              confirmed.lessThan(item.valorReservado);
             await tx.aquisicaoBeneficioItem.update({
               where: { id: item.id },
-              data: { status: update.status },
+              data: {
+                status: partial ? "PENDENTE" : update.status,
+                ...(partial
+                  ? { valorReservado: item.valorReservado.minus(confirmed) }
+                  : {}),
+              },
             });
             if (update.status === "CONFIRMADO")
               await tx.movimentacaoAquisicaoBeneficio.create({
@@ -561,6 +680,7 @@ export function registerBenefitAcquisitions(
                   tipo: "CONFIRMACAO",
                   valor: update.valor,
                   data: new Date(body.dataCompra),
+                  ...(update.motivo ? { motivo: update.motivo } : {}),
                   criadoPorId: req.userId!,
                 },
               });
@@ -589,6 +709,7 @@ export function registerBenefitAcquisitions(
           );
           return current;
         },
+        { userId: req.userId, scope: id },
       ),
     );
   });
@@ -631,6 +752,7 @@ export function registerBenefitAcquisitions(
           );
           return current;
         },
+        { userId: req.userId, scope: id },
       ),
     );
   });
@@ -691,6 +813,7 @@ export function registerBenefitAcquisitions(
           );
           return movement;
         },
+        { userId: req.userId, scope: id },
       ),
     );
   });

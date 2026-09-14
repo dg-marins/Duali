@@ -10,6 +10,7 @@ import {
 } from "@duali/shared";
 import { DomainError, type Tx, type Row } from "../core.js";
 import { registerResource, type Resource } from "./resources.js";
+import { documentState } from "./internship-cycle.js";
 async function requireInternship(tx: Tx, data: Row, previous: Row | null) {
   if (previous && previous.vinculoId !== data.vinculoId)
     throw new DomainError(
@@ -37,7 +38,7 @@ function addMonths(date: Date, months: number) {
 
 async function validateDocument(tx: Tx, data: Row, previous: Row | null) {
   await requireInternship(tx, data, previous);
-  if (data.tipo !== "TCE" && data.tipo !== "RENOVACAO") return;
+  if (!["TCE", "ADITIVO", "RENOVACAO"].includes(String(data.tipo))) return;
   if (
     !(data.inicioVigencia instanceof Date) ||
     Number.isNaN(data.inicioVigencia.getTime())
@@ -62,6 +63,13 @@ async function validateDocument(tx: Tx, data: Row, previous: Row | null) {
     throw new DomainError(
       422,
       "O fim da vigência não pode ser anterior ao início.",
+    );
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  if (data.status === "VIGENTE" && data.inicioVigencia > today)
+    throw new DomainError(
+      422,
+      "Um documento planejado só pode ser marcado como assinado quando sua vigência começar.",
     );
 }
 export const internshipResources: Resource[] = [
@@ -138,7 +146,38 @@ export async function internshipAlerts(db: PrismaClient) {
   });
   const now = new Date();
   now.setUTCHours(0, 0, 0, 0);
-  return [...docs, ...seguros].flatMap((item) => {
+  const documentAlerts = docs.flatMap((item) => {
+    const state = documentState(item, now);
+    if (state === "PLANEJADO") return [];
+    const remaining = item.fimVigencia
+      ? Math.ceil((item.fimVigencia.getTime() - now.getTime()) / 86400000)
+      : null;
+    if (
+      state === "ASSINADO" &&
+      remaining !== null &&
+      remaining > item.vinculo.unidade.diasAlerta
+    )
+      return [];
+    return [
+      {
+        id: item.id,
+        vinculoId: item.vinculoId,
+        pessoa: item.vinculo.pessoa.nomeCompleto,
+        unidadeId: item.vinculo.unidadeId,
+        tipo: "DOCUMENTO",
+        mensagem:
+          state === "VIGENCIA_INCOMPLETA"
+            ? "Vigência do TCE/aditivo não informada"
+            : state === "VENCIDO"
+              ? "TCE/aditivo vencido"
+              : state === "AGUARDANDO_ASSINATURA"
+                ? "TCE/aditivo aguardando assinatura"
+                : "Vencimento de TCE/aditivo próximo",
+        prazo: item.fimVigencia,
+      },
+    ];
+  });
+  const insuranceAlerts = seguros.flatMap((item) => {
     const remaining = item.fimVigencia
       ? Math.ceil((item.fimVigencia.getTime() - now.getTime()) / 86400000)
       : null;
@@ -154,17 +193,18 @@ export async function internshipAlerts(db: PrismaClient) {
         vinculoId: item.vinculoId,
         pessoa: item.vinculo.pessoa.nomeCompleto,
         unidadeId: item.vinculo.unidadeId,
-        tipo: "seguradora" in item ? "SEGURO" : "DOCUMENTO",
+        tipo: "SEGURO",
         mensagem:
           remaining === null
             ? "Vigência não informada"
             : remaining < 0
               ? "Vigência vencida"
               : item.status === "PENDENTE"
-                ? "Documento/seguro pendente"
+                ? "Seguro pendente"
                 : "Vencimento próximo",
         prazo: item.fimVigencia,
       },
     ];
   });
+  return [...documentAlerts, ...insuranceAlerts];
 }

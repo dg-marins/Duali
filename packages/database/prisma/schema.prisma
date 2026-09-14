@@ -13,6 +13,7 @@ model Usuario {
  fechamentosBeneficios FechamentoCompetenciaBeneficio[]
  aquisicoesBeneficios AquisicaoBeneficio[]
  movimentacoesAquisicoesBeneficios MovimentacaoAquisicaoBeneficio[]
+ idempotencyKeys ChaveIdempotencia[]
  id String @id @default(uuid()) @db.Uuid
  nome String @db.VarChar(180)
  email String @unique @db.VarChar(180)
@@ -568,11 +569,15 @@ model BeneficioAjusteTransporteItem {
 }
 model ChaveIdempotencia {
  id String @id @default(uuid()) @db.Uuid
- chave String @unique @db.VarChar(180)
+ chave String @db.VarChar(180)
  operacao String @db.VarChar(80)
+ escopo String @default("global") @db.VarChar(180)
+ usuarioId String? @db.Uuid
+ usuario Usuario? @relation(fields:[usuarioId], references:[id])
  hashPayload String @db.VarChar(128)
  resposta Json
  criadoEm DateTime @default(now())
+ @@unique([usuarioId, operacao, escopo, chave])
  @@index([operacao, criadoEm])
 }
 model FechamentoCompetenciaBeneficio {

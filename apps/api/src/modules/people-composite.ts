@@ -13,6 +13,12 @@ import { audit, dateData, DomainError, transaction, type Tx } from "../core.js";
 const tceStatusSchema = z.enum(["ASSINADO", "AGUARDANDO_ASSINATURA"]);
 const stagePayloadSchema = estagioCadastroSchema.extend({
   tceStatus: tceStatusSchema.default("AGUARDANDO_ASSINATURA"),
+  periodicidadeDocumentoMeses: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(120)
+    .optional(),
 });
 
 const createSchema = z
@@ -65,17 +71,22 @@ async function createDefaultRenewals(
   tx: Tx,
   vinculoId: string,
   admission: Date,
+  contractEnd: Date,
+  periodicityMonths: number,
 ) {
-  for (const offset of [6, 12, 18]) {
-    const start = addMonths(admission, offset);
+  for (
+    let start = addMonths(admission, periodicityMonths);
+    start < contractEnd;
+    start = addMonths(start, periodicityMonths)
+  ) {
     await tx.documentoVinculo.create({
       data: {
         vinculoId,
-        tipo: "RENOVACAO",
-        status: "VIGENTE",
+        tipo: "ADITIVO",
+        status: "PENDENTE",
         dataReferencia: start,
         inicioVigencia: start,
-        fimVigencia: addMonths(start, 6),
+        fimVigencia: addMonths(start, periodicityMonths),
       },
     });
   }
@@ -87,7 +98,15 @@ async function ensureTce(
   status: "ASSINADO" | "AGUARDANDO_ASSINATURA",
   userId: string | null,
   inicioVigencia?: Date,
+  periodicityMonths = 6,
 ) {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  if (status === "ASSINADO" && inicioVigencia && inicioVigencia > today)
+    throw new DomainError(
+      422,
+      "Um TCE planejado só pode ser marcado como assinado quando sua vigência começar.",
+    );
   const persistedStatus = status === "ASSINADO" ? "VIGENTE" : "PENDENTE";
   const existing = await tx.documentoVinculo.findFirst({
     where: { vinculoId, tipo: "TCE" },
@@ -115,7 +134,10 @@ async function ensureTce(
       tipo: "TCE",
       status: persistedStatus,
       ...(inicioVigencia
-        ? { inicioVigencia, fimVigencia: addMonths(inicioVigencia, 6) }
+        ? {
+            inicioVigencia,
+            fimVigencia: addMonths(inicioVigencia, periodicityMonths),
+          }
         : {}),
     },
   });
@@ -191,7 +213,8 @@ export function registerPeopleComposite(
       );
       let estagio;
       if (body.estagio) {
-        const { tceStatus, ...stagePayload } = body.estagio;
+        const { tceStatus, periodicidadeDocumentoMeses, ...stagePayload } =
+          body.estagio;
         const data = dateData(
           {
             ...estagioCadastroSchema.parse({
@@ -217,6 +240,30 @@ export function registerPeopleComposite(
           if (!institution || !institution.ativa)
             throw new DomainError(422, "Selecione uma instituição ativa.");
         }
+        let periodicity = periodicidadeDocumentoMeses ?? 6;
+        if (data.instituicaoEnsinoId && periodicidadeDocumentoMeses == null) {
+          const unitRule = await tx.instituicaoRegraEstagio.findFirst({
+            where: {
+              instituicaoId: String(data.instituicaoEnsinoId),
+              unidadeId: vinculo.unidadeId,
+              ativa: true,
+              periodicidadeMeses: { not: null },
+            },
+          });
+          const genericRule = unitRule
+            ? null
+            : await tx.instituicaoRegraEstagio.findFirst({
+                where: {
+                  instituicaoId: String(data.instituicaoEnsinoId),
+                  unidadeId: null,
+                  ativa: true,
+                  periodicidadeMeses: { not: null },
+                },
+              });
+          if (unitRule?.periodicidadeMeses ?? genericRule?.periodicidadeMeses)
+            periodicity =
+              unitRule?.periodicidadeMeses ?? genericRule!.periodicidadeMeses!;
+        }
         estagio = await tx.estagio.create({ data: data as never });
         await audit(
           tx,
@@ -233,11 +280,14 @@ export function registerPeopleComposite(
           tceStatus,
           req.userId,
           linkData.dataAdmissao as Date,
+          periodicity,
         );
         await createDefaultRenewals(
           tx,
           vinculo.id,
           linkData.dataAdmissao as Date,
+          data.dataTerminoPrevista as Date,
+          periodicity,
         );
       }
       return { pessoa, vinculo, estagio };
@@ -269,6 +319,7 @@ export function registerPeopleComposite(
         );
       if (previous.tipo === "ESTAGIO" && body.estagio) {
         const { tceStatus, ...stagePayload } = body.estagio;
+        delete stagePayload.periodicidadeDocumentoMeses;
         const stageData = dateData(
           { ...estagioCadastroSchema.parse(stagePayload), vinculoId: id },
           ["dataTerminoPrevista"],

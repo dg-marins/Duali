@@ -6,6 +6,7 @@ import {
   optionalText,
   shortText,
   money,
+  nonNegativeNumber,
 } from "./schemas.js";
 export const benefitTypes = [
   "TRANSPORTE",
@@ -53,12 +54,7 @@ export const transporteCompetenciaSchema = z
       (v) => v.endsWith("-01"),
       "Informe o primeiro dia do mês.",
     ),
-    quantidadeDias: z.coerce
-      .number()
-      .finite()
-      .min(0)
-      .max(99999)
-      .multipleOf(0.01),
+    quantidadeDias: nonNegativeNumber(),
     valorInformado: money.nullable().optional(),
     status: z
       .enum(["PENDENTE", "CONFERIDO", "PAGO", "CANCELADO"])
@@ -78,13 +74,7 @@ export const configuracaoBeneficioSchema = z
     observacoes: optionalText,
   })
   .strict();
-const recurringQuantity = z.coerce
-  .number()
-  .min(0)
-  .max(99999)
-  .multipleOf(0.01)
-  .nullable()
-  .optional();
+const recurringQuantity = nonNegativeNumber().nullable().optional();
 export const beneficioVinculoSchema = z
   .object({
     vinculoId: id,
@@ -114,30 +104,15 @@ export const aquisicaoPrepararSchema = z
       (v) => v.endsWith("-01"),
       "Informe o primeiro dia do mês.",
     ),
-    diasTransporte: z.coerce
-      .number()
-      .min(0)
-      .max(999)
-      .multipleOf(0.01)
-      .optional(),
-    diasAlimentacao: z.coerce
-      .number()
-      .min(0)
-      .max(999)
-      .multipleOf(0.01)
-      .optional(),
-    quantidadePadrao: z.coerce
-      .number()
-      .min(0)
-      .max(99999)
-      .multipleOf(0.01)
-      .optional(),
+    diasTransporte: nonNegativeNumber(999).optional(),
+    diasAlimentacao: nonNegativeNumber(999).optional(),
+    quantidadePadrao: nonNegativeNumber().optional(),
     excecoes: z
       .array(
         z
           .object({
             beneficioVinculoId: id,
-            quantidadeDias: z.coerce.number().min(0).max(999).multipleOf(0.01),
+            quantidadeDias: nonNegativeNumber(999),
           })
           .strict(),
       )

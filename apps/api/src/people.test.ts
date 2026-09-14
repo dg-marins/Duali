@@ -188,12 +188,26 @@ test("estágio ativo aceita término previsto e rejeita data anterior à admiss�
       await f.db.documentoVinculo.findFirst({
         where: { vinculoId: created.vinculo.id, tipo: "TCE" },
       }),
-    ).toMatchObject({ status: "PENDENTE" });
+    ).toMatchObject({
+      status: "PENDENTE",
+      inicioVigencia: new Date("2025-09-01"),
+      fimVigencia: new Date("2026-03-01"),
+    });
     expect(
       await f.db.documentoVinculo.count({
-        where: { vinculoId: created.vinculo.id, tipo: "RENOVACAO" },
+        where: { vinculoId: created.vinculo.id, tipo: "ADITIVO" },
       }),
     ).toBe(3);
+    expect(
+      await f.db.documentoVinculo.findFirst({
+        where: { vinculoId: created.vinculo.id, tipo: "ADITIVO" },
+        orderBy: { inicioVigencia: "asc" },
+      }),
+    ).toMatchObject({
+      status: "PENDENTE",
+      inicioVigencia: new Date("2026-03-01"),
+      fimVigencia: new Date("2026-09-01"),
+    });
     const invalid = await f.app.inject({
       method: "POST",
       url: "/api/pessoas-com-vinculo",

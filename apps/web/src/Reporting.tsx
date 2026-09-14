@@ -214,20 +214,18 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
       false,
     ],
   ] as const;
-  const pendings = (data?.pendenciasPrioritarias as Row[] | undefined) ?? [];
+  const pendings = Array.isArray(data?.pendenciasPrioritarias)
+    ? (data.pendenciasPrioritarias as Row[])
+    : [];
+  const readiness = Array.isArray(data?.prontidaoMensal)
+    ? (data.prontidaoMensal as Row[])
+    : [];
   const metricDetails = selectedMetric
-    ? (((data?.kpiDetalhes as Row | undefined)?.[selectedMetric] as
-        | Row[]
-        | undefined) ?? [])
+    ? Array.isArray((data?.kpiDetalhes as Row | undefined)?.[selectedMetric])
+      ? ((data?.kpiDetalhes as Row)[selectedMetric] as Row[])
+      : []
     : [];
   const selectedTitle = metrics.find(([key]) => key === selectedMetric)?.[1];
-  const distribution = (data?.distribuicaoVinculos as Row | undefined) ?? {};
-  const benefitCosts = (data?.custosPorBeneficio as Row | undefined) ?? {};
-  const totalLinks = Object.values(distribution).reduce<number>(
-    (sum, value) => sum + Number(value ?? 0),
-    0,
-  );
-
   return (
     <>
       <PageHeader
@@ -383,58 +381,61 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
                   />
                 )}
               </section>
-              <div className="dashboard-summary-grid dashboard-hidden">
-                <section className="panel">
-                  <h2>Pessoas por vínculo</h2>
-                  <div className="summary-total">
-                    <span>Pessoas ativas</span>
-                    <strong>{display(data.pessoasAtivas)}</strong>
+              <section className="panel dashboard-readiness">
+                <div className="section-heading">
+                  <div>
+                    <h2>Preparação mensal</h2>
+                    <p>
+                      O mês está preparado quando cada categoria aplicável
+                      estiver sem impedimentos.
+                    </p>
                   </div>
-                  <div className="distribution-list">
-                    {Object.entries(distribution).map(([type, value]) => (
-                      <div key={type}>
-                        <span>{type === "ESTAGIO" ? "Estágio" : type}</span>
-                        <strong>{display(value)}</strong>
-                        <progress
-                          max={Math.max(totalLinks, 1)}
-                          value={Number(value)}
-                          aria-label={`${type}: ${value}`}
-                        />
-                      </div>
-                    ))}
+                  <button
+                    className="secondary"
+                    onClick={() =>
+                      navigate?.(
+                        `/app/beneficios?unidadeId=${unit}&competencia=${competence}-01`,
+                      )
+                    }
+                  >
+                    Abrir benefícios
+                  </button>
+                </div>
+                {readiness.length ? (
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Unidade</th>
+                          <th>Categoria</th>
+                          <th>Adesões</th>
+                          <th>Preparadas</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {readiness.map((row) => (
+                          <tr key={`${row.unidadeId}-${row.tipo}`}>
+                            <td>{display(row.unidade)}</td>
+                            <td>{display(row.tipo).replaceAll("_", " ")}</td>
+                            <td>{display(row.beneficiosElegiveis)}</td>
+                            <td>{display(row.competenciasPreparadas)}</td>
+                            <td>
+                              <StatusBadge
+                                value={String(row.estado).replaceAll("_", " ")}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                </section>
-                <section className="panel">
-                  <h2>Custos por benefício</h2>
-                  {Object.keys(benefitCosts).length ? (
-                    <div className="cost-list">
-                      {Object.entries(benefitCosts).map(([type, value]) => (
-                        <div key={type}>
-                          <span>{type.replaceAll("_", " ")}</span>
-                          <strong>{money(value)}</strong>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <EmptyState
-                      title="Sem custos nesta competência"
-                      description="Nenhum lançamento de benefício foi encontrado para o período."
-                    />
-                  )}
-                </section>
-              </div>
-              <section className="panel dashboard-hidden">
-                <h2>Atividades recentes</h2>
-                {(data.atividades as Row[]).map((row) => (
-                  <div className="activity" key={String(row.id)}>
-                    <strong>
-                      {display(row.acao)} · {display(row.entidade)}
-                    </strong>
-                    <span>
-                      {display(row.usuario)} · {formatDate(row.criadoEm)}
-                    </span>
-                  </div>
-                ))}
+                ) : (
+                  <EmptyState
+                    title="Sem categorias aplicáveis"
+                    description="Não há adesões de benefício vigentes nesta competência."
+                  />
+                )}
               </section>
             </>
           </RefreshingContent>

@@ -130,6 +130,13 @@ test("erro de negócio permanece na tela sem encerrar a sessão", async ({
   const db = new PrismaClient({ datasourceUrl: testDatabaseUrl() });
   const { user, password } = await credentials(db);
   try {
+    const unit = await db.unidade.create({
+      data: {
+        nome: `Unidade formulário ${user.id}`,
+        sigla: user.id.slice(0, 8),
+        uf: "RJ",
+      },
+    });
     await page.goto("/");
     await login(page, user.email, password);
     await page.getByRole("button", { name: "Pessoas", exact: true }).click();
@@ -137,6 +144,8 @@ test("erro de negócio permanece na tela sem encerrar a sessão", async ({
     const form = page.locator(".form-panel");
     await form.getByLabel("Nome completo *").fill("Pessoa inválida");
     await form.getByLabel("CPF").fill("123");
+    await form.getByLabel("Unidade *").selectOption(unit.id);
+    await form.getByLabel("Admissão *").fill("2026-01-01");
     await form.getByRole("button", { name: "Salvar", exact: true }).click();
     await expect(form.getByText("Confira os campos informados.")).toBeVisible();
     await expect(page.locator(".shell")).toBeVisible();
@@ -153,7 +162,7 @@ test("401 no download também encerra o estado autenticado", async ({
   try {
     await page.goto("/");
     await login(page, user.email, password);
-    await page.getByRole("button", { name: "Relatórios", exact: true }).click();
+    await page.goto("/app/relatorios");
     await expect(
       page.getByRole("heading", { name: "Relatórios" }),
     ).toBeVisible();

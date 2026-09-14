@@ -3,6 +3,7 @@ import type { PrismaClient } from "@duali/database";
 import { listSchema, z } from "@duali/shared";
 import { benefitAlerts } from "./benefits.js";
 import { internshipAlerts } from "./internship.js";
+import { resolveDocumentCycle } from "./internship-cycle.js";
 import { leaveAlerts } from "./leave.js";
 
 const querySchema = listSchema.extend({
@@ -60,7 +61,11 @@ export async function allPendings(db: PrismaClient): Promise<PendingItem[]> {
       benefitAlerts(db),
       db.vinculo.findMany({
         where: { status: "ATIVO" },
-        include: { pessoa: true },
+        include: {
+          pessoa: true,
+          estagio: true,
+          documentos: true,
+        },
         orderBy: { dataAdmissao: "desc" },
       }),
     ],
@@ -104,7 +109,13 @@ export async function allPendings(db: PrismaClient): Promise<PendingItem[]> {
       alert.tipo === "BENEFICIO"
         ? "AJUSTE_BENEFICIO_PENDENTE"
         : alert.tipo === "DOCUMENTO"
-          ? "DOCUMENTO_VENCIDO"
+          ? alert.mensagem.includes("aguardando assinatura")
+            ? "TCE_ADITIVO_AGUARDANDO_ASSINATURA"
+            : alert.mensagem.includes("vencido")
+              ? "TCE_ADITIVO_VENCIDO"
+              : alert.mensagem.includes("não informada")
+                ? "DOCUMENTO_VIGENCIA_INCOMPLETA"
+                : "TCE_ADITIVO_VENCENDO"
           : alert.tipo === "DESCANSO" &&
               alert.mensagem.toLowerCase().includes("negativo")
             ? "SALDO_NEGATIVO"
@@ -125,9 +136,91 @@ export async function allPendings(db: PrismaClient): Promise<PendingItem[]> {
       origem: module,
       descricao: alert.mensagem,
       ...(alert.prazo instanceof Date ? { prazo: alert.prazo } : {}),
-      href: alert.vinculoId
-        ? `/app/pessoas?vinculoId=${alert.vinculoId}`
-        : "/app/pendencias",
+      href: (() => {
+        const link = activeLinks.find((item) => item.id === alert.vinculoId);
+        return link
+          ? `/app/pessoas/${link.pessoaId}?tab=documentos&vinculoId=${link.id}&documentoId=${alert.id ?? ""}`
+          : "/app/pendencias";
+      })(),
+    });
+  }
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  for (const link of activeLinks) {
+    if (link.tipo !== "ESTAGIO") continue;
+    const cycle = resolveDocumentCycle(link.documentos);
+    if (cycle.sobreposto)
+      result.push({
+        id: `documento:${link.id}:sobreposto`,
+        codigo: "DOCUMENTO_VIGENCIA_SOBREPOSTA",
+        severidade: "ATENCAO",
+        modulo: "ESTAGIO",
+        pessoa: link.pessoa.nomeCompleto,
+        pessoaId: link.pessoaId,
+        unidadeId: link.unidadeId,
+        status: "ABERTA",
+        origem: "Ciclo documental",
+        descricao: "Há mais de um TCE/aditivo vigente na mesma data.",
+        href: `/app/pessoas/${link.pessoaId}?tab=documentos&vinculoId=${link.id}`,
+      });
+    if (cycle.vencidoSemSucessor)
+      result.push({
+        id: `documento:${link.id}:nao-renovado`,
+        codigo: "TCE_ADITIVO_NAO_RENOVADO",
+        severidade: "ATENCAO",
+        modulo: "ESTAGIO",
+        pessoa: link.pessoa.nomeCompleto,
+        pessoaId: link.pessoaId,
+        unidadeId: link.unidadeId,
+        status: "ABERTA",
+        origem: "Ciclo documental",
+        descricao: "O ciclo de TCE/aditivo venceu sem sucessor planejado.",
+        href: `/app/pessoas/${link.pessoaId}?tab=documentos&vinculoId=${link.id}`,
+      });
+    if (!link.estagio?.instituicaoEnsinoId)
+      result.push({
+        id: `estagio:${link.id}:instituicao`,
+        codigo: "INSTITUICAO_ESTAGIO_NAO_INFORMADA",
+        severidade: "REVISAO",
+        modulo: "ESTAGIO",
+        pessoa: link.pessoa.nomeCompleto,
+        pessoaId: link.pessoaId,
+        unidadeId: link.unidadeId,
+        status: "ABERTA",
+        origem: "Cadastro de estágio",
+        descricao: "Instituição de ensino não informada.",
+        href: `/app/pessoas/${link.pessoaId}?tab=vinculo&vinculoId=${link.id}`,
+      });
+    const end = link.estagio?.dataTerminoPrevista;
+    if (!end) continue;
+    const days = Math.ceil((end.getTime() - today.getTime()) / 86400000);
+    const code =
+      days < 0
+        ? "CONTRATO_TERMINO_ULTRAPASSADO"
+        : days <= 30
+          ? "CONTRATO_TERMINANDO_30_DIAS"
+          : days <= 60
+            ? "CONTRATO_TERMINANDO_60_DIAS"
+            : days <= 90
+              ? "CONTRATO_TERMINANDO_90_DIAS"
+              : null;
+    if (!code) continue;
+    result.push({
+      id: `vinculo:${link.id}:${code}`,
+      codigo: code,
+      severidade: days <= 30 ? "CRITICA" : "ATENCAO",
+      modulo: "ESTAGIO",
+      pessoa: link.pessoa.nomeCompleto,
+      pessoaId: link.pessoaId,
+      unidadeId: link.unidadeId,
+      status: "ABERTA",
+      origem: "Contrato de estágio",
+      descricao:
+        days < 0
+          ? "O término previsto do contrato foi ultrapassado."
+          : `O término previsto do contrato ocorre em ${days} dia(s).`,
+      prazo: end,
+      href: `/app/pessoas/${link.pessoaId}?tab=vinculo&vinculoId=${link.id}`,
     });
   }
   const byPerson = new Map<string, typeof activeLinks>();
