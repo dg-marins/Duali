@@ -47,7 +47,9 @@ function linkFilters(
     ...(includeStatus && query.status
       ? { status: query.status as "ATIVO" | "AFASTADO" | "DESLIGADO" }
       : {}),
-    ...(query.tipo ? { tipo: query.tipo as "CLT" | "ESTAGIO" } : {}),
+    ...(query.tipo
+      ? { tipo: query.tipo as "CLT" | "ESTAGIO" | "APRENDIZ" | "TRAINEE" }
+      : {}),
   };
 }
 
@@ -178,12 +180,14 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
             beneficios: {
               include: {
                 configuracaoRecorrente: { include: { fornecedor: true } },
-                transporteItens: { include: { cartaoTransporte: true } },
+                transporteItens: {
+                  include: { fornecedor: true },
+                },
                 competencias: {
                   include: {
                     configuracao: { include: { fornecedor: true } },
                     ajustes: { include: { distribuicoes: true } },
-                    transporteItens: { include: { cartaoTransporte: true } },
+                    transporteItens: { include: { fornecedor: true } },
                     aquisicaoItens: {
                       include: { aquisicao: true, movimentacoes: true },
                     },
@@ -359,6 +363,7 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
         where,
         include: {
           ajustes: true,
+          transporteItens: { include: { fornecedor: true } },
           configuracao: { include: { fornecedor: true } },
           beneficioVinculo: {
             include: {
@@ -374,6 +379,11 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
       }),
       db.beneficioCompetencia.count({ where }),
     ]);
-    return { items, total, page: query.page, pageSize: query.pageSize };
+    return {
+      items: items.map((item) => benefitCalculation(item)),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   });
 }

@@ -66,6 +66,80 @@ test("internship records, renewals and expiry alerts preserve history", async ()
       },
     });
     expect(invalid.statusCode).toBe(422);
+    const pendingDistrato = await f.app.inject({
+      method: "POST",
+      url: "/api/documentos",
+      headers: f.headers,
+      payload: {
+        vinculoId: v.id,
+        tipo: "DISTRATO",
+        dataReferencia: "2026-01-15",
+        status: "PENDENTE",
+      },
+    });
+    expect(pendingDistrato.statusCode, pendingDistrato.body).toBe(201);
+    expect(
+      await f.db.vinculo.findUnique({ where: { id: v.id } }),
+    ).toMatchObject({ status: "ATIVO", dataDesligamento: null });
+    const distrato = await f.app.inject({
+      method: "POST",
+      url: "/api/documentos",
+      headers: f.headers,
+      payload: {
+        vinculoId: v.id,
+        tipo: "DISTRATO",
+        dataReferencia: "2026-02-01",
+        status: "VIGENTE",
+      },
+    });
+    expect(distrato.statusCode, distrato.body).toBe(201);
+    expect(
+      await f.db.vinculo.findUnique({ where: { id: v.id } }),
+    ).toMatchObject({
+      status: "DESLIGADO",
+      dataDesligamento: new Date("2026-02-01"),
+    });
+    const secondDistrato = await f.app.inject({
+      method: "POST",
+      url: "/api/documentos",
+      headers: f.headers,
+      payload: {
+        vinculoId: v.id,
+        tipo: "DISTRATO",
+        dataReferencia: "2026-02-02",
+        status: "VIGENTE",
+      },
+    });
+    expect(secondDistrato.statusCode, secondDistrato.body).toBe(409);
+    const genericCancel = await f.app.inject({
+      method: "PUT",
+      url: `/api/documentos/${distrato.json<{ id: string }>().id}`,
+      headers: f.headers,
+      payload: {
+        vinculoId: v.id,
+        tipo: "DISTRATO",
+        numero: null,
+        dataReferencia: "2026-02-01",
+        inicioVigencia: null,
+        fimVigencia: null,
+        status: "CANCELADO",
+        observacoes: null,
+      },
+    });
+    expect(genericCancel.statusCode, genericCancel.body).toBe(409);
+    const revert = await f.app.inject({
+      method: "POST",
+      url: `/api/documentos/${distrato.json<{ id: string }>().id}/reverter-distrato`,
+      headers: f.headers,
+      payload: { motivo: "Registro lançado em duplicidade" },
+    });
+    expect(revert.statusCode, revert.body).toBe(200);
+    expect(
+      await f.db.vinculo.findUnique({ where: { id: v.id } }),
+    ).toMatchObject({
+      status: "ATIVO",
+      dataDesligamento: null,
+    });
   } finally {
     await f.app.close();
   }

@@ -91,7 +91,7 @@ test("operational people search, current link, profile and audit filters", async
       expect(response.json<{ total: number }>().total).toBe(1);
     }
     const textSearch = await f.app.inject({
-      url: "/api/pessoas-operacional?q=Perfil%20operacional",
+      url: `/api/pessoas-operacional?q=${encodeURIComponent(`Perfil operacional ${f.suffix}`)}`,
       headers: f.headers,
     });
     expect(
@@ -133,7 +133,7 @@ test("operational people search, current link, profile and audit filters", async
     expect(interns.json<{ total: number }>().total).toBe(1);
 
     const audit = await f.app.inject({
-      url: "/api/auditoria?entidade=pessoa&acao=criar",
+      url: `/api/auditoria?entidade=pessoa&acao=criar&usuarioId=${f.user.id}`,
       headers: f.headers,
     });
     expect(audit.statusCode, audit.body).toBe(200);

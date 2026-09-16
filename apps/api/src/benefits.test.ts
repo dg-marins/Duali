@@ -28,6 +28,66 @@ test("batch validation keeps missing monetary values explicit and accepts Brazil
   });
   expect(parsed.itens[0]?.valorDiario).toBe(10.5);
 });
+
+test("benefit closure preserves the enrollment and records an audit trail", async () => {
+  const f = await fixture();
+  try {
+    const person = await f.db.pessoa.create({
+      data: { nomeCompleto: `Pessoa encerramento ${f.suffix}` },
+    });
+    const unit = await f.db.unidade.create({
+      data: {
+        nome: `Unidade encerramento ${f.suffix}`,
+        sigla: f.suffix.slice(0, 8),
+        uf: "RJ",
+      },
+    });
+    const link = await f.db.vinculo.create({
+      data: {
+        pessoaId: person.id,
+        unidadeId: unit.id,
+        tipo: "CLT",
+        dataAdmissao: new Date("2026-01-01"),
+      },
+    });
+    const benefit = await f.db.beneficioVinculo.create({
+      data: {
+        vinculoId: link.id,
+        tipo: "ALIMENTACAO",
+        inicioVigencia: new Date("2026-01-01"),
+        status: "ATIVO",
+      },
+    });
+
+    const response = await f.app.inject({
+      method: "POST",
+      url: `/api/beneficios-vinculo/${benefit.id}/encerrar`,
+      headers: f.headers,
+      payload: { fimVigencia: "2026-03-31", motivo: "Fim da elegibilidade" },
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(
+      await f.db.beneficioVinculo.findUniqueOrThrow({
+        where: { id: benefit.id },
+      }),
+    ).toMatchObject({
+      status: "ENCERRADO",
+      fimVigencia: new Date("2026-03-31T00:00:00.000Z"),
+    });
+    expect(
+      await f.db.auditoria.count({
+        where: {
+          entidade: "beneficioVinculo",
+          entidadeId: benefit.id,
+          acao: "ENCERRAR_BENEFICIO",
+        },
+      }),
+    ).toBe(1);
+  } finally {
+    await f.app.close();
+  }
+});
 test("benefit amounts use decimal arithmetic and retain discrepancies", () => {
   const result = benefitCalculation({
     quantidadeDias: "3",
@@ -75,9 +135,6 @@ test("transport adjustment requires an explicit distribution that totals the adj
         inicioVigencia: new Date("2025-01-01"),
       },
     });
-    const card = await f.db.cartaoTransporte.findFirstOrThrow({
-      where: { ativo: true },
-    });
     const competence = await f.db.beneficioCompetencia.create({
       data: {
         beneficioVinculoId: benefit.id,
@@ -90,7 +147,7 @@ test("transport adjustment requires an explicit distribution that totals the adj
       data: {
         competenciaId: competence.id,
         tipoConducao: "ONIBUS",
-        cartaoTransporteId: card.id,
+        fornecedorId: supplier.id,
         valorDiario: "10.00",
       },
     });
@@ -331,7 +388,7 @@ test("benefit closing is scoped by month and unit and requires audited reopening
   }
 });
 
-test("structured transport snapshots calculate by card and conduction with Decimal arithmetic", async () => {
+test("structured transport snapshots calculate by supplier and conduction with Decimal arithmetic", async () => {
   const f = await fixture();
   try {
     const person = await f.db.pessoa.create({
@@ -355,10 +412,20 @@ test("structured transport snapshots calculate by card and conduction with Decim
     const supplier = await f.db.fornecedor.create({
       data: { nome: `Fornecedor transporte ${f.suffix}` },
     });
+    const secondSupplier = await f.db.fornecedor.create({
+      data: { nome: `Segundo fornecedor transporte ${f.suffix}` },
+    });
     const config = await f.db.configuracaoBeneficio.create({
       data: {
         unidadeId: unit.id,
         fornecedorId: supplier.id,
+        tipo: "TRANSPORTE",
+      },
+    });
+    await f.db.configuracaoBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        fornecedorId: secondSupplier.id,
         tipo: "TRANSPORTE",
       },
     });
@@ -369,11 +436,6 @@ test("structured transport snapshots calculate by card and conduction with Decim
         inicioVigencia: new Date("2025-01-01"),
       },
     });
-    const cards = await f.db.cartaoTransporte.findMany({
-      where: { nome: { in: ["RioCard", "JAÉ"] } },
-    });
-    const rio = cards.find((card) => card.nome === "RioCard")!;
-    const jae = cards.find((card) => card.nome === "JAÉ")!;
     const items = await f.app.inject({
       method: "PUT",
       url: `/api/beneficios-vinculo/${benefit.id}/transporte`,
@@ -382,19 +444,19 @@ test("structured transport snapshots calculate by card and conduction with Decim
         items: [
           {
             tipoConducao: "ONIBUS",
-            cartaoTransporteId: rio.id,
+            fornecedorId: supplier.id,
             valorDiario: 11.2,
             inicioVigencia: "2026-01-01",
           },
           {
             tipoConducao: "BARCA",
-            cartaoTransporteId: rio.id,
+            fornecedorId: supplier.id,
             valorDiario: 9.4,
             inicioVigencia: "2026-01-01",
           },
           {
             tipoConducao: "METRO",
-            cartaoTransporteId: jae.id,
+            fornecedorId: secondSupplier.id,
             valorDiario: 15.8,
             inicioVigencia: "2026-01-01",
           },
@@ -417,21 +479,57 @@ test("structured transport snapshots calculate by card and conduction with Decim
     const result = response.json<{
       transporteTotalDiario: string;
       transporteTotalMensal: string;
-      transportePorCartaoDiario: Record<string, string>;
-      transportePorCartaoMensal: Record<string, string>;
       transportePorConducaoDiario: Record<string, string>;
+      transportePorFornecedorDiario: Record<string, string>;
+      transportePorFornecedorMensal: Record<string, string>;
     }>();
     expect(result.transporteTotalDiario).toBe("36.40");
     expect(result.transporteTotalMensal).toBe("800.80");
-    expect(result.transportePorCartaoDiario.RioCard).toBe("20.60");
-    expect(result.transportePorCartaoMensal.RioCard).toBe("453.20");
-    expect(result.transportePorCartaoMensal["JAÉ"]).toBe("347.60");
     expect(result.transportePorConducaoDiario.ONIBUS).toBe("11.20");
+    expect(result.transportePorFornecedorDiario[supplier.nome]).toBe("20.60");
+    expect(result.transportePorFornecedorMensal[supplier.nome]).toBe("453.20");
+    expect(result.transportePorFornecedorDiario[secondSupplier.nome]).toBe(
+      "15.80",
+    );
+    expect(result.transportePorFornecedorMensal[secondSupplier.nome]).toBe(
+      "347.60",
+    );
     expect(
       await f.db.auditoria.count({
         where: { entidade: "beneficioTransporteItem" },
       }),
     ).toBeGreaterThanOrEqual(3);
+    const beforeAtomicAttempt = await f.db.beneficioVinculo.count({
+      where: { vinculoId: link.id, tipo: "TRANSPORTE" },
+    });
+    const failedAtomicConfiguration = await f.app.inject({
+      method: "POST",
+      url: "/api/configuracoes-transporte",
+      headers: f.headers,
+      payload: {
+        beneficio: {
+          vinculoId: link.id,
+          tipo: "TRANSPORTE",
+          inicioVigencia: "2027-01-01",
+          status: "ATIVO",
+        },
+        items: [
+          {
+            tipoConducao: "ONIBUS",
+            fornecedorId: "11111111-1111-4111-8111-111111111111",
+            valorDiario: 10,
+            inicioVigencia: "2027-01-01",
+            ativo: true,
+          },
+        ],
+      },
+    });
+    expect(failedAtomicConfiguration.statusCode).toBe(422);
+    expect(
+      await f.db.beneficioVinculo.count({
+        where: { vinculoId: link.id, tipo: "TRANSPORTE" },
+      }),
+    ).toBe(beforeAtomicAttempt);
   } finally {
     await f.app.close();
   }
@@ -672,6 +770,160 @@ test("batch benefit registration preserves history and prepares non-daily acquis
         where: { acao: "CADASTRAR_BENEFICIO_EM_LOTE" },
       }),
     ).toBeGreaterThanOrEqual(2);
+  } finally {
+    await f.app.close();
+  }
+});
+
+test("monthly benefit can be edited, checked and cancelled without changing its enrollment", async () => {
+  const f = await fixture();
+  try {
+    const person = await f.db.pessoa.create({
+      data: { nomeCompleto: "Pessoa competência operacional" },
+    });
+    const unit = await f.db.unidade.create({
+      data: {
+        nome: "Unidade competência",
+        sigla: f.suffix.slice(0, 8),
+        uf: "RJ",
+      },
+    });
+    const link = await f.db.vinculo.create({
+      data: {
+        pessoaId: person.id,
+        unidadeId: unit.id,
+        tipo: "CLT",
+        dataAdmissao: new Date("2025-01-01"),
+      },
+    });
+    const supplier = await f.db.fornecedor.create({
+      data: { nome: `Fornecedor competência ${f.suffix}` },
+    });
+    const config = await f.db.configuracaoBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        fornecedorId: supplier.id,
+        tipo: "ALIMENTACAO",
+      },
+    });
+    const benefit = await f.db.beneficioVinculo.create({
+      data: {
+        vinculoId: link.id,
+        tipo: "ALIMENTACAO",
+        inicioVigencia: new Date("2026-01-01"),
+        configuracaoRecorrenteId: config.id,
+        valorDiario: "10.50",
+      },
+    });
+    const competence = await f.db.beneficioCompetencia.create({
+      data: {
+        beneficioVinculoId: benefit.id,
+        configuracaoId: config.id,
+        componente: "__RECORRENTE__",
+        competencia: new Date("2026-09-01"),
+        quantidadeDias: 20,
+        valorUnitario: "10.50",
+      },
+    });
+    const checked = await f.app.inject({
+      method: "POST",
+      url: `/api/competencias/${competence.id}/conferir`,
+      headers: f.headers,
+      payload: {},
+    });
+    expect(checked.statusCode, checked.body).toBe(200);
+    expect(checked.json<{ status: string }>().status).toBe("CONFERIDO");
+
+    const edited = await f.app.inject({
+      method: "PUT",
+      url: `/api/competencias/${competence.id}`,
+      headers: f.headers,
+      payload: {
+        beneficioVinculoId: benefit.id,
+        configuracaoId: config.id,
+        componente: "__RECORRENTE__",
+        competencia: "2026-09-01",
+        quantidadeDias: "21",
+        quantidade: null,
+        valorUnitario: "10,50",
+        valorInformado: null,
+        status: "CONFERIDO",
+        observacoes: "Revisado pelo RH",
+      },
+    });
+    expect(edited.statusCode, edited.body).toBe(200);
+    expect(edited.json<{ status: string }>().status).toBe("PENDENTE");
+
+    const cancelled = await f.app.inject({
+      method: "POST",
+      url: `/api/competencias/${competence.id}/cancelar`,
+      headers: f.headers,
+      payload: {},
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(cancelled.json<{ status: string }>().status).toBe("CANCELADO");
+    expect(
+      await f.db.beneficioVinculo.count({ where: { id: benefit.id } }),
+    ).toBe(1);
+    expect(
+      await f.db.auditoria.count({
+        where: {
+          entidade: "beneficioCompetencia",
+          entidadeId: competence.id,
+          acao: {
+            in: [
+              "CONFERIR_COMPETENCIA_BENEFICIO",
+              "CANCELAR_COMPETENCIA_BENEFICIO",
+            ],
+          },
+        },
+      }),
+    ).toBe(2);
+
+    const overlapping = await f.app.inject({
+      method: "POST",
+      url: "/api/beneficios-vinculo",
+      headers: f.headers,
+      payload: {
+        vinculoId: link.id,
+        tipo: "ALIMENTACAO",
+        inicioVigencia: "2026-06-01",
+        fimVigencia: null,
+        status: "ATIVO",
+        configuracaoRecorrenteId: config.id,
+        valorDiario: "12.00",
+        quantidadeRecorrente: null,
+        valorUnitarioRecorrente: null,
+        observacoes: null,
+      },
+    });
+    expect(overlapping.statusCode, overlapping.body).toBe(409);
+
+    await f.db.fechamentoCompetenciaBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        competencia: competence.competencia,
+        status: "FECHADA",
+      },
+    });
+    const protectedEnrollment = await f.app.inject({
+      method: "PUT",
+      url: `/api/beneficios-vinculo/${benefit.id}`,
+      headers: f.headers,
+      payload: {
+        vinculoId: link.id,
+        tipo: "ALIMENTACAO",
+        inicioVigencia: "2026-01-01",
+        fimVigencia: null,
+        status: "ATIVO",
+        configuracaoRecorrenteId: config.id,
+        valorDiario: "12.00",
+        quantidadeRecorrente: null,
+        valorUnitarioRecorrente: null,
+        observacoes: null,
+      },
+    });
+    expect(protectedEnrollment.statusCode, protectedEnrollment.body).toBe(409);
   } finally {
     await f.app.close();
   }

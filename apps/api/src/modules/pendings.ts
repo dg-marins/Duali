@@ -105,8 +105,13 @@ export async function allPendings(db: PrismaClient): Promise<PendingItem[]> {
         : alert.tipo === "DESCANSO"
           ? "DESCANSO"
           : "ESTAGIO";
+    const explicitCode =
+      "codigo" in alert && typeof alert.codigo === "string"
+        ? alert.codigo
+        : undefined;
     const code =
-      alert.tipo === "BENEFICIO"
+      explicitCode ??
+      (alert.tipo === "BENEFICIO"
         ? "AJUSTE_BENEFICIO_PENDENTE"
         : alert.tipo === "DOCUMENTO"
           ? alert.mensagem.includes("aguardando assinatura")
@@ -119,11 +124,19 @@ export async function allPendings(db: PrismaClient): Promise<PendingItem[]> {
           : alert.tipo === "DESCANSO" &&
               alert.mensagem.toLowerCase().includes("negativo")
             ? "SALDO_NEGATIVO"
-            : "REFERENCIA_NAO_ENCONTRADA";
+            : "REFERENCIA_NAO_ENCONTRADA");
     result.push({
       id: `${module.toLowerCase()}:${alert.id ?? alert.vinculoId}:${code}`,
       codigo: code,
-      severidade: code === "SALDO_NEGATIVO" ? "CRITICA" : "ATENCAO",
+      severidade:
+        "severidade" in alert &&
+        ["CRITICA", "ATENCAO", "REVISAO", "INFORMATIVA"].includes(
+          String(alert.severidade),
+        )
+          ? (alert.severidade as PendingItem["severidade"])
+          : code === "SALDO_NEGATIVO"
+            ? "CRITICA"
+            : "ATENCAO",
       modulo: module,
       ...(typeof alert.pessoa === "string" ? { pessoa: alert.pessoa } : {}),
       ...(typeof alert.unidadeId === "string"
@@ -139,7 +152,7 @@ export async function allPendings(db: PrismaClient): Promise<PendingItem[]> {
       href: (() => {
         const link = activeLinks.find((item) => item.id === alert.vinculoId);
         return link
-          ? `/app/pessoas/${link.pessoaId}?tab=documentos&vinculoId=${link.id}&documentoId=${alert.id ?? ""}`
+          ? `/app/pessoas/${link.pessoaId}?tab=${module === "DESCANSO" ? "descanso" : "documentos"}&vinculoId=${link.id}&documentoId=${alert.id ?? ""}`
           : "/app/pendencias";
       })(),
     });
@@ -263,7 +276,7 @@ export function registerPendings(app: FastifyInstance, db: PrismaClient) {
         (!q.unidadeId || item.unidadeId === q.unidadeId) &&
         (!q.equipeId || item.equipeId === q.equipeId) &&
         (!q.q ||
-          `${item.pessoa ?? ""} ${item.descricao} ${item.codigo}`
+          `${item.pessoa ?? ""} ${item.origem} ${item.descricao} ${item.codigo}`
             .toLowerCase()
             .includes(q.q.toLowerCase())),
     );

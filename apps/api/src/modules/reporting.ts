@@ -37,7 +37,9 @@ function linkWhere(q: Query): Prisma.VinculoWhereInput {
       ? { status: z.enum(["ATIVO", "AFASTADO", "DESLIGADO"]).parse(q.status) }
       : {}),
     ...(q.tipo
-      ? { tipo: z.enum(["CLT", "ESTAGIO", "APRENDIZ"]).parse(q.tipo) }
+      ? {
+          tipo: z.enum(["CLT", "ESTAGIO", "APRENDIZ", "TRAINEE"]).parse(q.tipo),
+        }
       : {}),
     ...(q.q
       ? { pessoa: { nomeCompleto: { contains: q.q, mode: "insensitive" } } }
@@ -75,21 +77,22 @@ export async function report(
             vinculo: { include: { pessoa: true, unidade: true, equipe: true } },
           },
         },
-        transporteItens: { include: { cartaoTransporte: true } },
+        transporteItens: {
+          include: { fornecedor: true },
+        },
       },
       orderBy: { competencia: "desc" },
       take: 10001,
     });
-    rows = records.map((r) => {
+    rows = records.flatMap((r) => {
       const v = r.beneficioVinculo.vinculo,
         c = benefitCalculation(r);
-      return {
+      const common = {
         Pessoa: v.pessoa.nomeCompleto,
         Unidade: v.unidade.nome,
         Equipe: v.equipe?.nome ?? "",
         Vínculo: v.tipo,
         Benefício: r.beneficioVinculo.tipo,
-        Fornecedor: r.configuracao.fornecedor.nome,
         Componente: r.componente,
         Competência: r.competencia.toISOString().slice(0, 10),
         Dias: r.quantidadeDias?.toString() ?? "",
@@ -102,6 +105,42 @@ export async function report(
         Status: r.status,
         Observações: r.observacoes ?? "",
       };
+      if (r.beneficioVinculo.tipo !== "TRANSPORTE")
+        return [
+          {
+            ...common,
+            Fornecedor: r.configuracao.fornecedor.nome,
+            Condução: "",
+            "Valor diário": "",
+            "Total mensal do item": "",
+          },
+        ];
+      if (!r.transporteItens.length)
+        return [
+          {
+            ...common,
+            Fornecedor: "Revisão pendente",
+            Condução: "",
+            "Valor diário": "",
+            "Total mensal do item": "",
+          },
+        ];
+      return r.transporteItens.map((item) => {
+        const itemMonthly = item.valorDiario
+          .times(r.quantidadeDias ?? 0)
+          .toDecimalPlaces(2)
+          .toFixed(2);
+        return {
+          ...common,
+          Fornecedor: item.fornecedor?.nome ?? "Revisão pendente",
+          Condução: item.tipoConducao,
+          "Valor diário": item.valorDiario.toFixed(2),
+          "Total mensal do item": itemMonthly,
+          "Valor calculado": itemMonthly,
+          Ajustes: "",
+          Divergência: "",
+        };
+      });
     });
   } else if (kind === "aquisicoes-beneficios") {
     const purchases = await db.aquisicaoBeneficio.findMany({
@@ -112,7 +151,6 @@ export async function report(
       include: {
         unidade: true,
         fornecedor: true,
-        cartaoTransporte: true,
         itens: { include: { movimentacoes: true } },
       },
       orderBy: { competencia: "desc" },
@@ -139,7 +177,6 @@ export async function report(
           Competência: purchase.competencia.toISOString().slice(0, 10),
           Benefício: purchase.tipo,
           Fornecedor: purchase.fornecedor.nome,
-          Cartão: purchase.cartaoTransporte?.nome ?? "",
           Destino: item.destino,
           Previsto: item.valorPrevisto.toFixed(2),
           Reservado: item.valorReservado.toFixed(2),
@@ -282,6 +319,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
         : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const benefitWhere = {
       competencia: competence,
+      status: { not: "CANCELADO" as const },
       beneficioVinculo: { vinculo: where },
     } satisfies Prisma.BeneficioCompetenciaWhereInput;
     const [
@@ -289,6 +327,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       clt,
       estagios,
       aprendizes,
+      trainees,
       alerts,
       imports,
       pendings,
@@ -305,6 +344,9 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       db.vinculo.count({
         where: { ...where, tipo: "APRENDIZ", status: "ATIVO" },
       }),
+      db.vinculo.count({
+        where: { ...where, tipo: "TRAINEE", status: "ATIVO" },
+      }),
       operationalAlerts(db),
       db.importacao.count({
         where: { status: { in: ["UPLOAD", "REVISAO", "PARCIAL"] } },
@@ -313,10 +355,12 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       db.beneficioCompetencia.findMany({
         where: benefitWhere,
         include: {
-          ajustes: true,
-          configuracao: true,
-          beneficioVinculo: true,
-          transporteItens: true,
+          ajustes: { include: { distribuicoes: true } },
+          configuracao: { include: { fornecedor: true } },
+          beneficioVinculo: {
+            include: { vinculo: { include: { unidade: true } } },
+          },
+          transporteItens: { include: { fornecedor: true } },
         },
       }),
       monthlyReadiness(db, competence, q.unidadeId),
@@ -371,12 +415,115 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
           divergences: 0,
         },
       );
+    const readinessByUnitAndType = new Map(
+        readiness.map((item) => [
+          `${item.unidadeId}:${item.tipo}`,
+          item.estado,
+        ]),
+      ),
+      preparationGroups = new Map<
+        string,
+        {
+          unidadeId: string;
+          unidade: string;
+          tipo: string;
+          fornecedorId: string;
+          fornecedor: string;
+          estado: string;
+          valorPrevisto: Prisma.Decimal;
+        }
+      >();
+    const addPreparationValue = (
+      row: (typeof benefits)[number],
+      supplierId: string | null,
+      supplierName: string | null,
+      value: Prisma.Decimal,
+    ) => {
+      if (!supplierId || !supplierName || value.isZero()) return;
+      const unit = row.beneficioVinculo.vinculo.unidade,
+        type = row.beneficioVinculo.tipo,
+        key = `${unit.id}:${type}:${supplierId}`,
+        current = preparationGroups.get(key);
+      if (current) current.valorPrevisto = current.valorPrevisto.plus(value);
+      else
+        preparationGroups.set(key, {
+          unidadeId: unit.id,
+          unidade: unit.nome,
+          tipo: type,
+          fornecedorId: supplierId,
+          fornecedor: supplierName,
+          estado:
+            readinessByUnitAndType.get(`${unit.id}:${type}`) ?? "NAO_PREPARADA",
+          valorPrevisto: value,
+        });
+    };
+    for (const row of benefits) {
+      if (row.beneficioVinculo.tipo !== "TRANSPORTE") {
+        addPreparationValue(
+          row,
+          row.configuracao.fornecedorId,
+          row.configuracao.fornecedor.nome,
+          new Prisma.Decimal(String(benefitCalculation(row).valorFinal ?? 0)),
+        );
+        continue;
+      }
+      const days = new Prisma.Decimal(row.quantidadeDias ?? 0),
+        itemsById = new Map(row.transporteItens.map((item) => [item.id, item])),
+        valuesBySupplier = new Map<
+          string,
+          { nome: string; valor: Prisma.Decimal }
+        >();
+      for (const item of row.transporteItens) {
+        if (!item.fornecedorId || !item.fornecedor) continue;
+        const current = valuesBySupplier.get(item.fornecedorId) ?? {
+          nome: item.fornecedor.nome,
+          valor: new Prisma.Decimal(0),
+        };
+        current.valor = current.valor.plus(item.valorDiario.times(days));
+        valuesBySupplier.set(item.fornecedorId, current);
+      }
+      for (const adjustment of row.ajustes)
+        for (const distribution of adjustment.distribuicoes) {
+          const item = itemsById.get(distribution.transporteCompetenciaItemId);
+          if (!item?.fornecedorId || !item.fornecedor) continue;
+          const current = valuesBySupplier.get(item.fornecedorId) ?? {
+            nome: item.fornecedor.nome,
+            valor: new Prisma.Decimal(0),
+          };
+          current.valor = current.valor.plus(
+            adjustment.tipo === "CREDITO"
+              ? distribution.valor
+              : distribution.valor.negated(),
+          );
+          valuesBySupplier.set(item.fornecedorId, current);
+        }
+      for (const [supplierId, item] of valuesBySupplier)
+        addPreparationValue(
+          row,
+          supplierId,
+          item.nome,
+          item.valor.toDecimalPlaces(2),
+        );
+    }
+    const monthlyPreparation = [...preparationGroups.values()]
+      .filter((item) => !item.valorPrevisto.isZero())
+      .sort(
+        (left, right) =>
+          left.unidade.localeCompare(right.unidade, "pt-BR") ||
+          left.tipo.localeCompare(right.tipo, "pt-BR") ||
+          right.valorPrevisto.comparedTo(left.valorPrevisto),
+      )
+      .map((item) => ({
+        ...item,
+        valorPrevisto: item.valorPrevisto.toDecimalPlaces(2).toFixed(2),
+      }));
     return {
       competencia: competence.toISOString().slice(0, 10),
       pessoasAtivas: pessoas,
       cltsAtivos: clt,
       estagiariosAtivos: estagios,
       aprendizesAtivos: aprendizes,
+      traineesAtivos: trainees,
       feriasProximas: filtered.filter(
         (a) => a.mensagem === "Prazo de férias próximo.",
       ).length,
@@ -407,6 +554,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
         CLT: clt,
         ESTAGIO: estagios,
         APRENDIZ: aprendizes,
+        TRAINEE: trainees,
       },
       custosPorBeneficio: Object.fromEntries(
         Object.entries(benefitTotals.byType).map(([type, value]) => [
@@ -415,6 +563,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
         ]),
       ),
       prontidaoMensal: readiness,
+      preparacaoMensalPorFornecedor: monthlyPreparation,
       pendenciasPrioritarias: filteredPendings.slice(0, 20),
       kpiDetalhes: {
         pendenciasCriticas: filteredPendings.filter(

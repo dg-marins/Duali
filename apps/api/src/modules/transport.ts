@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { Prisma, type PrismaClient } from "@duali/database";
 import {
-  cartaoTransporteSchema,
+  beneficioVinculoSchema,
   transporteCompetenciaSchema,
   transporteItemInputSchema,
   z,
@@ -17,17 +17,22 @@ import {
 
 const updateItemsSchema = z
   .object({
-    items: z
-      .array(
-        transporteItemInputSchema.extend({ id: z.string().uuid().optional() }),
-      )
-      .max(100),
+    items: z.array(transporteItemInputSchema).max(100),
+  })
+  .strict();
+const transportConfigurationSchema = z
+  .object({
+    beneficio: beneficioVinculoSchema.refine(
+      (value) => value.tipo === "TRANSPORTE",
+      "Informe um benefício de transporte.",
+    ),
+    items: z.array(transporteItemInputSchema).min(1).max(100),
   })
   .strict();
 const snapshotInputSchema = z
   .object({
     tipoConducao: z.enum(["ONIBUS", "ONIBUS_INTER", "BARCA", "METRO"]),
-    cartaoTransporteId: z.string().uuid(),
+    fornecedorId: z.string().uuid(),
     valorDiario: z.coerce
       .number()
       .finite()
@@ -71,11 +76,23 @@ async function benefitFor(tx: Tx, id: string) {
     throw new DomainError(422, "O benefício informado não é de transporte.");
   return benefit as Row;
 }
-async function validateCard(tx: Tx, id: string) {
-  const card = await tx.cartaoTransporte.findUnique({ where: { id } });
-  if (!card || !card.ativo)
-    throw new DomainError(422, "Selecione um cartão de transporte ativo.");
-  return card;
+async function validateSupplier(tx: Tx, benefit: Row, id: string) {
+  const config = await tx.configuracaoBeneficio.findFirst({
+    where: {
+      unidadeId: String((benefit.vinculo as Row).unidadeId),
+      tipo: "TRANSPORTE",
+      fornecedorId: id,
+      ativa: true,
+      fornecedor: { ativo: true },
+    },
+    include: { fornecedor: true },
+  });
+  if (!config)
+    throw new DomainError(
+      422,
+      "Selecione um fornecedor de transporte ativo e configurado para a unidade.",
+    );
+  return config;
 }
 async function ensureConfig(tx: Tx, benefit: Row, configuracaoId: string) {
   const config = await tx.configuracaoBeneficio.findUnique({
@@ -95,21 +112,98 @@ async function ensureConfig(tx: Tx, benefit: Row, configuracaoId: string) {
     );
   return config;
 }
+async function saveItems(
+  tx: Tx,
+  benefit: Row,
+  items: z.infer<typeof updateItemsSchema>["items"],
+  userId: string | null,
+) {
+  const id = String(benefit.id);
+  const existing = await tx.beneficioTransporteItem.findMany({
+    where: { beneficioVinculoId: id },
+  });
+  const existingIds = new Set(existing.map((item) => item.id));
+  if (items.some((item) => item.id && !existingIds.has(item.id)))
+    throw new DomainError(
+      422,
+      "O item de transporte não pertence a este benefício.",
+    );
+  const incomingIds = new Set(
+    items.flatMap((item) => (item.id ? [item.id] : [])),
+  );
+  for (const old of existing.filter(
+    (item) => item.ativo && !incomingIds.has(item.id),
+  )) {
+    const today = new Date();
+    const row = await tx.beneficioTransporteItem.update({
+      where: { id: old.id },
+      data: {
+        ativo: false,
+        fimVigencia:
+          old.inicioVigencia.getTime() > today.getTime()
+            ? old.inicioVigencia
+            : today,
+      },
+    });
+    await audit(
+      tx,
+      userId,
+      "ALTERAR",
+      "beneficioTransporteItem",
+      old.id,
+      old,
+      row,
+    );
+  }
+  const rows = [];
+  for (const item of items) {
+    await validateSupplier(tx, benefit, item.fornecedorId);
+    const data = dateData(item, ["inicioVigencia", "fimVigencia"]);
+    const before = item.id
+      ? existing.find((current) => current.id === item.id)
+      : undefined;
+    const row = item.id
+      ? await tx.beneficioTransporteItem.update({
+          where: { id: item.id },
+          data: { ...data, beneficioVinculoId: id } as never,
+          include: { fornecedor: true },
+        })
+      : await tx.beneficioTransporteItem.create({
+          data: { ...data, beneficioVinculoId: id } as never,
+          include: { fornecedor: true },
+        });
+    rows.push(row);
+    await audit(
+      tx,
+      userId,
+      item.id ? "ALTERAR" : "CRIAR",
+      "beneficioTransporteItem",
+      row.id,
+      before,
+      row,
+    );
+  }
+  return rows;
+}
 export function transportCalculation(row: Row): Row {
   const days = new Prisma.Decimal(String(row.quantidadeDias ?? 0));
   const items = (row.transporteItens ?? []) as Row[];
-  const byCard = new Map<string, Prisma.Decimal>(),
+  const bySupplier = new Map<string, Prisma.Decimal>(),
     byType = new Map<string, Prisma.Decimal>();
   let daily = new Prisma.Decimal(0);
   for (const item of items) {
     const value = new Prisma.Decimal(String(item.valorDiario));
     daily = daily.plus(value);
-    const card = String(
-      (item.cartaoTransporte as Row | undefined)?.nome ??
-        item.cartaoNome ??
-        item.cartaoTransporteId,
+    const supplier = String(
+      (item.fornecedor as Row | undefined)?.nome ??
+        item.fornecedorNome ??
+        item.fornecedorId ??
+        "Não informado",
     );
-    byCard.set(card, (byCard.get(card) ?? new Prisma.Decimal(0)).plus(value));
+    bySupplier.set(
+      supplier,
+      (bySupplier.get(supplier) ?? new Prisma.Decimal(0)).plus(value),
+    );
     const type = String(item.tipoConducao);
     byType.set(type, (byType.get(type) ?? new Prisma.Decimal(0)).plus(value));
   }
@@ -126,13 +220,13 @@ export function transportCalculation(row: Row): Row {
     ...row,
     transporteTotalDiario: daily.toFixed(2),
     transporteTotalMensal: monthly.toFixed(2),
-    transportePorCartaoDiario: Object.fromEntries(
-      [...byCard].map(([key, value]) => [key, value.toFixed(2)]),
+    transportePorFornecedorDiario: Object.fromEntries(
+      [...bySupplier].map(([key, amount]) => [key, amount.toFixed(2)]),
     ),
-    transportePorCartaoMensal: Object.fromEntries(
-      [...byCard].map(([key, value]) => [
+    transportePorFornecedorMensal: Object.fromEntries(
+      [...bySupplier].map(([key, amount]) => [
         key,
-        value.times(days).toDecimalPlaces(2).toFixed(2),
+        amount.times(days).toDecimalPlaces(2).toFixed(2),
       ]),
     ),
     transportePorConducaoDiario: Object.fromEntries(
@@ -155,56 +249,6 @@ export function transportCalculation(row: Row): Row {
   };
 }
 export function registerTransport(app: FastifyInstance, db: PrismaClient) {
-  app.get("/api/cartoes-transporte", async () =>
-    db.cartaoTransporte.findMany({
-      where: { ativo: true },
-      orderBy: { nome: "asc" },
-    }),
-  );
-  app.post("/api/cartoes-transporte", async (req, reply) => {
-    const body = cartaoTransporteSchema.parse(req.body);
-    const result = await transaction(db, async (tx) => {
-      const row = await tx.cartaoTransporte.create({ data: body });
-      await audit(
-        tx,
-        req.userId,
-        "CRIAR",
-        "cartaoTransporte",
-        row.id,
-        undefined,
-        row,
-      );
-      return row;
-    });
-    reply.code(201);
-    return result;
-  });
-  app.put("/api/cartoes-transporte/:id", async (req) => {
-    const id = z
-      .string()
-      .uuid()
-      .parse((req.params as { id: string }).id);
-    const body = cartaoTransporteSchema.parse(req.body);
-    return transaction(db, async (tx) => {
-      const before = await tx.cartaoTransporte.findUnique({ where: { id } });
-      if (!before)
-        throw new DomainError(404, "Cartão de transporte não encontrado.");
-      const row = await tx.cartaoTransporte.update({
-        where: { id },
-        data: body,
-      });
-      await audit(
-        tx,
-        req.userId,
-        "ALTERAR",
-        "cartaoTransporte",
-        id,
-        before,
-        row,
-      );
-      return row;
-    });
-  });
   app.get("/api/beneficios-vinculo/:id/transporte", async (req) => {
     const id = z
       .string()
@@ -212,7 +256,7 @@ export function registerTransport(app: FastifyInstance, db: PrismaClient) {
       .parse((req.params as { id: string }).id);
     return db.beneficioTransporteItem.findMany({
       where: { beneficioVinculoId: id },
-      include: { cartaoTransporte: true },
+      include: { fornecedor: true },
       orderBy: [{ ativo: "desc" }, { inicioVigencia: "desc" }],
     });
   });
@@ -223,54 +267,84 @@ export function registerTransport(app: FastifyInstance, db: PrismaClient) {
       .parse((req.params as { id: string }).id);
     const body = updateItemsSchema.parse(req.body);
     return transaction(db, async (tx) => {
-      await benefitFor(tx, id);
-      const existing = await tx.beneficioTransporteItem.findMany({
-        where: { beneficioVinculoId: id, ativo: true },
-      });
-      const incomingIds = new Set(
-        body.items.flatMap((item) => (item.id ? [item.id] : [])),
+      const benefit = await benefitFor(tx, id);
+      return saveItems(tx, benefit, body.items, req.userId);
+    });
+  });
+  app.post("/api/configuracoes-transporte", async (req, reply) => {
+    const body = transportConfigurationSchema.parse(req.body);
+    if (body.items.some((item) => item.id))
+      throw new DomainError(
+        422,
+        "Um novo transporte não aceita itens existentes.",
       );
-      for (const old of existing.filter((item) => !incomingIds.has(item.id))) {
-        const row = await tx.beneficioTransporteItem.update({
-          where: { id: old.id },
-          data: { ativo: false, fimVigencia: new Date() },
-        });
-        await audit(
-          tx,
-          req.userId,
-          "ALTERAR",
-          "beneficioTransporteItem",
-          old.id,
-          old,
-          row,
+    const result = await transaction(db, async (tx) => {
+      const benefit = await tx.beneficioVinculo.create({
+        data: {
+          ...dateData(body.beneficio, ["inicioVigencia", "fimVigencia"]),
+          configuracaoRecorrenteId: null,
+        } as never,
+        include: { vinculo: true },
+      });
+      await audit(
+        tx,
+        req.userId,
+        "CRIAR",
+        "beneficioVinculo",
+        benefit.id,
+        undefined,
+        benefit,
+      );
+      const items = await saveItems(
+        tx,
+        benefit as unknown as Row,
+        body.items,
+        req.userId,
+      );
+      return { ...benefit, transporteItens: items };
+    });
+    reply.code(201);
+    return result;
+  });
+  app.put("/api/configuracoes-transporte/:id", async (req) => {
+    const id = z
+      .string()
+      .uuid()
+      .parse((req.params as { id: string }).id);
+    const body = transportConfigurationSchema.parse(req.body);
+    return transaction(db, async (tx) => {
+      const before = await benefitFor(tx, id);
+      if (String(before.vinculoId) !== body.beneficio.vinculoId)
+        throw new DomainError(
+          422,
+          "O vínculo da configuração de transporte não pode ser alterado.",
         );
-      }
-      const rows = [];
-      for (const item of body.items) {
-        await validateCard(tx, item.cartaoTransporteId);
-        const data = dateData(item, ["inicioVigencia", "fimVigencia"]);
-        const row = item.id
-          ? await tx.beneficioTransporteItem.update({
-              where: { id: item.id },
-              data: { ...data, beneficioVinculoId: id } as never,
-              include: { cartaoTransporte: true },
-            })
-          : await tx.beneficioTransporteItem.create({
-              data: { ...data, beneficioVinculoId: id } as never,
-              include: { cartaoTransporte: true },
-            });
-        rows.push(row);
-        await audit(
-          tx,
-          req.userId,
-          item.id ? "ALTERAR" : "CRIAR",
-          "beneficioTransporteItem",
-          row.id,
-          undefined,
-          row,
-        );
-      }
-      return rows;
+      const benefit = await tx.beneficioVinculo.update({
+        where: { id },
+        data: {
+          ...dateData(body.beneficio, ["inicioVigencia", "fimVigencia"]),
+          vinculoId: undefined,
+          tipo: undefined,
+          configuracaoRecorrenteId: null,
+        } as never,
+        include: { vinculo: true },
+      });
+      await audit(
+        tx,
+        req.userId,
+        "ALTERAR",
+        "beneficioVinculo",
+        id,
+        before,
+        benefit,
+      );
+      const items = await saveItems(
+        tx,
+        benefit as unknown as Row,
+        body.items,
+        req.userId,
+      );
+      return { ...benefit, transporteItens: items };
     });
   });
   app.post("/api/competencias-transporte", async (req, reply) => {
@@ -303,7 +377,7 @@ export function registerTransport(app: FastifyInstance, db: PrismaClient) {
             { fimVigencia: { gte: monthEnd(month) } },
           ],
         },
-        include: { cartaoTransporte: true },
+        include: { fornecedor: true },
       });
       if (!activeItems.length)
         throw new DomainError(
@@ -334,7 +408,7 @@ export function registerTransport(app: FastifyInstance, db: PrismaClient) {
             competenciaId: competence.id,
             origemItemId: item.id,
             tipoConducao: item.tipoConducao,
-            cartaoTransporteId: item.cartaoTransporteId,
+            fornecedorId: item.fornecedorId,
             valorDiario: item.valorDiario,
           },
         });
@@ -350,7 +424,9 @@ export function registerTransport(app: FastifyInstance, db: PrismaClient) {
       return tx.beneficioCompetencia.findUniqueOrThrow({
         where: { id: competence.id },
         include: {
-          transporteItens: { include: { cartaoTransporte: true } },
+          transporteItens: {
+            include: { fornecedor: true },
+          },
           ajustes: true,
         },
       });
@@ -409,7 +485,7 @@ export function registerTransport(app: FastifyInstance, db: PrismaClient) {
             : {}),
         },
         include: {
-          transporteItens: { include: { cartaoTransporte: true } },
+          transporteItens: { include: { fornecedor: true } },
           ajustes: true,
         },
       });
@@ -418,12 +494,16 @@ export function registerTransport(app: FastifyInstance, db: PrismaClient) {
           where: { competenciaId: id },
         });
         for (const item of body.itens) {
-          await validateCard(tx, item.cartaoTransporteId);
+          await validateSupplier(
+            tx,
+            before.beneficioVinculo as unknown as Row,
+            item.fornecedorId,
+          );
           await tx.beneficioTransporteCompetenciaItem.create({
             data: {
               competenciaId: id,
               tipoConducao: item.tipoConducao,
-              cartaoTransporteId: item.cartaoTransporteId,
+              fornecedorId: item.fornecedorId,
               valorDiario: item.valorDiario,
             },
           });
@@ -432,7 +512,9 @@ export function registerTransport(app: FastifyInstance, db: PrismaClient) {
       const current = await tx.beneficioCompetencia.findUniqueOrThrow({
         where: { id },
         include: {
-          transporteItens: { include: { cartaoTransporte: true } },
+          transporteItens: {
+            include: { fornecedor: true },
+          },
           ajustes: true,
         },
       });

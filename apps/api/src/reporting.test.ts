@@ -62,3 +62,174 @@ test("report filters and export authentication and audit", async () => {
     await f.app.close();
   }
 });
+
+test("dashboard groups monthly preparation by unit, category and supplier and omits zero totals", async () => {
+  const f = await fixture();
+  try {
+    const unit = await f.db.unidade.create({
+        data: {
+          nome: `Unidade gráfico ${f.suffix}`,
+          sigla: f.suffix.slice(0, 8),
+          uf: "RJ",
+        },
+      }),
+      person = await f.db.pessoa.create({
+        data: { nomeCompleto: `Pessoa gráfico ${f.suffix}` },
+      }),
+      link = await f.db.vinculo.create({
+        data: {
+          pessoaId: person.id,
+          unidadeId: unit.id,
+          tipo: "CLT",
+          dataAdmissao: new Date("2026-01-01"),
+        },
+      }),
+      [foodSupplier, firstTransportSupplier, secondTransportSupplier] =
+        await Promise.all(
+          ["Alimentação", "Transporte A", "Transporte B"].map((name) =>
+            f.db.fornecedor.create({
+              data: { nome: `${name} ${f.suffix}` },
+            }),
+          ),
+        ),
+      [foodConfig, firstTransportConfig, zeroConfig] = await Promise.all([
+        f.db.configuracaoBeneficio.create({
+          data: {
+            unidadeId: unit.id,
+            fornecedorId: foodSupplier.id,
+            tipo: "ALIMENTACAO",
+          },
+        }),
+        f.db.configuracaoBeneficio.create({
+          data: {
+            unidadeId: unit.id,
+            fornecedorId: firstTransportSupplier.id,
+            tipo: "TRANSPORTE",
+          },
+        }),
+        f.db.configuracaoBeneficio.create({
+          data: {
+            unidadeId: unit.id,
+            fornecedorId: secondTransportSupplier.id,
+            tipo: "TRANSPORTE",
+          },
+        }),
+        f.db.configuracaoBeneficio.create({
+          data: {
+            unidadeId: unit.id,
+            fornecedorId: foodSupplier.id,
+            tipo: "CESTA_BASICA",
+          },
+        }),
+      ]),
+      [foodBenefit, transportBenefit, zeroBenefit] = await Promise.all([
+        f.db.beneficioVinculo.create({
+          data: {
+            vinculoId: link.id,
+            tipo: "ALIMENTACAO",
+            inicioVigencia: new Date("2026-01-01"),
+            configuracaoRecorrenteId: foodConfig.id,
+          },
+        }),
+        f.db.beneficioVinculo.create({
+          data: {
+            vinculoId: link.id,
+            tipo: "TRANSPORTE",
+            inicioVigencia: new Date("2026-01-01"),
+          },
+        }),
+        f.db.beneficioVinculo.create({
+          data: {
+            vinculoId: link.id,
+            tipo: "CESTA_BASICA",
+            inicioVigencia: new Date("2026-01-01"),
+            configuracaoRecorrenteId: zeroConfig.id,
+          },
+        }),
+      ]),
+      month = new Date("2026-09-01T00:00:00.000Z"),
+      [foodCompetence, transportCompetence] = await Promise.all([
+        f.db.beneficioCompetencia.create({
+          data: {
+            beneficioVinculoId: foodBenefit.id,
+            configuracaoId: foodConfig.id,
+            competencia: month,
+            quantidadeDias: 10,
+            valorUnitario: 20,
+          },
+        }),
+        f.db.beneficioCompetencia.create({
+          data: {
+            beneficioVinculoId: transportBenefit.id,
+            configuracaoId: firstTransportConfig.id,
+            competencia: month,
+            quantidadeDias: 2,
+          },
+        }),
+      ]);
+    await f.db.beneficioCompetencia.create({
+      data: {
+        beneficioVinculoId: zeroBenefit.id,
+        configuracaoId: zeroConfig.id,
+        competencia: month,
+        quantidade: 0,
+        valorUnitario: 50,
+      },
+    });
+    await f.db.beneficioTransporteCompetenciaItem.createMany({
+      data: [
+        {
+          competenciaId: transportCompetence.id,
+          tipoConducao: "ONIBUS",
+          fornecedorId: firstTransportSupplier.id,
+          valorDiario: 3,
+        },
+        {
+          competenciaId: transportCompetence.id,
+          tipoConducao: "METRO",
+          fornecedorId: secondTransportSupplier.id,
+          valorDiario: 4,
+        },
+      ],
+    });
+
+    const response = await f.app.inject({
+      url: `/api/dashboard?unidadeId=${unit.id}&competencia=2026-09-01`,
+      headers: f.headers,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const rows = response.json<{
+      preparacaoMensalPorFornecedor: Array<{
+        unidadeId: string;
+        tipo: string;
+        fornecedorId: string;
+        valorPrevisto: string;
+      }>;
+    }>().preparacaoMensalPorFornecedor;
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          unidadeId: unit.id,
+          tipo: "ALIMENTACAO",
+          fornecedorId: foodSupplier.id,
+          valorPrevisto: "200.00",
+        }),
+        expect.objectContaining({
+          tipo: "TRANSPORTE",
+          fornecedorId: firstTransportSupplier.id,
+          valorPrevisto: "6.00",
+        }),
+        expect.objectContaining({
+          tipo: "TRANSPORTE",
+          fornecedorId: secondTransportSupplier.id,
+          valorPrevisto: "8.00",
+        }),
+      ]),
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.valorPrevisto !== "0.00")).toBe(true);
+    expect(foodCompetence.id).toBeTruthy();
+  } finally {
+    await f.app.close();
+  }
+});

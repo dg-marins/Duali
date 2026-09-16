@@ -5,11 +5,12 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { api, display, type Row } from "./api";
+import { ApiError, api, display, type Row } from "./api";
 import {
   DataTable,
   ActionMenu,
   ConfirmDialog,
+  CurrencyInput,
   EmptyState,
   LoadingSkeleton,
   MetricCard,
@@ -48,6 +49,14 @@ const documentLabels: Record<string, string> = {
   RENOVACAO: "Renovação histórica",
   DISTRATO: "Distrato",
   OUTRO: "Outro documento",
+};
+const decimalInputValue = (value: string) => {
+  const cleaned = value.replace(/[^\d,.-]/g, "").trim();
+  const normalized = cleaned.includes(",")
+    ? cleaned.replace(/\./g, "").replace(",", ".")
+    : cleaned;
+  const result = Number(normalized);
+  return Number.isFinite(result) ? result : 0;
 };
 type ListResult = {
   items: Row[];
@@ -224,6 +233,7 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
             <option value="CLT">CLT</option>
             <option value="ESTAGIO">Estágio</option>
             <option value="APRENDIZ">Aprendiz</option>
+            <option value="TRAINEE">Trainee</option>
           </FilterSelect>
           <FilterSelect
             label="Unidade"
@@ -326,6 +336,96 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
   );
 }
 
+const weekdayLabels: Record<string, string> = {
+  SEGUNDA: "Segunda",
+  TERCA: "Terça",
+  QUARTA: "Quarta",
+  QUINTA: "Quinta",
+  SEXTA: "Sexta",
+  SABADO: "Sábado",
+  DOMINGO: "Domingo",
+};
+function StructuredScaleFields({
+  value,
+  onChange,
+}: {
+  value: Row | null | undefined;
+  onChange: (value: Row | null) => void;
+}) {
+  const type = String(value?.tipo ?? "");
+  const selected = (value?.diasSemana as string[] | undefined) ?? [];
+  return (
+    <fieldset className="wide">
+      <legend>Escala de dias trabalhados</legend>
+      <div className="form-grid">
+        <label>
+          <span>Modalidade</span>
+          <select
+            value={type}
+            onChange={(event) => {
+              const next = event.target.value;
+              onChange(
+                next === "DIAS_SEMANA"
+                  ? { tipo: next, diasSemana: [] }
+                  : next === "QUANTIDADE_SEMANAL"
+                    ? { tipo: next, quantidadeDiasSemana: 1 }
+                    : null,
+              );
+            }}
+          >
+            <option value="">Não informar agora</option>
+            <option value="DIAS_SEMANA">Dias específicos da semana</option>
+            <option value="QUANTIDADE_SEMANAL">
+              Quantidade de dias por semana
+            </option>
+          </select>
+        </label>
+        {type === "QUANTIDADE_SEMANAL" && (
+          <label>
+            <span>Dias por semana</span>
+            <input
+              type="number"
+              min="1"
+              max="7"
+              value={String(value?.quantidadeDiasSemana ?? 1)}
+              onChange={(event) =>
+                onChange({
+                  tipo: "QUANTIDADE_SEMANAL",
+                  quantidadeDiasSemana: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+        )}
+      </div>
+      {type === "DIAS_SEMANA" && (
+        <div
+          className="checkbox-group"
+          role="group"
+          aria-label="Dias da semana"
+        >
+          {Object.entries(weekdayLabels).map(([day, label]) => (
+            <label className="checkbox-label" key={day}>
+              <input
+                type="checkbox"
+                checked={selected.includes(day)}
+                onChange={(event) =>
+                  onChange({
+                    tipo: "DIAS_SEMANA",
+                    diasSemana: event.target.checked
+                      ? [...selected, day]
+                      : selected.filter((item) => item !== day),
+                  })
+                }
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+      )}
+    </fieldset>
+  );
+}
 function PersonForm({
   person,
   options = { units: [], teams: [], institutions: [], suppliers: [] },
@@ -357,6 +457,7 @@ function PersonForm({
       cargoFuncao: "",
       gestor: "",
       escala: "",
+      escalaEstruturada: null,
       instituicaoEnsinoId: "",
       periodoAcademico: "",
       valorBolsa: "",
@@ -378,21 +479,28 @@ function PersonForm({
   const field = (key: string, label: string, type = "text") => (
     <label>
       <span>{label}</span>
-      <input
-        type={type}
-        value={String(data[key] ?? "").slice(
-          0,
-          type === "date" ? 10 : undefined,
-        )}
-        onChange={(e) =>
-          setData({
-            ...data,
-            [key]: ["cpf", "rg", "telefone"].includes(key)
-              ? e.target.value.replace(/\D/g, "") || null
-              : e.target.value || null,
-          })
-        }
-      />
+      {type === "currency" ? (
+        <CurrencyInput
+          value={String(data[key] ?? "")}
+          onValueChange={(value) => setData({ ...data, [key]: value })}
+        />
+      ) : (
+        <input
+          type={type}
+          value={String(data[key] ?? "").slice(
+            0,
+            type === "date" ? 10 : undefined,
+          )}
+          onChange={(e) =>
+            setData({
+              ...data,
+              [key]: ["cpf", "rg", "telefone"].includes(key)
+                ? e.target.value.replace(/\D/g, "") || null
+                : e.target.value || null,
+            })
+          }
+        />
+      )}
     </label>
   );
   async function submit(event: FormEvent) {
@@ -417,6 +525,7 @@ function PersonForm({
                 "cargoFuncao",
                 "gestor",
                 "escala",
+                "escalaEstruturada",
                 "instituicaoEnsinoId",
                 "periodoAcademico",
                 "valorBolsa",
@@ -441,6 +550,7 @@ function PersonForm({
                 "cargoFuncao",
                 "gestor",
                 "escala",
+                "escalaEstruturada",
               ].map((key) => [key, data[key] === "" ? null : data[key]]),
             ),
             ...(data.tipo === "ESTAGIO"
@@ -564,14 +674,20 @@ function PersonForm({
                   <option value="CLT">CLT</option>
                   <option value="ESTAGIO">Estágio</option>
                   <option value="APRENDIZ">Aprendiz</option>
+                  <option value="TRAINEE">Trainee</option>
                 </select>
               </label>
               {field("dataAdmissao", "Admissão *", "date")}
               {field("matricula", "Matrícula")}
               {field("cargoFuncao", "Cargo/Função")}
               {field("gestor", "Gestor")}
-              {field("escala", "Escala")}
             </div>
+            <StructuredScaleFields
+              value={(data.escalaEstruturada as Row | null | undefined) ?? null}
+              onChange={(escalaEstruturada) =>
+                setData({ ...data, escalaEstruturada })
+              }
+            />
             {data.tipo === "ESTAGIO" && (
               <div className="form-grid">
                 <label>
@@ -594,7 +710,7 @@ function PersonForm({
                   </select>
                 </label>
                 {field("periodoAcademico", "Período acadêmico")}
-                {field("valorBolsa", "Bolsa (R$)", "number")}
+                {field("valorBolsa", "Bolsa", "currency")}
                 {field(
                   "periodicidadeDocumentoMeses",
                   "Periodicidade do TCE/aditivo (meses)",
@@ -720,6 +836,673 @@ export function PersonEditor({
   );
 }
 
+function ProfileBenefitForm({
+  person,
+  link,
+  record,
+  ambiguousLink,
+  onClose,
+  onSaved,
+}: {
+  person: Row;
+  link: Row | null;
+  record: Row | null;
+  ambiguousLink: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const initialType = String(record?.tipo ?? "ALIMENTACAO");
+  const [type, setType] = useState(initialType),
+    [start, setStart] = useState(
+      String(record?.inicioVigencia ?? new Date().toISOString()).slice(0, 10),
+    ),
+    [end, setEnd] = useState(String(record?.fimVigencia ?? "").slice(0, 10)),
+    [status, setStatus] = useState(String(record?.status ?? "ATIVO")),
+    [configId, setConfigId] = useState(
+      String(record?.configuracaoRecorrenteId ?? ""),
+    ),
+    [dailyValue, setDailyValue] = useState(String(record?.valorDiario ?? "")),
+    [quantity, setQuantity] = useState(
+      String(record?.quantidadeRecorrente ?? ""),
+    ),
+    [unitValue, setUnitValue] = useState(
+      String(record?.valorUnitarioRecorrente ?? ""),
+    ),
+    [notes, setNotes] = useState(String(record?.observacoes ?? "")),
+    [configs, setConfigs] = useState<Row[]>([]),
+    [transportItems, setTransportItems] = useState<
+      Array<{
+        id?: string;
+        tipoConducao: string;
+        fornecedorId: string;
+        valorDiario: string;
+        inicioVigencia: string;
+        fimVigencia: string;
+        ativo: boolean;
+      }>
+    >(
+      ((record?.transporteItens as Row[] | undefined) ?? []).map((item) => ({
+        ...(item.id ? { id: String(item.id) } : {}),
+        tipoConducao: String(item.tipoConducao ?? "ONIBUS"),
+        fornecedorId: String(item.fornecedorId ?? ""),
+        valorDiario: String(item.valorDiario ?? ""),
+        inicioVigencia: String(item.inicioVigencia ?? start).slice(0, 10),
+        fimVigencia: String(item.fimVigencia ?? "").slice(0, 10),
+        ativo: Boolean(item.ativo ?? true),
+      })),
+    ),
+    [loading, setLoading] = useState(false),
+    [saving, setSaving] = useState(false),
+    [error, setError] = useState(""),
+    [dirty, setDirty] = useState(false),
+    [confirmClose, setConfirmClose] = useState(false);
+  const unit = link?.unidade as Row | undefined;
+  useFormDirty(dirty);
+  useEffect(() => {
+    if (!link?.unidadeId) return;
+    let active = true;
+    setLoading(true);
+    void api<ListResult>(
+      `configuracoes-beneficios?page=1&pageSize=100&unidadeId=${link.unidadeId}&tipo=${type}`,
+    )
+      .then((result) => {
+        if (!active) return;
+        const valid = result.items.filter(
+          (item) =>
+            (item.ativa && (item.fornecedor as Row | undefined)?.ativo) ||
+            String(item.id) === String(record?.configuracaoRecorrenteId ?? ""),
+        );
+        setConfigs(valid);
+        setConfigId((current) =>
+          valid.some((item) => String(item.id) === current)
+            ? current
+            : String(valid[0]?.id ?? ""),
+        );
+        setError("");
+      })
+      .catch((reason) => active && setError((reason as Error).message))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [link?.unidadeId, type]);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!link || ambiguousLink) return;
+    setSaving(true);
+    setError("");
+    try {
+      const benefit = {
+        vinculoId: link.id,
+        tipo: type,
+        inicioVigencia: start,
+        fimVigencia: end || null,
+        status,
+        configuracaoRecorrenteId:
+          type === "TRANSPORTE" ? null : configId || null,
+        valorDiario: type === "ALIMENTACAO" ? dailyValue || null : null,
+        quantidadeRecorrente: ["ALIMENTACAO", "TRANSPORTE"].includes(type)
+          ? null
+          : quantity || null,
+        valorUnitarioRecorrente: ["ALIMENTACAO", "TRANSPORTE"].includes(type)
+          ? null
+          : unitValue || null,
+        observacoes: notes || null,
+      };
+      if (type === "TRANSPORTE")
+        await api(
+          `configuracoes-transporte${record ? `/${record.id}` : ""}`,
+          record ? "PUT" : "POST",
+          {
+            beneficio: benefit,
+            items: transportItems.map((item) => ({
+              ...(record && item.id ? { id: item.id } : {}),
+              tipoConducao: item.tipoConducao,
+              fornecedorId: item.fornecedorId,
+              valorDiario: item.valorDiario,
+              inicioVigencia: item.inicioVigencia,
+              fimVigencia: item.fimVigencia || null,
+              ativo: item.ativo,
+            })),
+          },
+        );
+      else
+        await api(
+          `beneficios-vinculo${record ? `/${record.id}` : ""}`,
+          record ? "PUT" : "POST",
+          benefit,
+        );
+      onSaved();
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  if (!link || ambiguousLink)
+    return (
+      <Notice
+        error
+        text="Não foi possível identificar um único vínculo ativo. Revise os vínculos da pessoa antes de adicionar o benefício."
+      />
+    );
+  const typeOptions = [
+    "TRANSPORTE",
+    "ALIMENTACAO",
+    "CESTA_BASICA",
+    "PREMIACAO",
+    "OUTRO",
+  ];
+  return (
+    <>
+      <form className="embedded-form" onSubmit={(event) => void submit(event)}>
+        <Notice text={error} error />
+        <div className="form-context-card">
+          <span>Pessoa</span>
+          <strong>{String(person.nomeCompleto)}</strong>
+          <small>{display(unit)}</small>
+        </div>
+        <div className="form-grid">
+          <label>
+            <span>Tipo *</span>
+            <select
+              value={type}
+              disabled={Boolean(record)}
+              onChange={(event) => {
+                setType(event.target.value);
+                setDirty(true);
+              }}
+            >
+              {typeOptions.map((value) => (
+                <option key={value} value={value}>
+                  {benefitLabels[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {type !== "TRANSPORTE" && (
+            <label>
+              <span>Fornecedor recorrente *</span>
+              <select
+                value={configId}
+                required
+                disabled={loading || !configs.length}
+                onChange={(event) => {
+                  setConfigId(event.target.value);
+                  setDirty(true);
+                }}
+              >
+                <option value="">Selecione…</option>
+                {configs.map((config) => (
+                  <option key={String(config.id)} value={String(config.id)}>
+                    {display(config.fornecedor)}
+                    {!config.ativa ||
+                    !(config.fornecedor as Row | undefined)?.ativo
+                      ? " (inativo)"
+                      : ""}
+                  </option>
+                ))}
+              </select>
+              {!loading && !configs.length && (
+                <small className="field-error">
+                  Não há fornecedor ativo configurado para {display(unit)} e{" "}
+                  {benefitLabels[type]?.toLowerCase()}.
+                </small>
+              )}
+            </label>
+          )}
+          <label>
+            <span>Início da vigência *</span>
+            <input
+              type="date"
+              required
+              value={start}
+              onChange={(event) => {
+                setStart(event.target.value);
+                setDirty(true);
+              }}
+            />
+          </label>
+          <label>
+            <span>Fim da vigência</span>
+            <input
+              type="date"
+              value={end}
+              onChange={(event) => {
+                setEnd(event.target.value);
+                setDirty(true);
+              }}
+            />
+          </label>
+          <label>
+            <span>Status</span>
+            <select
+              value={status}
+              onChange={(event) => {
+                setStatus(event.target.value);
+                setDirty(true);
+              }}
+            >
+              <option value="ATIVO">Ativo</option>
+              <option value="ENCERRADO">Encerrado</option>
+            </select>
+          </label>
+          {type === "ALIMENTACAO" && (
+            <label>
+              <span>Valor diário</span>
+              <CurrencyInput
+                value={dailyValue}
+                onValueChange={(value) => {
+                  setDailyValue(value);
+                  setDirty(true);
+                }}
+              />
+            </label>
+          )}
+          {!["ALIMENTACAO", "TRANSPORTE"].includes(type) && (
+            <>
+              <label>
+                <span>Quantidade recorrente</span>
+                <input
+                  inputMode="decimal"
+                  value={quantity}
+                  onChange={(event) => {
+                    setQuantity(event.target.value);
+                    setDirty(true);
+                  }}
+                />
+              </label>
+              <label>
+                <span>Valor unitário recorrente</span>
+                <CurrencyInput
+                  value={unitValue}
+                  onValueChange={(value) => {
+                    setUnitValue(value);
+                    setDirty(true);
+                  }}
+                />
+              </label>
+            </>
+          )}
+          {type === "TRANSPORTE" && (
+            <div className="wide transport-editor">
+              <div>
+                <strong>Transportes recorrentes</strong>
+                <p className="muted">
+                  O fornecedor realiza a compra e recebe a solicitação de
+                  crédito.
+                </p>
+              </div>
+              {transportItems.map((item, index) => (
+                <div className="transport-editor-row" key={item.id ?? index}>
+                  <label>
+                    <span>Condução *</span>
+                    <select
+                      value={item.tipoConducao}
+                      onChange={(event) => {
+                        setTransportItems((all) =>
+                          all.map((current, itemIndex) =>
+                            itemIndex === index
+                              ? { ...current, tipoConducao: event.target.value }
+                              : current,
+                          ),
+                        );
+                        setDirty(true);
+                      }}
+                    >
+                      <option value="ONIBUS">Ônibus</option>
+                      <option value="ONIBUS_INTER">
+                        Ônibus intermunicipal
+                      </option>
+                      <option value="BARCA">Barca</option>
+                      <option value="METRO">Metrô</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Fornecedor *</span>
+                    <select
+                      required
+                      value={item.fornecedorId}
+                      onChange={(event) => {
+                        setTransportItems((all) =>
+                          all.map((current, itemIndex) =>
+                            itemIndex === index
+                              ? { ...current, fornecedorId: event.target.value }
+                              : current,
+                          ),
+                        );
+                        setDirty(true);
+                      }}
+                    >
+                      <option value="">Selecione…</option>
+                      {configs.map((config) => (
+                        <option
+                          key={String(config.fornecedorId)}
+                          value={String(config.fornecedorId)}
+                        >
+                          {display(config.fornecedor)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Valor diário *</span>
+                    <CurrencyInput
+                      required
+                      value={item.valorDiario}
+                      onValueChange={(value) => {
+                        setTransportItems((all) =>
+                          all.map((current, itemIndex) =>
+                            itemIndex === index
+                              ? { ...current, valorDiario: value }
+                              : current,
+                          ),
+                        );
+                        setDirty(true);
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Início da vigência *</span>
+                    <input
+                      type="date"
+                      required
+                      value={item.inicioVigencia}
+                      onChange={(event) => {
+                        setTransportItems((all) =>
+                          all.map((current, itemIndex) =>
+                            itemIndex === index
+                              ? {
+                                  ...current,
+                                  inicioVigencia: event.target.value,
+                                }
+                              : current,
+                          ),
+                        );
+                        setDirty(true);
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Fim da vigência</span>
+                    <input
+                      type="date"
+                      value={item.fimVigencia}
+                      onChange={(event) => {
+                        setTransportItems((all) =>
+                          all.map((current, itemIndex) =>
+                            itemIndex === index
+                              ? {
+                                  ...current,
+                                  fimVigencia: event.target.value,
+                                }
+                              : current,
+                          ),
+                        );
+                        setDirty(true);
+                      }}
+                    />
+                  </label>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={item.ativo}
+                      onChange={(event) => {
+                        setTransportItems((all) =>
+                          all.map((current, itemIndex) =>
+                            itemIndex === index
+                              ? { ...current, ativo: event.target.checked }
+                              : current,
+                          ),
+                        );
+                        setDirty(true);
+                      }}
+                    />
+                    Ativo
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setTransportItems((all) =>
+                        all.filter((_, itemIndex) => itemIndex !== index),
+                      );
+                      setDirty(true);
+                    }}
+                  >
+                    Remover
+                  </button>
+                </div>
+              ))}
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setTransportItems((all) => [
+                      ...all,
+                      {
+                        tipoConducao: "ONIBUS",
+                        fornecedorId: "",
+                        valorDiario: "",
+                        inicioVigencia: start,
+                        fimVigencia: end,
+                        ativo: true,
+                      },
+                    ]);
+                    setDirty(true);
+                  }}
+                >
+                  + Adicionar transporte
+                </button>
+                <strong>
+                  Total diário:{" "}
+                  {money(
+                    transportItems.reduce(
+                      (sum, item) => sum + decimalInputValue(item.valorDiario),
+                      0,
+                    ),
+                  )}
+                </strong>
+              </div>
+            </div>
+          )}
+          <label className="wide">
+            <span>Observações</span>
+            <textarea
+              value={notes}
+              onChange={(event) => {
+                setNotes(event.target.value);
+                setDirty(true);
+              }}
+            />
+          </label>
+        </div>
+        <div className="form-actions">
+          <button
+            disabled={
+              saving ||
+              loading ||
+              !configs.length ||
+              (type === "TRANSPORTE" && !transportItems.length)
+            }
+          >
+            {saving ? "Salvando…" : "Salvar"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => (dirty ? setConfirmClose(true) : onClose())}
+          >
+            Cancelar
+          </button>
+        </div>
+      </form>
+      <ConfirmDialog
+        open={confirmClose}
+        onOpenChange={setConfirmClose}
+        title="Descartar alterações?"
+        description="As informações preenchidas serão perdidas."
+        confirmLabel="Descartar"
+        onConfirm={onClose}
+      />
+    </>
+  );
+}
+
+function CompetenceEditor({
+  competence,
+  onClose,
+  onSaved,
+}: {
+  competence: Row;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const benefit = competence.beneficioVinculo as Row;
+  const type = String(benefit.tipo);
+  const [days, setDays] = useState(String(competence.quantidadeDias ?? "")),
+    [quantity, setQuantity] = useState(String(competence.quantidade ?? "")),
+    [unitValue, setUnitValue] = useState(
+      String(competence.valorUnitario ?? ""),
+    ),
+    [notes, setNotes] = useState(String(competence.observacoes ?? "")),
+    [saving, setSaving] = useState(false),
+    [error, setError] = useState(""),
+    [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({}),
+    [confirmClose, setConfirmClose] = useState(false);
+  const dirty =
+    days !== String(competence.quantidadeDias ?? "") ||
+    quantity !== String(competence.quantidade ?? "") ||
+    unitValue !== String(competence.valorUnitario ?? "") ||
+    notes !== String(competence.observacoes ?? "");
+  useFormDirty(dirty);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    setFieldErrors({});
+    try {
+      await api(`competencias/${competence.id}`, "PUT", {
+        beneficioVinculoId: competence.beneficioVinculoId,
+        configuracaoId: competence.configuracaoId,
+        componente: competence.componente,
+        competencia: String(competence.competencia).slice(0, 10),
+        quantidadeDias: ["ALIMENTACAO", "TRANSPORTE"].includes(type)
+          ? days || null
+          : null,
+        quantidade: ["ALIMENTACAO", "TRANSPORTE"].includes(type)
+          ? null
+          : quantity || null,
+        valorUnitario: type === "TRANSPORTE" ? null : unitValue || null,
+        valorInformado: competence.valorInformado ?? null,
+        status: competence.status,
+        observacoes: notes || null,
+      });
+      onSaved();
+    } catch (reason) {
+      setError((reason as Error).message);
+      if (reason instanceof ApiError) setFieldErrors(reason.fields);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <>
+      <form className="embedded-form" onSubmit={(event) => void submit(event)}>
+        <Notice text={error} error />
+        <div className="form-context-card">
+          <span>{benefitLabels[type] ?? type}</span>
+          <strong>{display((benefit.vinculo as Row)?.pessoa)}</strong>
+          <small>Competência {formatDate(competence.competencia)}</small>
+        </div>
+        <div className="form-grid">
+          {["ALIMENTACAO", "TRANSPORTE"].includes(type) ? (
+            <label>
+              <span>Dias *</span>
+              <input
+                inputMode="decimal"
+                required
+                value={days}
+                onChange={(event) => setDays(event.target.value)}
+              />
+              {fieldErrors.quantidadeDias?.map((message) => (
+                <small className="field-error" key={message}>
+                  {message}
+                </small>
+              ))}
+            </label>
+          ) : (
+            <label>
+              <span>Quantidade *</span>
+              <input
+                inputMode="decimal"
+                required
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+              />
+              {fieldErrors.quantidade?.map((message) => (
+                <small className="field-error" key={message}>
+                  {message}
+                </small>
+              ))}
+            </label>
+          )}
+          {type !== "TRANSPORTE" && (
+            <label>
+              <span>
+                {type === "ALIMENTACAO" ? "Valor diário" : "Valor unitário"} *
+              </span>
+              <input
+                inputMode="decimal"
+                required
+                value={unitValue}
+                onChange={(event) => setUnitValue(event.target.value)}
+              />
+              {fieldErrors.valorUnitario?.map((message) => (
+                <small className="field-error" key={message}>
+                  {message}
+                </small>
+              ))}
+            </label>
+          )}
+          <label className="wide">
+            <span>Observações</span>
+            <textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+            />
+          </label>
+        </div>
+        <p className="muted">
+          Ao salvar uma competência conferida, ela voltará para Pendente e
+          deverá ser conferida novamente.
+        </p>
+        <div className="form-actions">
+          <button disabled={saving}>
+            {saving ? "Salvando…" : "Salvar alterações"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => (dirty ? setConfirmClose(true) : onClose())}
+          >
+            Cancelar
+          </button>
+        </div>
+      </form>
+      <ConfirmDialog
+        open={confirmClose}
+        onOpenChange={setConfirmClose}
+        title="Descartar alterações?"
+        description="As informações preenchidas serão perdidas."
+        confirmLabel="Descartar"
+        onConfirm={onClose}
+      />
+    </>
+  );
+}
+
 export function PersonProfile({
   id,
   navigate,
@@ -736,7 +1519,17 @@ export function PersonProfile({
     [formScreen, setFormScreen] = useState<string | null>(null),
     [editingLink, setEditingLink] = useState<Row | null>(null),
     [editingBenefit, setEditingBenefit] = useState<Row | null>(null),
+    [endingBenefit, setEndingBenefit] = useState<Row | null>(null),
+    [benefitEndDate, setBenefitEndDate] = useState(""),
+    [benefitEndReason, setBenefitEndReason] = useState(""),
     [editingDocument, setEditingDocument] = useState<Row | null>(null),
+    [reversingDistrato, setReversingDistrato] = useState<Row | null>(null),
+    [reversalReason, setReversalReason] = useState(""),
+    [benefitMonth, setBenefitMonth] = useState(
+      () =>
+        new URLSearchParams(location.search).get("competencia")?.slice(0, 7) ??
+        new Date().toISOString().slice(0, 7),
+    ),
     [version, setVersion] = useState(0);
   const options = useOptions();
   useEffect(() => {
@@ -749,6 +1542,13 @@ export function PersonProfile({
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
   }, [id, version]);
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    query.set("tab", tab);
+    if (tab === "beneficios") query.set("competencia", `${benefitMonth}-01`);
+    else query.delete("competencia");
+    history.replaceState({}, "", `${location.pathname}?${query.toString()}`);
+  }, [tab, benefitMonth]);
   if (error && !profile) return <Notice text={error} error />;
   if (!profile)
     return <LoadingSkeleton variant="detail" label="Carregando perfil…" />;
@@ -765,13 +1565,15 @@ export function PersonProfile({
     ["documentos", "Documentos"],
     ["historico", "Histórico"],
   ];
+  const ProfileOverlay =
+    formScreen === "beneficios-vinculo" ? FormDialog : FormSheet;
   return (
     <RefreshingContent refreshing={loading}>
       <>
         <Notice text={error} error />
         <PageHeader
           title={String(person.nomeCompleto)}
-          description={`${current?.tipo === "ESTAGIO" ? "Estagiário(a)" : current?.tipo === "APRENDIZ" ? "Aprendiz" : (current?.tipo ?? "Sem vínculo")} · ${display(current?.unidade)}`}
+          description={`${current?.tipo === "ESTAGIO" ? "Estagiário(a)" : current?.tipo === "APRENDIZ" ? "Aprendiz" : current?.tipo === "TRAINEE" ? "Trainee" : (current?.tipo ?? "Sem vínculo")} · ${display(current?.unidade)}`}
           breadcrumb={
             <button
               className="link-button"
@@ -797,7 +1599,7 @@ export function PersonProfile({
             error
           />
         )}
-        <FormSheet
+        <ProfileOverlay
           open={Boolean(formScreen)}
           onOpenChange={(open) => {
             if (!open) setFormScreen(null);
@@ -824,13 +1626,12 @@ export function PersonProfile({
                 setVersion(version + 1);
               }}
             />
-          ) : formScreen === "beneficios-vinculo" && editingBenefit ? (
-            <RecordForm
-              embedded
-              screen={
-                screens.find((screen) => screen.path === "beneficios-vinculo")!
-              }
+          ) : formScreen === "beneficios-vinculo" ? (
+            <ProfileBenefitForm
+              person={person}
+              link={current}
               record={editingBenefit}
+              ambiguousLink={Boolean(profile.multiplosVinculosAtivos)}
               onClose={() => {
                 setFormScreen(null);
                 setEditingBenefit(null);
@@ -874,7 +1675,122 @@ export function PersonProfile({
               }}
             />
           ) : null}
-        </FormSheet>
+        </ProfileOverlay>
+        <FormDialog
+          open={Boolean(endingBenefit)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setEndingBenefit(null);
+              setBenefitEndDate("");
+              setBenefitEndReason("");
+            }
+          }}
+          title="Encerrar benefício"
+          description="A adesão será encerrada, mas competências e histórico continuarão disponíveis."
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!endingBenefit || !benefitEndDate || !benefitEndReason.trim())
+                return;
+              void api(
+                `beneficios-vinculo/${endingBenefit.id}/encerrar`,
+                "POST",
+                {
+                  fimVigencia: benefitEndDate,
+                  motivo: benefitEndReason.trim(),
+                },
+              )
+                .then(() => {
+                  setEndingBenefit(null);
+                  setBenefitEndDate("");
+                  setBenefitEndReason("");
+                  setVersion((current) => current + 1);
+                })
+                .catch((cause) => setError((cause as Error).message));
+            }}
+          >
+            <label>
+              <span>Data de encerramento</span>
+              <input
+                type="date"
+                required
+                value={benefitEndDate}
+                onChange={(event) => setBenefitEndDate(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Motivo</span>
+              <textarea
+                required
+                minLength={3}
+                value={benefitEndReason}
+                onChange={(event) => setBenefitEndReason(event.target.value)}
+              />
+            </label>
+            <div className="form-actions">
+              <button type="submit" className="danger">
+                Encerrar benefício
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEndingBenefit(null)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </FormDialog>
+        <FormDialog
+          open={Boolean(reversingDistrato)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setReversingDistrato(null);
+              setReversalReason("");
+            }
+          }}
+          title="Reverter distrato"
+          description="O vínculo voltará para ativo e a data de desligamento será removida."
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!reversingDistrato || !reversalReason.trim()) return;
+              void api(
+                `documentos/${reversingDistrato.id}/reverter-distrato`,
+                "POST",
+                { motivo: reversalReason.trim() },
+              )
+                .then(() => {
+                  setReversingDistrato(null);
+                  setReversalReason("");
+                  setVersion((current) => current + 1);
+                })
+                .catch((cause) => setError((cause as Error).message));
+            }}
+          >
+            <label>
+              <span>Motivo da reversão</span>
+              <textarea
+                required
+                minLength={3}
+                value={reversalReason}
+                onChange={(event) => setReversalReason(event.target.value)}
+              />
+            </label>
+            <div className="form-actions">
+              <button type="submit">Confirmar reversão</button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setReversingDistrato(null)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </FormDialog>
         <div className="tabs" role="tablist">
           {tabs.map(([key, label]) => (
             <button
@@ -912,7 +1828,12 @@ export function PersonProfile({
             )}
             {tab === "beneficios" && (
               <>
-                <button onClick={() => setFormScreen("beneficios-vinculo")}>
+                <button
+                  disabled={
+                    !current || Boolean(profile.multiplosVinculosAtivos)
+                  }
+                  onClick={() => setFormScreen("beneficios-vinculo")}
+                >
                   Adicionar benefício
                 </button>
                 <ActionMenu
@@ -1117,6 +2038,16 @@ export function PersonProfile({
         )}
         {tab === "beneficios" && (
           <div className="stack">
+            <section className="panel benefit-month-filter">
+              <label>
+                <span>Competência exibida</span>
+                <input
+                  type="month"
+                  value={benefitMonth}
+                  onChange={(event) => setBenefitMonth(event.target.value)}
+                />
+              </label>
+            </section>
             {links.flatMap((link) =>
               ((link.beneficios as Row[] | undefined) ?? []).map((benefit) => {
                 const config = benefit.configuracaoRecorrente as
@@ -1124,8 +2055,15 @@ export function PersonProfile({
                   | undefined;
                 const competencies =
                   (benefit.competencias as Row[] | undefined) ?? [];
+                const competence = competencies.find(
+                  (item) =>
+                    String(item.competencia).slice(0, 7) === benefitMonth,
+                );
                 return (
-                  <section className="panel" key={String(benefit.id)}>
+                  <section
+                    className="panel benefit-profile-card"
+                    key={String(benefit.id)}
+                  >
                     <div className="section-heading">
                       <div>
                         <h2>
@@ -1147,18 +2085,77 @@ export function PersonProfile({
                       >
                         Editar benefício
                       </button>
-                    </div>
-                    <div className="info-list">
-                      <p>
-                        Vínculo: {display(link.pessoa)} · {display(link.tipo)}
-                      </p>
-                      <p>
-                        Vigência: {formatDate(benefit.inicioVigencia)} até{" "}
-                        {formatDate(benefit.fimVigencia)}
-                      </p>
-                      {benefit.tipo === "ALIMENTACAO" && (
-                        <p>Valor diário: {money(benefit.valorDiario)}</p>
+                      {benefit.status === "ATIVO" && (
+                        <button
+                          className="secondary"
+                          onClick={() => {
+                            setEndingBenefit(benefit);
+                            setBenefitEndDate(
+                              String(
+                                benefit.fimVigencia ?? new Date().toISOString(),
+                              ).slice(0, 10),
+                            );
+                          }}
+                        >
+                          Encerrar benefício
+                        </button>
                       )}
+                    </div>
+                    <dl className="benefit-compact-grid">
+                      <div>
+                        <dt>Fornecedor</dt>
+                        <dd>{display(config?.fornecedor)}</dd>
+                      </div>
+                      <div>
+                        <dt>Vigência</dt>
+                        <dd>
+                          {formatDate(benefit.inicioVigencia)} até{" "}
+                          {formatDate(benefit.fimVigencia)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Competência</dt>
+                        <dd>{benefitMonth.split("-").reverse().join("/")}</dd>
+                      </div>
+                      <div>
+                        <dt>Valor diário</dt>
+                        <dd>
+                          {benefit.tipo === "ALIMENTACAO"
+                            ? money(
+                                competence?.valorUnitario ??
+                                  benefit.valorDiario,
+                              )
+                            : "Não aplicável"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Dias</dt>
+                        <dd>
+                          {competence?.quantidadeDias == null
+                            ? "Não informado"
+                            : display(competence.quantidadeDias)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Valor total</dt>
+                        <dd>
+                          {competence
+                            ? money(competence.valorFinal)
+                            : "Não informado"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Situação</dt>
+                        <dd>
+                          {competence ? (
+                            <StatusBadge value={competence.status} />
+                          ) : (
+                            "Mês não preparado"
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                    <div className="info-list">
                       {!["ALIMENTACAO", "TRANSPORTE"].includes(
                         String(benefit.tipo),
                       ) && (
@@ -1169,30 +2166,34 @@ export function PersonProfile({
                         </p>
                       )}
                       {benefit.tipo === "TRANSPORTE" && (
-                        <p>
-                          Transportes:{" "}
+                        <div className="transport-summary-list">
                           {(
                             (benefit.transporteItens as Row[] | undefined) ?? []
-                          )
-                            .map(
-                              (item) =>
-                                `${display(item.tipoConducao)} · ${display((item.cartaoTransporte as Row | undefined)?.nome)} · ${money(item.valorDiario)}`,
-                            )
-                            .join(" | ") || "Não configurado"}
-                        </p>
+                          ).map((item) => (
+                            <p key={String(item.id)}>
+                              {display(item.tipoConducao)} ·{" "}
+                              {display(
+                                (item.fornecedor as Row | undefined)?.nome,
+                              )}{" "}
+                              · {money(item.valorDiario)} por dia
+                            </p>
+                          ))}
+                          {!(
+                            (benefit.transporteItens as Row[] | undefined) ?? []
+                          ).length && <p>Não configurado</p>}
+                        </div>
                       )}
                     </div>
-                    {competencies.length > 0 && (
-                      <p className="muted">
-                        Competências:{" "}
-                        {competencies
-                          .map(
-                            (item) =>
-                              `${formatDate(item.competencia)} · ${money(item.valorFinal ?? item.valorInformado)}`,
-                          )
-                          .join(" | ")}
-                      </p>
-                    )}
+                    <button
+                      className="link-button benefit-history-link"
+                      onClick={() =>
+                        navigate(
+                          `/app/beneficios?competencia=${benefitMonth}&q=${encodeURIComponent(String(person.nomeCompleto))}`,
+                        )
+                      }
+                    >
+                      Ver histórico
+                    </button>
                   </section>
                 );
               }),
@@ -1246,6 +2247,15 @@ export function PersonProfile({
                       >
                         Editar documento
                       </button>
+                      {item.tipo === "DISTRATO" &&
+                        item.status !== "CANCELADO" && (
+                          <button
+                            className="secondary"
+                            onClick={() => setReversingDistrato(item)}
+                          >
+                            Reverter distrato
+                          </button>
+                        )}
                     </div>
                   );
                 })}
@@ -1293,6 +2303,14 @@ function LinkEditorForm({
     periodoAcademico: stage.periodoAcademico ?? "",
     valorBolsa: stage.valorBolsa ?? "",
     dataTerminoPrevista: String(stage.dataTerminoPrevista ?? "").slice(0, 10),
+    escalaEstruturada: link.tipoEscala
+      ? {
+          tipo: link.tipoEscala,
+          ...(link.tipoEscala === "DIAS_SEMANA"
+            ? { diasSemana: link.diasSemana ?? [] }
+            : { quantidadeDiasSemana: link.quantidadeDiasSemana ?? 1 }),
+        }
+      : null,
   });
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -1320,6 +2338,7 @@ function LinkEditorForm({
           cargoFuncao: data.cargoFuncao || null,
           gestor: data.gestor || null,
           escala: data.escala || null,
+          escalaEstruturada: data.escalaEstruturada ?? null,
           observacoes: data.observacoes || null,
         },
         ...(link.tipo === "ESTAGIO"
@@ -1388,10 +2407,11 @@ function LinkEditorForm({
               <select
                 value={String(data.status)}
                 onChange={(e) => set("status", e.target.value)}
+                disabled={link.tipo === "ESTAGIO"}
               >
                 <option>ATIVO</option>
                 <option>AFASTADO</option>
-                <option>DESLIGADO</option>
+                {link.tipo !== "ESTAGIO" && <option>DESLIGADO</option>}
               </select>
             </label>
             <label>
@@ -1400,7 +2420,13 @@ function LinkEditorForm({
                 type="date"
                 value={String(data.dataDesligamento ?? "")}
                 onChange={(e) => set("dataDesligamento", e.target.value)}
+                readOnly={link.tipo === "ESTAGIO"}
               />
+              {link.tipo === "ESTAGIO" && (
+                <small>
+                  O desligamento do estágio é registrado pelo distrato.
+                </small>
+              )}
             </label>
             <label>
               <span>Matrícula</span>
@@ -1417,6 +2443,12 @@ function LinkEditorForm({
               />
             </label>
           </div>
+          <StructuredScaleFields
+            value={(data.escalaEstruturada as Row | null | undefined) ?? null}
+            onChange={(escalaEstruturada) =>
+              set("escalaEstruturada", escalaEstruturada)
+            }
+          />
         </fieldset>
         {link.tipo === "ESTAGIO" && (
           <fieldset>
@@ -1447,15 +2479,13 @@ function LinkEditorForm({
               </label>
               <label>
                 <span>Bolsa</span>
-                <input
-                  type="number"
-                  step="0.01"
+                <CurrencyInput
                   value={String(data.valorBolsa ?? "")}
-                  onChange={(e) => set("valorBolsa", e.target.value)}
+                  onValueChange={(value) => set("valorBolsa", value)}
                 />
               </label>
               <label>
-                <span>Fim previsto do estágio</span>
+                <span>Término do contrato/TCE</span>
                 <input
                   type="date"
                   value={String(data.dataTerminoPrevista ?? "")}
@@ -1537,19 +2567,23 @@ function OperationalList({
   description: string;
   navigate: Navigate;
 }) {
+  const initialFilters = new URLSearchParams(location.search);
   const options = useOptions(),
     [filters, setFilters] = useState({
-      q: "",
-      status: "",
-      tipo: "",
-      unidadeId: "",
-      equipeId: "",
-      instituicaoId: "",
-      fornecedorId: "",
+      q: initialFilters.get("q") ?? "",
+      status: initialFilters.get("status") ?? "",
+      tipo: initialFilters.get("tipo") ?? "",
+      unidadeId: initialFilters.get("unidadeId") ?? "",
+      equipeId: initialFilters.get("equipeId") ?? "",
+      instituicaoId: initialFilters.get("instituicaoId") ?? "",
+      fornecedorId: initialFilters.get("fornecedorId") ?? "",
       competencia:
-        kind === "beneficios" ? new Date().toISOString().slice(0, 7) : "",
+        kind === "beneficios"
+          ? (initialFilters.get("competencia")?.slice(0, 7) ??
+            new Date().toISOString().slice(0, 7))
+          : "",
     }),
-    [page, setPage] = useState(1),
+    [page, setPage] = useState(Number(initialFilters.get("page") ?? 1)),
     [data, setData] = useState<ListResult>({
       items: [],
       total: 0,
@@ -1560,6 +2594,9 @@ function OperationalList({
     [hasLoaded, setHasLoaded] = useState(false),
     [error, setError] = useState(""),
     [formScreen, setFormScreen] = useState<string | null>(null),
+    [editingCompetence, setEditingCompetence] = useState<Row | null>(null),
+    [cancelingCompetence, setCancelingCompetence] = useState<Row | null>(null),
+    [actionPending, setActionPending] = useState(false),
     [version, setVersion] = useState(0);
   const endpoint =
     kind === "estagiarios"
@@ -1569,6 +2606,12 @@ function OperationalList({
         : "beneficios-operacional";
   useEffect(() => {
     let active = true;
+    if (kind === "beneficios")
+      history.replaceState(
+        {},
+        "",
+        `${location.pathname}?${filtersQuery(filters, page)}`,
+      );
     const timer = setTimeout(() => {
       setLoading(true);
       void api<ListResult>(`${endpoint}?${filtersQuery(filters, page)}`)
@@ -1597,6 +2640,19 @@ function OperationalList({
     setFilters({ ...filters, [key]: value });
     setPage(1);
   };
+  async function competenceAction(row: Row, action: "conferir" | "cancelar") {
+    setActionPending(true);
+    setError("");
+    try {
+      await api(`competencias/${row.id}/${action}`, "POST", {});
+      setCancelingCompetence(null);
+      setVersion((current) => current + 1);
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setActionPending(false);
+    }
+  }
   const rows = data.items;
   const columns =
     kind === "estagiarios"
@@ -1684,8 +2740,21 @@ function OperationalList({
             {
               key: "pessoa",
               label: "Pessoa",
-              render: (row: Row) =>
-                display(((row.beneficioVinculo as Row).vinculo as Row).pessoa),
+              render: (row: Row) => {
+                const link = (row.beneficioVinculo as Row).vinculo as Row;
+                return (
+                  <button
+                    className="table-primary-link"
+                    onClick={() =>
+                      navigate(
+                        `/app/pessoas/${link.pessoaId}?tab=beneficios&competencia=${filters.competencia}-01`,
+                      )
+                    }
+                  >
+                    {display(link.pessoa)}
+                  </button>
+                );
+              },
             },
             {
               key: "unidade",
@@ -1696,7 +2765,9 @@ function OperationalList({
             {
               key: "beneficio",
               label: "Benefício",
-              render: (row: Row) => String((row.beneficioVinculo as Row).tipo),
+              render: (row: Row) =>
+                benefitLabels[String((row.beneficioVinculo as Row).tipo)] ??
+                String((row.beneficioVinculo as Row).tipo),
             },
             {
               key: "fornecedor",
@@ -1712,17 +2783,53 @@ function OperationalList({
             {
               key: "valor",
               label: "Valor",
-              render: (row: Row) =>
-                money(
-                  row.valorInformado ??
-                    Number(row.quantidadeDias ?? row.quantidade ?? 0) *
-                      Number(row.valorUnitario ?? 0),
-                ),
+              align: "end" as const,
+              render: (row: Row) => money(row.valorFinal),
             },
             {
               key: "status",
               label: "Situação",
               render: (row: Row) => <StatusBadge value={row.status} />,
+            },
+            {
+              key: "acoes",
+              label: "Ações",
+              mobile: "primary" as const,
+              render: (row: Row) => {
+                const editable = ["PENDENTE", "CONFERIDO"].includes(
+                  String(row.status),
+                );
+                const link = (row.beneficioVinculo as Row).vinculo as Row;
+                return (
+                  <ActionMenu
+                    label="Ações da competência"
+                    items={[
+                      {
+                        label: "Editar lançamento",
+                        disabled: !editable,
+                        onSelect: () => setEditingCompetence(row),
+                      },
+                      {
+                        label: "Marcar como conferido",
+                        disabled: row.status !== "PENDENTE",
+                        onSelect: () => void competenceAction(row, "conferir"),
+                      },
+                      {
+                        label: "Cancelar competência",
+                        disabled: !editable,
+                        onSelect: () => setCancelingCompetence(row),
+                      },
+                      {
+                        label: "Abrir aquisição",
+                        onSelect: () =>
+                          navigate(
+                            `/app/beneficios/aquisicao?unidadeId=${link.unidadeId}&competencia=${String(row.competencia).slice(0, 10)}&tipo=${String((row.beneficioVinculo as Row).tipo)}`,
+                          ),
+                      },
+                    ]}
+                  />
+                );
+              },
             },
           ];
   const summary = useMemo(
@@ -1739,7 +2846,7 @@ function OperationalList({
         : kind === "beneficios"
           ? {
               total: rows.reduce(
-                (sum, row) => sum + Number(row.valorInformado ?? 0),
+                (sum, row) => sum + Number(row.valorFinal ?? 0),
                 0,
               ),
               pending: rows.filter((r) => r.status === "PENDENTE").length,
@@ -1821,17 +2928,31 @@ function OperationalList({
       />
       {error && <Notice text={error} error />}
       <FormSheet
-        open={Boolean(formScreen)}
+        open={Boolean(formScreen) || Boolean(editingCompetence)}
         onOpenChange={(open) => {
-          if (!open) setFormScreen(null);
+          if (!open) {
+            setFormScreen(null);
+            setEditingCompetence(null);
+          }
         }}
         title={
-          screens.find((screen) => screen.path === formScreen)?.title ??
-          "Novo registro"
+          editingCompetence
+            ? "Editar lançamento mensal"
+            : (screens.find((screen) => screen.path === formScreen)?.title ??
+              "Novo registro")
         }
         description="Preencha os dados desta operação."
       >
-        {formScreen && (
+        {editingCompetence ? (
+          <CompetenceEditor
+            competence={editingCompetence}
+            onClose={() => setEditingCompetence(null)}
+            onSaved={() => {
+              setEditingCompetence(null);
+              setVersion((current) => current + 1);
+            }}
+          />
+        ) : formScreen ? (
           <RecordForm
             embedded
             screen={screens.find((screen) => screen.path === formScreen)!}
@@ -1842,8 +2963,21 @@ function OperationalList({
               setVersion(version + 1);
             }}
           />
-        )}
+        ) : null}
       </FormSheet>
+      <ConfirmDialog
+        open={Boolean(cancelingCompetence)}
+        onOpenChange={(open) => {
+          if (!open) setCancelingCompetence(null);
+        }}
+        title="Cancelar competência?"
+        description="O lançamento deste mês será cancelado. A adesão recorrente e o histórico da pessoa serão preservados."
+        confirmLabel={actionPending ? "Cancelando…" : "Cancelar competência"}
+        onConfirm={() => {
+          if (cancelingCompetence)
+            void competenceAction(cancelingCompetence, "cancelar");
+        }}
+      />
       {loading && !hasLoaded ? (
         <LoadingSkeleton
           variant="metrics"
@@ -1866,10 +3000,7 @@ function OperationalList({
               </>
             ) : kind === "beneficios" ? (
               <>
-                <MetricCard
-                  label="Valor informado"
-                  value={money(summary.total)}
-                />
+                <MetricCard label="Valor total" value={money(summary.total)} />
                 <MetricCard
                   label="Pendências"
                   value={summary.pending}
@@ -1933,6 +3064,7 @@ function OperationalList({
               <option value="CLT">CLT</option>
               <option value="ESTAGIO">Estágio</option>
               <option value="APRENDIZ">Aprendiz</option>
+              <option value="TRAINEE">Trainee</option>
             </FilterSelect>
           )}
           <FilterSelect
@@ -1993,12 +3125,14 @@ function OperationalList({
               rows={rows}
               primaryKey="pessoa"
               columns={columns}
-              onRow={(row) => {
-                const personId =
-                  row.pessoaId ??
-                  ((row.beneficioVinculo as Row)?.vinculo as Row)?.pessoaId;
-                if (personId) navigate(`/app/pessoas/${personId}`);
-              }}
+              {...(kind === "beneficios"
+                ? {}
+                : {
+                    onRow: (row: Row) => {
+                      const personId = row.pessoaId;
+                      if (personId) navigate(`/app/pessoas/${personId}`);
+                    },
+                  })}
               empty={
                 <EmptyState
                   title="Nenhum resultado"

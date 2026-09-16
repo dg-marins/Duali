@@ -67,7 +67,7 @@ export const leaveResources: Resource[] = [
       const v = await tx.vinculo.findUniqueOrThrow({
         where: { id: String(data.vinculoId) },
       });
-      if ((v.tipo === "CLT") !== (data.tipo === "FERIAS"))
+      if (["CLT", "TRAINEE"].includes(v.tipo) !== (data.tipo === "FERIAS"))
         throw new DomainError(
           422,
           "Tipo de período incompatível com o vínculo.",
@@ -205,6 +205,13 @@ export async function leaveAlerts(db: PrismaClient) {
       tipo: "DESCANSO",
       mensagem,
       prazo: null,
+      ...(mensagem === "Saldo de férias de estágio acima de 30 dias."
+        ? { codigo: "FERIAS_ESTAGIO_SALDO_ACIMA_30", severidade: "CRITICA" }
+        : mensagem === "Saldo de férias de estágio atingiu 30 dias."
+          ? { codigo: "FERIAS_ESTAGIO_SALDO_30", severidade: "ATENCAO" }
+          : mensagem === "Saldo de férias de estágio disponível: 15 dias."
+            ? { codigo: "FERIAS_ESTAGIO_SALDO_15", severidade: "INFORMATIVA" }
+            : {}),
     })),
   );
 }

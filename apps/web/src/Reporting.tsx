@@ -14,6 +14,88 @@ import {
   money,
 } from "./ui";
 
+const preparationChartColors = [
+  "#0f766e",
+  "#2563eb",
+  "#d97706",
+  "#9333ea",
+  "#dc2626",
+  "#65a30d",
+  "#db2777",
+  "#374151",
+];
+
+const benefitCategoryLabels: Record<string, string> = {
+  ALIMENTACAO: "Alimentação",
+  TRANSPORTE: "Transporte",
+  CESTA_BASICA: "Cesta básica",
+  PREMIACAO: "Premiação",
+  OUTRO: "Outro",
+};
+
+type PreparationChartItem = {
+  id: string;
+  label: string;
+  detail?: string;
+  value: number;
+  status?: string;
+};
+
+function piePoint(angle: number) {
+  const radians = ((angle - 90) * Math.PI) / 180;
+  return {
+    x: 50 + 48 * Math.cos(radians),
+    y: 50 + 48 * Math.sin(radians),
+  };
+}
+
+function pieSlicePath(startAngle: number, endAngle: number) {
+  if (endAngle - startAngle >= 359.999) {
+    return "M 50 2 A 48 48 0 1 1 50 98 A 48 48 0 1 1 50 2 Z";
+  }
+  const start = piePoint(startAngle),
+    end = piePoint(endAngle),
+    largeArc = endAngle - startAngle > 180 ? 1 : 0;
+  return `M 50 50 L ${start.x} ${start.y} A 48 48 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
+}
+
+function pieLabelPoint(startAngle: number, endAngle: number) {
+  const midpoint = (startAngle + endAngle) / 2,
+    radians = ((midpoint - 90) * Math.PI) / 180;
+  return {
+    x: 50 + 28 * Math.cos(radians),
+    y: 50 + 28 * Math.sin(radians),
+  };
+}
+
+function preparationSlices(items: PreparationChartItem[]) {
+  const total = items.reduce((sum, item) => sum + Math.abs(item.value), 0);
+  return items.reduce<
+    Array<PreparationChartItem & { start: number; end: number; color: string }>
+  >((result, item, index) => {
+    const start = result.at(-1)?.end ?? 0;
+    result.push({
+      ...item,
+      start,
+      end:
+        index === items.length - 1
+          ? 360
+          : start + (Math.abs(item.value) / total) * 360,
+      color: preparationChartColors[index % preparationChartColors.length]!,
+    });
+    return result;
+  }, []);
+}
+
+function formatCompetenceMonth(competence: string) {
+  const formatted = new Intl.DateTimeFormat("pt-BR", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${competence}-01T00:00:00.000Z`));
+  return `${formatted.charAt(0).toUpperCase()}${formatted.slice(1)}`;
+}
+
 const reportColumns: Record<
   string,
   Array<{
@@ -84,9 +166,12 @@ const reportColumns: Record<
     "Vínculo",
     "Benefício",
     "Fornecedor",
+    "Condução",
     "Componente",
     "Competência",
     "Dias",
+    "Valor diário",
+    "Total mensal do item",
     "Quantidade",
     "Valor unitário",
     "Valor calculado",
@@ -101,7 +186,7 @@ const reportColumns: Record<
     format:
       key === "Competência"
         ? "date"
-        : /^Valor|Ajustes|Divergência/.test(key)
+        : /^Valor|^Total mensal|Ajustes|Divergência/.test(key)
           ? "money"
           : undefined,
     mobile: index === 0 ? "primary" : index > 5 ? "hidden" : "secondary",
@@ -113,7 +198,6 @@ const reportColumns: Record<
     "Competência",
     "Benefício",
     "Fornecedor",
-    "Cartão",
     "Destino",
     "Previsto",
     "Reservado",
@@ -150,6 +234,7 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
   const [competence, setCompetence] = useState(
     initial.get("competencia")?.slice(0, 7) ?? currentMonth,
   );
+  const [category, setCategory] = useState(initial.get("categoria") ?? "");
   const [units, setUnits] = useState<Row[]>([]);
   const [data, setData] = useState<Row | null>(null);
   const [loading, setLoading] = useState(true);
@@ -163,11 +248,18 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams();
+    if (unit) params.set("unidadeId", unit);
+    params.set("competencia", `${competence}-01`);
+    if (category) params.set("categoria", category);
+    history.replaceState(null, "", `${location.pathname}?${params}`);
+  }, [unit, competence, category]);
+
+  useEffect(() => {
     let active = true;
     const params = new URLSearchParams();
     if (unit) params.set("unidadeId", unit);
     params.set("competencia", `${competence}-01`);
-    history.replaceState(null, "", `${location.pathname}?${params}`);
     setLoading(true);
     void api<Row>(`dashboard?${params}`)
       .then((result) => {
@@ -187,6 +279,7 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
   }, [unit, competence]);
 
   const metrics = [
+    ["custoBeneficios", "Custo de benefícios no mês", "/app/beneficios", true],
     [
       "pendenciasCriticas",
       "Pendências críticas",
@@ -206,7 +299,6 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
       false,
     ],
     ["feriasAtencao", "Férias exigindo atenção", "/app/ferias", false],
-    ["custoBeneficios", "Custo de benefícios no mês", "/app/beneficios", true],
     [
       "divergenciasBeneficios",
       "Divergências de benefícios",
@@ -217,9 +309,73 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
   const pendings = Array.isArray(data?.pendenciasPrioritarias)
     ? (data.pendenciasPrioritarias as Row[])
     : [];
-  const readiness = Array.isArray(data?.prontidaoMensal)
-    ? (data.prontidaoMensal as Row[])
+  const monthlyPreparation = Array.isArray(data?.preparacaoMensalPorFornecedor)
+    ? (data.preparacaoMensalPorFornecedor as Row[])
     : [];
+  const selectedUnitName = unit
+      ? String(
+          monthlyPreparation.find((item) => String(item.unidadeId) === unit)
+            ?.unidade ?? "Unidade selecionada",
+        )
+      : "",
+    rowsForUnit = unit
+      ? monthlyPreparation.filter((item) => String(item.unidadeId) === unit)
+      : monthlyPreparation,
+    chartItems = (() => {
+      if (!unit) {
+        const totals = new Map<string, PreparationChartItem>();
+        for (const row of monthlyPreparation) {
+          const id = String(row.unidadeId),
+            current = totals.get(id),
+            value = Number(row.valorPrevisto ?? 0);
+          if (current) current.value += value;
+          else
+            totals.set(id, {
+              id,
+              label: String(row.unidade),
+              value,
+            });
+        }
+        return [...totals.values()].sort(
+          (left, right) => right.value - left.value,
+        );
+      }
+      if (!category) {
+        const totals = new Map<string, PreparationChartItem>();
+        for (const row of rowsForUnit) {
+          const id = String(row.tipo),
+            current = totals.get(id),
+            value = Number(row.valorPrevisto ?? 0);
+          if (current) current.value += value;
+          else
+            totals.set(id, {
+              id,
+              label: benefitCategoryLabels[id] ?? id.replaceAll("_", " "),
+              value,
+              status: String(row.estado),
+            });
+        }
+        return [...totals.values()].sort(
+          (left, right) => right.value - left.value,
+        );
+      }
+      return rowsForUnit
+        .filter((row) => String(row.tipo) === category)
+        .map((row) => ({
+          id: String(row.fornecedorId),
+          label: String(row.fornecedor),
+          detail:
+            benefitCategoryLabels[category] ?? category.replaceAll("_", " "),
+          value: Number(row.valorPrevisto ?? 0),
+          status: String(row.estado),
+        }))
+        .sort((left, right) => right.value - left.value);
+    })(),
+    chartTotal = chartItems.reduce(
+      (sum, item) => sum + Math.abs(item.value),
+      0,
+    ),
+    chartSlices = chartTotal ? preparationSlices(chartItems) : [];
   const metricDetails = selectedMetric
     ? Array.isArray((data?.kpiDetalhes as Row | undefined)?.[selectedMetric])
       ? ((data?.kpiDetalhes as Row)[selectedMetric] as Row[])
@@ -241,7 +397,10 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
           <span>Unidade</span>
           <select
             value={unit}
-            onChange={(event) => setUnit(event.target.value)}
+            onChange={(event) => {
+              setUnit(event.target.value);
+              setCategory("");
+            }}
           >
             <option value="">Todas as unidades</option>
             {units.map((item) => (
@@ -340,103 +499,213 @@ export function Dashboard({ navigate }: { navigate?: (path: string) => void }) {
                   )}
                 </section>
               )}
-              <section className="panel dashboard-attention">
-                <h2>Atenção necessária</h2>
-                {pendings.length ? (
-                  <div className="table-scroll">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Pessoa</th>
-                          <th>Severidade</th>
-                          <th>Pendência</th>
-                          <th>Prazo</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pendings.slice(0, 5).map((row) => (
-                          <tr key={String(row.id)}>
-                            <td>
+              <div className="dashboard-operational-grid">
+                <section className="panel dashboard-readiness">
+                  <h2>Benefício Mensal</h2>
+                  {chartSlices.length ? (
+                    <div
+                      className="monthly-preparation-chart"
+                      aria-label="Valores previstos por unidade, categoria e fornecedor"
+                    >
+                      <div
+                        className="monthly-preparation-breadcrumb"
+                        aria-label="Navegação do gráfico"
+                      >
+                        <button
+                          className="link-button"
+                          aria-current={!unit ? "page" : undefined}
+                          onClick={() => {
+                            setUnit("");
+                            setCategory("");
+                          }}
+                        >
+                          Todas as unidades
+                        </button>
+                        {unit && (
+                          <>
+                            <span aria-hidden="true">/</span>
+                            <button
+                              className="link-button"
+                              aria-current={!category ? "page" : undefined}
+                              onClick={() => setCategory("")}
+                            >
+                              {selectedUnitName}
+                            </button>
+                          </>
+                        )}
+                        {category && (
+                          <>
+                            <span aria-hidden="true">/</span>
+                            <span aria-current="page">
+                              {benefitCategoryLabels[category] ??
+                                category.replaceAll("_", " ")}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <div className="monthly-preparation-unit-heading">
+                        <span>
+                          Competência: {formatCompetenceMonth(competence)}
+                        </span>
+                      </div>
+                      <div className="monthly-preparation-pie-layout">
+                        <div className="monthly-preparation-pie-summary">
+                          <svg
+                            className="monthly-preparation-pie"
+                            viewBox="0 0 100 100"
+                            role="img"
+                            aria-label={`Distribuição de ${money(chartTotal)} na competência ${competence}.`}
+                          >
+                            {chartSlices.map((slice) => {
+                              const percentage =
+                                  (Math.abs(slice.value) / chartTotal) * 100,
+                                label = `${slice.label}${slice.detail ? `, ${slice.detail}` : ""}: ${money(slice.value)} (${percentage.toFixed(1)}%)`,
+                                select = !unit
+                                  ? () => {
+                                      setUnit(slice.id);
+                                      setCategory("");
+                                    }
+                                  : !category
+                                    ? () => setCategory(slice.id)
+                                    : undefined;
+                              const showPercentage = percentage >= 5,
+                                labelPoint = pieLabelPoint(
+                                  slice.start,
+                                  slice.end,
+                                );
+                              return (
+                                <g key={slice.id}>
+                                  <path
+                                    d={pieSlicePath(slice.start, slice.end)}
+                                    fill={slice.color}
+                                    className="monthly-preparation-slice"
+                                    role={select ? "button" : undefined}
+                                    tabIndex={select ? 0 : undefined}
+                                    aria-label={label}
+                                    onClick={select}
+                                    onKeyDown={(event) => {
+                                      if (
+                                        !select ||
+                                        !["Enter", " "].includes(event.key)
+                                      )
+                                        return;
+                                      event.preventDefault();
+                                      select();
+                                    }}
+                                  >
+                                    <title>{label}</title>
+                                  </path>
+                                  {showPercentage && (
+                                    <text
+                                      className="monthly-preparation-slice-percentage"
+                                      x={labelPoint.x}
+                                      y={labelPoint.y}
+                                      textAnchor="middle"
+                                      dominantBaseline="middle"
+                                      aria-hidden="true"
+                                    >
+                                      {percentage.toFixed(1)}%
+                                    </text>
+                                  )}
+                                </g>
+                              );
+                            })}
+                          </svg>
+                          <strong className="monthly-preparation-total">
+                            Total previsto: {money(chartTotal)}
+                          </strong>
+                        </div>
+                        <div className="monthly-preparation-legend">
+                          {chartSlices.map((slice) => {
+                            const selectable = !unit || !category,
+                              select = !unit
+                                ? () => {
+                                    setUnit(slice.id);
+                                    setCategory("");
+                                  }
+                                : !category
+                                  ? () => setCategory(slice.id)
+                                  : undefined;
+                            return (
                               <button
-                                className="link-button"
-                                onClick={() => navigate?.(String(row.href))}
+                                className="monthly-preparation-legend-row"
+                                key={slice.id}
+                                type="button"
+                                disabled={!selectable}
+                                onClick={select}
                               >
-                                {display(row.pessoa)}
+                                <span
+                                  className="monthly-preparation-swatch"
+                                  style={{ backgroundColor: slice.color }}
+                                  aria-hidden="true"
+                                />
+                                <span className="monthly-preparation-legend-label">
+                                  <strong>{slice.label}</strong>
+                                  <span>
+                                    {slice.detail ? `${slice.detail} · ` : ""}
+                                    {money(slice.value)}
+                                  </span>
+                                </span>
+                                {slice.status && (
+                                  <StatusBadge
+                                    value={slice.status.replaceAll("_", " ")}
+                                  />
+                                )}
                               </button>
-                            </td>
-                            <td>
-                              <StatusBadge value={row.severidade} />
-                            </td>
-                            <td className="wrap">{display(row.descricao)}</td>
-                            <td>{formatDate(row.prazo)}</td>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title="Sem valores previstos"
+                      description="Não há valores de benefício maiores ou menores que zero para a unidade e competência selecionadas."
+                    />
+                  )}
+                </section>
+                <section className="panel dashboard-attention">
+                  <h2>Atenção necessária</h2>
+                  {pendings.length ? (
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Pessoa</th>
+                            <th>Severidade</th>
+                            <th>Pendência</th>
+                            <th>Prazo</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <EmptyState
-                    title="Nenhuma pendência encontrada"
-                    description="Tudo certo por aqui."
-                  />
-                )}
-              </section>
-              <section className="panel dashboard-readiness">
-                <div className="section-heading">
-                  <div>
-                    <h2>Preparação mensal</h2>
-                    <p>
-                      O mês está preparado quando cada categoria aplicável
-                      estiver sem impedimentos.
-                    </p>
-                  </div>
-                  <button
-                    className="secondary"
-                    onClick={() =>
-                      navigate?.(
-                        `/app/beneficios?unidadeId=${unit}&competencia=${competence}-01`,
-                      )
-                    }
-                  >
-                    Abrir benefícios
-                  </button>
-                </div>
-                {readiness.length ? (
-                  <div className="table-scroll">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Unidade</th>
-                          <th>Categoria</th>
-                          <th>Adesões</th>
-                          <th>Preparadas</th>
-                          <th>Estado</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {readiness.map((row) => (
-                          <tr key={`${row.unidadeId}-${row.tipo}`}>
-                            <td>{display(row.unidade)}</td>
-                            <td>{display(row.tipo).replaceAll("_", " ")}</td>
-                            <td>{display(row.beneficiosElegiveis)}</td>
-                            <td>{display(row.competenciasPreparadas)}</td>
-                            <td>
-                              <StatusBadge
-                                value={String(row.estado).replaceAll("_", " ")}
-                              />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <EmptyState
-                    title="Sem categorias aplicáveis"
-                    description="Não há adesões de benefício vigentes nesta competência."
-                  />
-                )}
-              </section>
+                        </thead>
+                        <tbody>
+                          {pendings.slice(0, 5).map((row) => (
+                            <tr key={String(row.id)}>
+                              <td>
+                                <button
+                                  className="link-button"
+                                  onClick={() => navigate?.(String(row.href))}
+                                >
+                                  {display(row.pessoa)}
+                                </button>
+                              </td>
+                              <td>
+                                <StatusBadge value={row.severidade} />
+                              </td>
+                              <td className="wrap">{display(row.descricao)}</td>
+                              <td>{formatDate(row.prazo)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title="Nenhuma pendência encontrada"
+                      description="Tudo certo por aqui."
+                    />
+                  )}
+                </section>
+              </div>
             </>
           </RefreshingContent>
         )
@@ -745,6 +1014,7 @@ export function Reporting() {
               <option>CLT</option>
               <option>ESTAGIO</option>
               <option>APRENDIZ</option>
+              <option>TRAINEE</option>
             </select>
           </label>
           <label>

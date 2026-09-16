@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { createHash } from "node:crypto";
-import { Prisma, type PrismaClient } from "@duali/database";
+import { Prisma, type PrismaClient, type TipoBeneficio } from "@duali/database";
 import {
   z,
   fornecedorSchema,
@@ -26,6 +26,32 @@ import {
 import { registerResource, type Resource } from "./resources.js";
 import { transportCalculation } from "./transport.js";
 const recurringComponent = "__RECORRENTE__";
+const monthEnd = (month: Date) =>
+  new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0));
+const weekdayIndexes: Record<string, number> = {
+  DOMINGO: 0,
+  SEGUNDA: 1,
+  TERCA: 2,
+  QUARTA: 3,
+  QUINTA: 4,
+  SEXTA: 5,
+  SABADO: 6,
+};
+function suggestedTransportDays(
+  link: { tipoEscala: string | null; diasSemana: string[] },
+  month: Date,
+) {
+  if (link.tipoEscala !== "DIAS_SEMANA" || !link.diasSemana.length) return null;
+  const selected = new Set(link.diasSemana.map((day) => weekdayIndexes[day]));
+  let count = 0;
+  for (let day = 1; day <= monthEnd(month).getUTCDate(); day++) {
+    const current = new Date(
+      Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), day),
+    );
+    if (selected.has(current.getUTCDay())) count++;
+  }
+  return count;
+}
 
 export function idempotencyKey(req: {
   headers: Record<string, string | string[] | undefined>;
@@ -168,12 +194,13 @@ export const benefitResources: Resource[] = [
       )
         throw new DomainError(
           422,
-          "Transporte usa itens de condução e cartão.",
+          "Transporte usa itens de condução e fornecedor.",
         );
       if (data.configuracaoRecorrenteId) {
         const [config, benefit] = await Promise.all([
           tx.configuracaoBeneficio.findUnique({
             where: { id: String(data.configuracaoRecorrenteId) },
+            include: { fornecedor: true },
           }),
           tx.vinculo.findUnique({ where: { id: String(data.vinculoId) } }),
         ]);
@@ -181,12 +208,91 @@ export const benefitResources: Resource[] = [
           !config ||
           !benefit ||
           config.unidadeId !== benefit.unidadeId ||
-          config.tipo !== data.tipo
+          config.tipo !== data.tipo ||
+          !config.ativa ||
+          !config.fornecedor.ativo
         )
           throw new DomainError(
             422,
             "Fornecedor recorrente incompatível com vínculo e benefício.",
           );
+      }
+
+      const overlapping = await tx.beneficioVinculo.findFirst({
+        where: {
+          ...(previous ? { id: { not: String(previous.id) } } : {}),
+          vinculoId: String(data.vinculoId),
+          tipo: String(data.tipo) as TipoBeneficio,
+          ...(data.fimVigencia
+            ? { inicioVigencia: { lte: data.fimVigencia as Date } }
+            : {}),
+          OR: [
+            { fimVigencia: null },
+            { fimVigencia: { gte: data.inicioVigencia as Date } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (overlapping)
+        throw new DomainError(
+          409,
+          "J\u00e1 existe uma ades\u00e3o desse tipo com vig\u00eancia sobreposta.",
+        );
+
+      if (previous) {
+        const protectedFields = [
+          "configuracaoRecorrenteId",
+          "valorDiario",
+          "quantidadeRecorrente",
+          "valorUnitarioRecorrente",
+          "inicioVigencia",
+          "fimVigencia",
+          "status",
+        ];
+        const normalized = (value: unknown) =>
+          value instanceof Date
+            ? value.toISOString()
+            : value == null
+              ? null
+              : String(value);
+        const changesHistory = protectedFields.some(
+          (field) => normalized(data[field]) !== normalized(previous[field]),
+        );
+        if (changesHistory) {
+          const competencies = await tx.beneficioCompetencia.findMany({
+            where: { beneficioVinculoId: String(previous.id) },
+            select: {
+              competencia: true,
+              _count: { select: { aquisicaoItens: true } },
+            },
+          });
+          if (competencies.some((item) => item._count.aquisicaoItens > 0))
+            throw new DomainError(
+              409,
+              "N\u00e3o altere uma ades\u00e3o que j\u00e1 possui pedido ou compra.",
+            );
+          if (competencies.length) {
+            const benefit = await tx.vinculo.findUniqueOrThrow({
+              where: { id: String(previous.vinculoId) },
+              select: { unidadeId: true },
+            });
+            const closed = await tx.fechamentoCompetenciaBeneficio.findFirst({
+              where: {
+                unidadeId: benefit.unidadeId,
+                competencia: {
+                  in: competencies.map((item) => item.competencia),
+                },
+                status: "FECHADA",
+              },
+              select: { id: true },
+            });
+            if (closed)
+              throw new DomainError(
+                409,
+                "Reabra as compet\u00eancias fechadas antes de alterar a ades\u00e3o.",
+              );
+          }
+        }
       }
     },
   },
@@ -199,11 +305,16 @@ export const benefitResources: Resource[] = [
       beneficioVinculo: { include: { vinculo: { include: { pessoa: true } } } },
       configuracao: { include: { fornecedor: true } },
       ajustes: { include: { distribuicoes: true } },
-      transporteItens: { include: { cartaoTransporte: true } },
+      transporteItens: { include: { fornecedor: true } },
     },
     present: benefitCalculation,
     filters: ["status"],
     before: async (tx, data, previous) => {
+      if (!previous && data.status !== "PENDENTE")
+        throw new DomainError(
+          422,
+          "Uma nova competência deve iniciar como pendente.",
+        );
       if (
         previous &&
         [
@@ -217,6 +328,12 @@ export const benefitResources: Resource[] = [
           409,
           "Identificação da competência é histórica; cancele e crie outro registro.",
         );
+      if (previous?.status === "CANCELADO" || previous?.status === "PAGO")
+        throw new DomainError(
+          409,
+          "Competência cancelada ou paga é somente para consulta.",
+        );
+      if (previous) data.status = "PENDENTE";
       const benefit = await tx.beneficioVinculo.findUniqueOrThrow({
         where: { id: String(data.beneficioVinculoId) },
         include: { vinculo: true },
@@ -304,10 +421,165 @@ export const benefitResources: Resource[] = [
 ];
 export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
   for (const resource of benefitResources) registerResource(app, db, resource);
+  app.post("/api/competencias/:id/conferir", async (req) => {
+    const { id } = paramsId.parse(req.params);
+    return transaction(db, async (tx) => {
+      const previous = await tx.beneficioCompetencia.findUnique({
+        where: { id },
+        include: {
+          aquisicaoItens: true,
+          beneficioVinculo: { include: { vinculo: true } },
+        },
+      });
+      if (!previous) throw new DomainError(404, "Competência não encontrada.");
+      if (previous.status !== "PENDENTE")
+        throw new DomainError(
+          409,
+          "Somente competências pendentes podem ser conferidas.",
+        );
+      if (previous.aquisicaoItens.length)
+        throw new DomainError(
+          409,
+          "Não altere competência com pedido ou compra emitidos.",
+        );
+      await ensureOpen(
+        tx,
+        previous.beneficioVinculo.vinculo.unidadeId,
+        previous.competencia,
+      );
+      const current = await tx.beneficioCompetencia.update({
+        where: { id },
+        data: { status: "CONFERIDO" },
+      });
+      await audit(
+        tx,
+        req.userId,
+        "CONFERIR_COMPETENCIA_BENEFICIO",
+        "beneficioCompetencia",
+        id,
+        previous,
+        current,
+      );
+      return benefitCalculation(current);
+    });
+  });
+  app.post("/api/competencias/:id/cancelar", async (req) => {
+    const { id } = paramsId.parse(req.params);
+    return transaction(db, async (tx) => {
+      const previous = await tx.beneficioCompetencia.findUnique({
+        where: { id },
+        include: {
+          aquisicaoItens: true,
+          beneficioVinculo: { include: { vinculo: true } },
+        },
+      });
+      if (!previous) throw new DomainError(404, "Competência não encontrada.");
+      if (!(["PENDENTE", "CONFERIDO"] as string[]).includes(previous.status))
+        throw new DomainError(
+          409,
+          "Somente competências pendentes ou conferidas podem ser canceladas.",
+        );
+      if (previous.aquisicaoItens.length)
+        throw new DomainError(
+          409,
+          "Não cancele competência com pedido ou compra emitidos.",
+        );
+      await ensureOpen(
+        tx,
+        previous.beneficioVinculo.vinculo.unidadeId,
+        previous.competencia,
+      );
+      const current = await tx.beneficioCompetencia.update({
+        where: { id },
+        data: { status: "CANCELADO" },
+      });
+      await audit(
+        tx,
+        req.userId,
+        "CANCELAR_COMPETENCIA_BENEFICIO",
+        "beneficioCompetencia",
+        id,
+        previous,
+        current,
+      );
+      return benefitCalculation(current);
+    });
+  });
+  app.post("/api/beneficios-vinculo/:id/encerrar", async (req) => {
+    const { id } = paramsId.parse(req.params);
+    const body = z
+      .object({
+        fimVigencia: z.string().date(),
+        motivo: z.string().trim().min(3).max(500),
+      })
+      .strict()
+      .parse(req.body);
+    return transaction(db, async (tx) => {
+      const previous = await tx.beneficioVinculo.findUnique({
+        where: { id },
+        include: {
+          vinculo: true,
+          transporteItens: true,
+          competencias: { include: { aquisicaoItens: true } },
+        },
+      });
+      if (!previous) throw new DomainError(404, "Benefício não encontrado.");
+      if (previous.status !== "ATIVO")
+        throw new DomainError(409, "Este benefício já está encerrado.");
+      const end = new Date(`${body.fimVigencia}T00:00:00.000Z`);
+      if (end < previous.inicioVigencia)
+        throw new DomainError(
+          422,
+          "O encerramento não pode ser anterior ao início.",
+        );
+      if (
+        previous.competencias.some(
+          (item) => item.competencia > end || item.aquisicaoItens.length > 0,
+        )
+      )
+        throw new DomainError(
+          409,
+          "Cancele competências futuras e resolva pedidos ou compras antes de encerrar o benefício.",
+        );
+      if (
+        previous.transporteItens.some(
+          (item) => item.ativo && item.inicioVigencia > end,
+        )
+      )
+        throw new DomainError(
+          409,
+          "Há itens futuros de transporte. Revise as vigências antes de encerrar o benefício.",
+        );
+      const current = await tx.beneficioVinculo.update({
+        where: { id },
+        data: { status: "ENCERRADO", fimVigencia: end },
+      });
+      if (previous.tipo === "TRANSPORTE")
+        await tx.beneficioTransporteItem.updateMany({
+          where: {
+            beneficioVinculoId: id,
+            ativo: true,
+            inicioVigencia: { lte: end },
+          },
+          data: { ativo: false, fimVigencia: end },
+        });
+      await audit(
+        tx,
+        req.userId,
+        "ENCERRAR_BENEFICIO",
+        "beneficioVinculo",
+        id,
+        previous,
+        { ...current, motivoEncerramento: body.motivo },
+      );
+      return current;
+    });
+  });
   app.get("/api/beneficios/lote/opcoes", async (req) => {
     const query = z
       .object({
         unidadeId: z.string().uuid(),
+        competencia: z.string().date(),
         tipo: z.enum([
           "TRANSPORTE",
           "ALIMENTACAO",
@@ -317,15 +589,36 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
         ]),
       })
       .parse(req.query);
-    const [vinculos, configuracoes, cartoes] = await Promise.all([
+    const optionMonth = new Date(query.competencia);
+    const [vinculos, configuracoes] = await Promise.all([
       db.vinculo.findMany({
         where: { unidadeId: query.unidadeId, status: "ATIVO" },
         include: {
           pessoa: true,
           beneficios: {
-            where: { tipo: query.tipo, status: "ATIVO" },
+            where: {
+              tipo: query.tipo,
+              status: "ATIVO",
+              inicioVigencia: { lte: monthEnd(optionMonth) },
+              OR: [
+                { fimVigencia: null },
+                { fimVigencia: { gte: optionMonth } },
+              ],
+            },
             include: {
               configuracaoRecorrente: { include: { fornecedor: true } },
+              transporteItens: {
+                where: {
+                  ativo: true,
+                  inicioVigencia: { lte: optionMonth },
+                  OR: [
+                    { fimVigencia: null },
+                    { fimVigencia: { gte: optionMonth } },
+                  ],
+                },
+                include: { fornecedor: true },
+                orderBy: { inicioVigencia: "desc" },
+              },
             },
             orderBy: { inicioVigencia: "desc" },
           },
@@ -337,14 +630,14 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
         include: { fornecedor: true },
         orderBy: { fornecedor: { nome: "asc" } },
       }),
-      query.tipo === "TRANSPORTE"
-        ? db.cartaoTransporte.findMany({
-            where: { ativo: true },
-            orderBy: { nome: "asc" },
-          })
-        : Promise.resolve([]),
     ]);
-    return { vinculos, configuracoes, cartoes };
+    return {
+      vinculos: vinculos.map((link) => ({
+        ...link,
+        sugestaoDiasTransporte: suggestedTransportDays(link, optionMonth),
+      })),
+      configuracoes,
+    };
   });
   app.post("/api/beneficios/lote", async (req, reply) => {
     const body = beneficioLoteSchema.parse(req.body);
@@ -360,19 +653,40 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
         body,
         async () => {
           await ensureOpen(tx, body.unidadeId, month);
-          const config = await tx.configuracaoBeneficio.findFirst({
-            where: {
-              id: body.configuracaoId,
-              unidadeId: body.unidadeId,
-              tipo: body.tipo,
-              ativa: true,
-              fornecedor: { ativo: true },
-            },
+          const transportSupplierIds = [
+            ...new Set(
+              body.itens.flatMap((item) =>
+                item.transporteItens.map((transport) => transport.fornecedorId),
+              ),
+            ),
+          ];
+          const validConfigs = await tx.configuracaoBeneficio.findMany({
+            where:
+              body.tipo === "TRANSPORTE"
+                ? {
+                    unidadeId: body.unidadeId,
+                    tipo: body.tipo,
+                    ativa: true,
+                    fornecedor: { ativo: true },
+                    fornecedorId: { in: transportSupplierIds },
+                  }
+                : {
+                    id: body.configuracaoId!,
+                    unidadeId: body.unidadeId,
+                    tipo: body.tipo,
+                    ativa: true,
+                    fornecedor: { ativo: true },
+                  },
           });
-          if (!config)
+          const config = validConfigs[0];
+          if (
+            !config ||
+            (body.tipo === "TRANSPORTE" &&
+              validConfigs.length !== transportSupplierIds.length)
+          )
             throw new DomainError(
               422,
-              "Selecione um fornecedor ativo da unidade e categoria.",
+              "Selecione fornecedores ativos de transporte configurados para a unidade.",
             );
           const ids = body.itens.map((item) => item.vinculoId);
           if (new Set(ids).size !== ids.length)
@@ -463,7 +777,8 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
                   vinculoId: item.vinculoId,
                   tipo: body.tipo,
                   inicioVigencia: month,
-                  configuracaoRecorrenteId: config.id,
+                  configuracaoRecorrenteId:
+                    body.tipo === "TRANSPORTE" ? null : config.id,
                   ...(body.tipo === "ALIMENTACAO"
                     ? { valorDiario: item.valorDiario ?? null }
                     : {}),
@@ -481,7 +796,8 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
               benefit = await tx.beneficioVinculo.update({
                 where: { id: benefit.id },
                 data: {
-                  configuracaoRecorrenteId: config.id,
+                  configuracaoRecorrenteId:
+                    body.tipo === "TRANSPORTE" ? null : config.id,
                   ...(body.tipo === "ALIMENTACAO"
                     ? { valorDiario: item.valorDiario ?? null }
                     : {}),
@@ -548,57 +864,99 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
                   },
                 });
             if (body.tipo === "TRANSPORTE") {
-              const cardIds = [
-                ...new Set(
-                  item.transporteItens.map(
-                    (transport) => transport.cartaoTransporteId,
-                  ),
-                ),
-              ];
-              const cards = await tx.cartaoTransporte.count({
-                where: {
-                  id: { in: cardIds },
-                  ativo: true,
-                },
-              });
-              if (cards !== cardIds.length)
+              const currentTransportItems =
+                await tx.beneficioTransporteItem.findMany({
+                  where: {
+                    beneficioVinculoId: benefit.id,
+                    ativo: true,
+                    inicioVigencia: { lte: month },
+                    OR: [
+                      { fimVigencia: null },
+                      { fimVigencia: { gte: month } },
+                    ],
+                  },
+                });
+              if (
+                await tx.beneficioTransporteItem.count({
+                  where: {
+                    beneficioVinculoId: benefit.id,
+                    ativo: true,
+                    inicioVigencia: { gt: month },
+                  },
+                })
+              )
                 throw new DomainError(
-                  422,
-                  "Selecione cartões de transporte ativos.",
+                  409,
+                  "Há uma configuração futura de transporte. Revise as vigências antes de aplicar o lote.",
                 );
-              await tx.beneficioTransporteItem.deleteMany({
-                where: {
-                  beneficioVinculoId: benefit.id,
-                  inicioVigencia: month,
-                },
-              });
-              await tx.beneficioTransporteItem.createMany({
-                data: item.transporteItens.map((transport) => ({
-                  ...transport,
-                  beneficioVinculoId: benefit.id,
-                  inicioVigencia: month,
-                })),
-              });
+              const replacementIds = new Set<string>();
+              const createdTransportItems = [];
+              for (const transport of item.transporteItens) {
+                const sameMonth = currentTransportItems.find(
+                  (current) =>
+                    current.inicioVigencia.getTime() === month.getTime() &&
+                    current.tipoConducao === transport.tipoConducao &&
+                    current.fornecedorId === transport.fornecedorId,
+                );
+                const createdItem = sameMonth
+                  ? await tx.beneficioTransporteItem.update({
+                      where: { id: sameMonth.id },
+                      data: { valorDiario: transport.valorDiario },
+                    })
+                  : await tx.beneficioTransporteItem.create({
+                      data: {
+                        ...transport,
+                        beneficioVinculoId: benefit.id,
+                        inicioVigencia: month,
+                      },
+                    });
+                replacementIds.add(createdItem.id);
+                createdTransportItems.push(createdItem);
+                await audit(
+                  tx,
+                  req.userId,
+                  sameMonth
+                    ? "ALTERAR_TRANSPORTE_EM_LOTE"
+                    : "CRIAR_TRANSPORTE_EM_LOTE",
+                  "beneficioTransporteItem",
+                  createdItem.id,
+                  sameMonth,
+                  createdItem,
+                );
+              }
+              for (const current of currentTransportItems) {
+                if (replacementIds.has(current.id)) continue;
+                const closed = await tx.beneficioTransporteItem.update({
+                  where: { id: current.id },
+                  data: {
+                    ativo: false,
+                    fimVigencia:
+                      current.inicioVigencia.getTime() === month.getTime()
+                        ? month
+                        : previousDay,
+                  },
+                });
+                await audit(
+                  tx,
+                  req.userId,
+                  "ENCERRAR_TRANSPORTE_EM_LOTE",
+                  "beneficioTransporteItem",
+                  current.id,
+                  current,
+                  closed,
+                );
+              }
               await tx.beneficioTransporteCompetenciaItem.deleteMany({
                 where: { competenciaId: competence.id },
               });
-              for (const transport of item.transporteItens) {
-                const source =
-                  await tx.beneficioTransporteItem.findFirstOrThrow({
-                    where: {
-                      beneficioVinculoId: benefit.id,
-                      inicioVigencia: month,
-                      tipoConducao: transport.tipoConducao,
-                      cartaoTransporteId: transport.cartaoTransporteId,
-                    },
-                  });
+              for (const source of createdTransportItems) {
                 await tx.beneficioTransporteCompetenciaItem.create({
                   data: {
                     competenciaId: competence.id,
                     origemItemId: source.id,
-                    tipoConducao: transport.tipoConducao,
-                    cartaoTransporteId: transport.cartaoTransporteId,
-                    valorDiario: transport.valorDiario,
+                    tipoConducao: source.tipoConducao,
+                    fornecedorId: source.fornecedorId,
+                    valorDiario: source.valorDiario,
                   },
                 });
               }
@@ -741,7 +1099,7 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
         ajustes: true,
         configuracao: true,
         beneficioVinculo: { include: { vinculo: true } },
-        transporteItens: { include: { cartaoTransporte: true } },
+        transporteItens: { include: { fornecedor: true } },
       },
     });
     const totals = Object.fromEntries(
@@ -898,7 +1256,7 @@ export async function benefitAlerts(db: PrismaClient) {
     include: {
       ajustes: true,
       beneficioVinculo: { include: { vinculo: { include: { pessoa: true } } } },
-      transporteItens: { include: { cartaoTransporte: true } },
+      transporteItens: { include: { fornecedor: true } },
     },
   });
   return rows.flatMap((row) => {

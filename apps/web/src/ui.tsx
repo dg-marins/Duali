@@ -17,6 +17,59 @@ import {
 } from "lucide-react";
 import { display, type Row } from "./api";
 
+function currencyDecimal(value: string) {
+  const cleaned = value.replace(/[^\d,.-]/g, "").trim();
+  if (!cleaned) return "";
+  const normalized = cleaned.includes(",")
+    ? cleaned.replace(/\./g, "").replace(",", ".")
+    : cleaned;
+  const number = Number(normalized);
+  return Number.isFinite(number) && number >= 0 ? number.toFixed(2) : null;
+}
+
+function formatCurrencyInput(value: string) {
+  if (!value) return "";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return value;
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(number);
+}
+
+export function CurrencyInput({
+  value,
+  onValueChange,
+  required,
+  disabled,
+  ariaLabel,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  required?: boolean;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  const [text, setText] = useState(() => formatCurrencyInput(value));
+  useEffect(() => setText(formatCurrencyInput(value)), [value]);
+  return (
+    <input
+      aria-label={ariaLabel}
+      required={required}
+      disabled={disabled}
+      inputMode="decimal"
+      value={text}
+      onFocus={() => setText(value ? value.replace(".", ",") : "")}
+      onChange={(event) => setText(event.target.value.replace(/[^\d,.-]/g, ""))}
+      onBlur={() => {
+        const normalized = currencyDecimal(text);
+        if (normalized !== null) onValueChange(normalized);
+        setText(normalized === null ? text : formatCurrencyInput(normalized));
+      }}
+    />
+  );
+}
+
 export function LoadingSkeleton({
   variant = "table",
   rows = 5,

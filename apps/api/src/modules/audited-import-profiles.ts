@@ -235,7 +235,7 @@ async function personAndLink(
   sheet: string,
   line: number,
   row: unknown[],
-  kind: "CLT" | "ESTAGIO" | "APRENDIZ",
+  kind: "CLT" | "ESTAGIO" | "APRENDIZ" | "TRAINEE",
   name: string,
   admission: unknown,
   scale?: string,
@@ -344,13 +344,15 @@ async function stageLeave(tx: Tx, importId: string, workbook: AuditedWorkbook) {
       const row = sheet.rows[i]!,
         name = text(row[0]);
       if (!name || /colaborador|arquivadas/i.test(name)) continue;
-      const kind: "CLT" | "ESTAGIO" | "APRENDIZ" = /aprendiz/i.test(
+      const kind: "CLT" | "ESTAGIO" | "APRENDIZ" | "TRAINEE" = /trainee/i.test(
         text(row[0]) + text(row[1]),
       )
-        ? "APRENDIZ"
-        : workbook.profile === "DESCANSO_ESTAGIARIOS"
-          ? "ESTAGIO"
-          : "CLT";
+        ? "TRAINEE"
+        : /aprendiz/i.test(text(row[0]) + text(row[1]))
+          ? "APRENDIZ"
+          : workbook.profile === "DESCANSO_ESTAGIARIOS"
+            ? "ESTAGIO"
+            : "CLT";
       const base = await personAndLink(
         tx,
         importId,
@@ -398,7 +400,9 @@ async function stageLeave(tx: Tx, importId: string, workbook: AuditedWorkbook) {
             dataInicio: start ?? "",
             dataFim: end ?? "",
             quantidadeDias: days,
-            tipo: kind === "CLT" ? "FERIAS" : "DESCANSO_ESTAGIO",
+            tipo: ["CLT", "TRAINEE"].includes(kind)
+              ? "FERIAS"
+              : "DESCANSO_ESTAGIO",
             status: "PROGRAMADO",
             observacoes:
               "Importado como evidência histórica; consumo requer confirmação.",
@@ -540,12 +544,14 @@ async function stageBenefits(
       }
       const role = norm(row[0]),
         name = text(row[1]);
-      if (!name || !/(clt|estagi|aprendiz)/.test(role)) continue;
-      const kind = role.includes("aprendiz")
-        ? "APRENDIZ"
-        : role.includes("estagi")
-          ? "ESTAGIO"
-          : "CLT";
+      if (!name || !/(clt|estagi|aprendiz|trainee)/.test(role)) continue;
+      const kind = role.includes("trainee")
+        ? "TRAINEE"
+        : role.includes("aprendiz")
+          ? "APRENDIZ"
+          : role.includes("estagi")
+            ? "ESTAGIO"
+            : "CLT";
       const personKey = `${kind}:${norm(name)}`;
       let base = people.get(personKey);
       if (!base) {

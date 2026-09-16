@@ -32,6 +32,25 @@ const editSchema = z
   .object({ vinculo: vinculoSchema, estagio: stagePayloadSchema.optional() })
   .strict();
 
+function persistScale(data: Record<string, unknown>) {
+  const { escalaEstruturada, ...link } = data;
+  if (!escalaEstruturada)
+    return {
+      ...link,
+      tipoEscala: null,
+      diasSemana: [],
+      quantidadeDiasSemana: null,
+    };
+  const scale = escalaEstruturada as Record<string, unknown>;
+  return {
+    ...link,
+    tipoEscala: scale.tipo,
+    diasSemana: scale.tipo === "DIAS_SEMANA" ? scale.diasSemana : [],
+    quantidadeDiasSemana:
+      scale.tipo === "QUANTIDADE_SEMANAL" ? scale.quantidadeDiasSemana : null,
+  };
+}
+
 async function validateLink(tx: Tx, data: Record<string, unknown>) {
   const unit = await tx.unidade.findUnique({
     where: { id: String(data.unidadeId) },
@@ -52,6 +71,11 @@ function validateInternshipEnd(admission: Date, end: Date | null | undefined) {
     throw new DomainError(
       422,
       "O fim previsto do estágio não pode ser anterior à admissão.",
+    );
+  if (end && end > addMonths(admission, 24))
+    throw new DomainError(
+      422,
+      "O término do contrato/TCE não pode exceder 24 meses da admissão.",
     );
 }
 
@@ -86,7 +110,10 @@ async function createDefaultRenewals(
         status: "PENDENTE",
         dataReferencia: start,
         inicioVigencia: start,
-        fimVigencia: addMonths(start, periodicityMonths),
+        fimVigencia:
+          addMonths(start, periodicityMonths) > contractEnd
+            ? contractEnd
+            : addMonths(start, periodicityMonths),
       },
     });
   }
@@ -166,17 +193,22 @@ export function registerPeopleComposite(
         422,
         "Dados de estágio só são permitidos para vínculo ESTAGIO.",
       );
+    if (body.vinculo.tipo === "ESTAGIO" && body.vinculo.dataDesligamento)
+      throw new DomainError(
+        422,
+        "O desligamento de estágio deve ser registrado pelo distrato.",
+      );
     const result = await transaction(db, async (tx) => {
       const pessoaData = dateData(pessoaCadastroSchema.parse(body.pessoa), [
         "dataNascimento",
       ]);
       const pessoa = await tx.pessoa.create({ data: pessoaData as never });
       const linkData = dateData(
-        {
+        persistScale({
           ...vinculoCadastroSchema.parse(body.vinculo),
           pessoaId: pessoa.id,
           status: "ATIVO",
-        },
+        }),
         ["dataAdmissao", "dataDesligamento"],
       );
       await validateLink(tx, linkData);
@@ -317,6 +349,18 @@ export function registerPeopleComposite(
           409,
           "Pessoa, tipo e admissão são imutáveis; encerre e crie outro vínculo.",
         );
+      if (
+        previous.tipo === "ESTAGIO" &&
+        (body.vinculo.status === "DESLIGADO" ||
+          body.vinculo.dataDesligamento) &&
+        (body.vinculo.status !== previous.status ||
+          body.vinculo.dataDesligamento !==
+            previous.dataDesligamento?.toISOString().slice(0, 10))
+      )
+        throw new DomainError(
+          409,
+          "O desligamento de estágio deve ser registrado pelo distrato.",
+        );
       if (previous.tipo === "ESTAGIO" && body.estagio) {
         const { tceStatus, ...stagePayload } = body.estagio;
         delete stagePayload.periodicidadeDocumentoMeses;
@@ -324,10 +368,25 @@ export function registerPeopleComposite(
           { ...estagioCadastroSchema.parse(stagePayload), vinculoId: id },
           ["dataTerminoPrevista"],
         );
-        validateInternshipEnd(
-          previous.dataAdmissao,
-          stageData.dataTerminoPrevista as Date | null | undefined,
-        );
+        const proposedEnd = stageData.dataTerminoPrevista as
+          | Date
+          | null
+          | undefined;
+        if (
+          proposedEnd &&
+          proposedEnd > addMonths(previous.dataAdmissao, 24) &&
+          (!previous.estagio?.dataTerminoPrevista ||
+            proposedEnd > previous.estagio.dataTerminoPrevista)
+        )
+          throw new DomainError(
+            422,
+            "O término do contrato/TCE não pode exceder 24 meses da admissão.",
+          );
+        if (proposedEnd && proposedEnd < previous.dataAdmissao)
+          throw new DomainError(
+            422,
+            "O fim previsto do estágio não pode ser anterior à admissão.",
+          );
         if (stageData.instituicaoEnsinoId) {
           const institution = await tx.instituicaoEnsino.findUnique({
             where: { id: String(stageData.instituicaoEnsinoId) },
@@ -360,7 +419,7 @@ export function registerPeopleComposite(
         );
       }
       const linkData = dateData(
-        { ...body.vinculo, status: body.vinculo.status },
+        persistScale({ ...body.vinculo, status: body.vinculo.status }),
         ["dataAdmissao", "dataDesligamento"],
       );
       await validateLink(tx, linkData);

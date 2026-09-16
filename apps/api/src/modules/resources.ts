@@ -67,6 +67,23 @@ export const resources: Resource[] = [
     filters: ["pessoaId", "unidadeId", "equipeId", "status", "tipo"],
     include: { pessoa: true, unidade: true, equipe: true },
     before: async (tx, data, previous) => {
+      const hasStructuredScale = Object.hasOwn(data, "escalaEstruturada");
+      const structuredScale = data.escalaEstruturada as
+        | { tipo: string; diasSemana?: string[]; quantidadeDiasSemana?: number }
+        | null
+        | undefined;
+      if (hasStructuredScale) {
+        delete data.escalaEstruturada;
+        data.tipoEscala = structuredScale?.tipo ?? null;
+        data.diasSemana =
+          structuredScale?.tipo === "DIAS_SEMANA"
+            ? (structuredScale.diasSemana ?? [])
+            : [];
+        data.quantidadeDiasSemana =
+          structuredScale?.tipo === "QUANTIDADE_SEMANAL"
+            ? (structuredScale.quantidadeDiasSemana ?? null)
+            : null;
+      }
       if (
         previous &&
         (previous.tipo !== data.tipo ||
@@ -77,6 +94,17 @@ export const resources: Resource[] = [
         throw new DomainError(
           409,
           "Pessoa, tipo e admissão são imutáveis; encerre e crie outro vínculo para preservar o histórico.",
+        );
+      if (
+        previous?.tipo === "ESTAGIO" &&
+        (data.status === "DESLIGADO" || data.dataDesligamento) &&
+        (data.status !== previous.status ||
+          String(data.dataDesligamento ?? "") !==
+            String(previous.dataDesligamento ?? ""))
+      )
+        throw new DomainError(
+          409,
+          "O desligamento de estágio deve ser registrado pelo distrato.",
         );
       const unit = await tx.unidade.findUnique({
         where: { id: String(data.unidadeId) },
@@ -153,7 +181,8 @@ export function queryFor(
   if (resource.path === "vinculos") {
     if (query.status)
       z.enum(["ATIVO", "AFASTADO", "DESLIGADO"]).parse(query.status);
-    if (query.tipo) z.enum(["CLT", "ESTAGIO", "APRENDIZ"]).parse(query.tipo);
+    if (query.tipo)
+      z.enum(["CLT", "ESTAGIO", "APRENDIZ", "TRAINEE"]).parse(query.tipo);
   }
   if (query.q && !resource.search) {
     if (resource.model === "vinculo")

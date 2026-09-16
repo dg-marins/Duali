@@ -49,7 +49,7 @@ async function purchaseSummary(tx: Tx, competenceIds: string[]) {
     }
   >();
   for (const item of items) {
-    const key = `${item.competenciaId}:${item.aquisicao.cartaoTransporteId ?? ""}`;
+    const key = `${item.competenciaId}:${item.aquisicao.fornecedorId}`;
     const current = result.get(key) ?? {
       reserved: new Prisma.Decimal(0),
       gross: new Prisma.Decimal(0),
@@ -84,7 +84,9 @@ async function preview(tx: Tx, unitId: string, month: Date) {
       beneficioVinculo: {
         include: { vinculo: { include: { pessoa: true, equipe: true } } },
       },
-      transporteItens: { include: { cartaoTransporte: true } },
+      transporteItens: {
+        include: { fornecedor: true },
+      },
     },
     orderBy: {
       beneficioVinculo: { vinculo: { pessoa: { nomeCompleto: "asc" } } },
@@ -100,22 +102,23 @@ async function preview(tx: Tx, unitId: string, month: Date) {
         ? [
             ...new Map(
               row.transporteItens.map((item) => [
-                item.cartaoTransporteId,
+                `${item.fornecedorId ?? ""}`,
                 item,
               ]),
             ).values(),
           ]
         : [null];
     return items.map((transportItem) => {
-      const cardId = transportItem?.cartaoTransporteId ?? null;
-      const purchased = totals.get(`${row.id}:${cardId ?? ""}`) ?? {
+      const supplierId =
+        transportItem?.fornecedorId ?? row.configuracao.fornecedorId;
+      const purchased = totals.get(`${row.id}:${supplierId}`) ?? {
         reserved: new Prisma.Decimal(0),
         gross: new Prisma.Decimal(0),
         reversed: new Prisma.Decimal(0),
       };
-      const base = cardId
+      const base = transportItem
         ? row.transporteItens
-            .filter((item) => item.cartaoTransporteId === cardId)
+            .filter((item) => item.fornecedorId === supplierId)
             .reduce(
               (sum, item) => sum.plus(item.valorDiario),
               new Prisma.Decimal(0),
@@ -123,15 +126,15 @@ async function preview(tx: Tx, unitId: string, month: Date) {
             .times(row.quantidadeDias ?? 0)
             .toDecimalPlaces(2)
         : value(row);
-      const distributedAdjustments = cardId
+      const distributedAdjustments = transportItem
         ? row.ajustes.reduce(
             (sum, adjustment) =>
               sum.plus(
                 adjustment.distribuicoes
                   .filter(
                     (distribution) =>
-                      distribution.transporteCompetenciaItem
-                        .cartaoTransporteId === cardId,
+                      distribution.transporteCompetenciaItem.fornecedorId ===
+                      supplierId,
                   )
                   .reduce(
                     (partial, distribution) =>
@@ -147,24 +150,23 @@ async function preview(tx: Tx, unitId: string, month: Date) {
           )
         : new Prisma.Decimal(0);
       const unallocatedTransportAdjustment =
-        cardId &&
+        Boolean(transportItem) &&
         row.ajustes.some((adjustment) => adjustment.distribuicoes.length === 0);
       const planned = base.plus(distributedAdjustments).toDecimalPlaces(2);
       const net = purchased.gross.minus(purchased.reversed);
       return {
         id: row.id,
-        chave: `${row.id}:${cardId ?? ""}`,
+        chave: `${row.id}:${supplierId}`,
         beneficioVinculoId: row.beneficioVinculoId,
         pessoa: row.beneficioVinculo.vinculo.pessoa.nomeCompleto,
         vinculoId: row.beneficioVinculo.vinculoId,
         equipe: row.beneficioVinculo.vinculo.equipe?.nome ?? null,
         vinculoStatus: row.beneficioVinculo.vinculo.status,
         beneficio: row.beneficioVinculo.tipo,
-        fornecedor: row.configuracao.fornecedor,
+        fornecedor: transportItem?.fornecedor ?? row.configuracao.fornecedor,
         configuracaoId: row.configuracaoId,
         dias: row.quantidadeDias?.toFixed(2) ?? null,
         valorDiario: row.valorUnitario?.toFixed(2) ?? null,
-        cartaoTransporteId: cardId,
         previsto: planned.toFixed(2),
         valorBase: base.toFixed(2),
         ajustes: distributedAdjustments.toFixed(2),
@@ -173,9 +175,8 @@ async function preview(tx: Tx, unitId: string, month: Date) {
         compradoLiquido: net.toFixed(2),
         emPedido: purchased.reserved.toFixed(2),
         disponivel: planned.minus(net).minus(purchased.reserved).toFixed(2),
-        cartoes: cardId ? [transportItem!.cartaoTransporte.nome] : [],
         alerta: unallocatedTransportAdjustment
-          ? "Há ajuste de transporte sem distribuição por cartão. Revise antes de emitir pedido."
+          ? "Há ajuste de transporte sem distribuição por fornecedor. Revise antes de emitir pedido."
           : row.beneficioVinculo.vinculo.status === "AFASTADO"
             ? "Vínculo afastado: confira os dias antes da compra."
             : null,
@@ -346,6 +347,7 @@ export function registerBenefitAcquisitions(
                   inicioVigencia: { lte: month },
                   OR: [{ fimVigencia: null }, { fimVigencia: { gte: month } }],
                 },
+                include: { fornecedor: true },
               },
             },
           });
@@ -366,18 +368,35 @@ export function registerBenefitAcquisitions(
               });
               continue;
             }
-            const configurations = benefit.configuracaoRecorrente?.fornecedor
-              .ativo
-              ? [benefit.configuracaoRecorrente]
-              : await tx.configuracaoBeneficio.findMany({
-                  where: {
-                    unidadeId: body.unidadeId,
-                    tipo: benefit.tipo,
-                    ativa: true,
-                    fornecedor: { ativo: true },
-                  },
-                });
-            if (configurations.length > 1) {
+            const transportSupplierIds = [
+              ...new Set(
+                benefit.transporteItens.flatMap((item) =>
+                  item.fornecedorId ? [item.fornecedorId] : [],
+                ),
+              ),
+            ];
+            const configurations =
+              benefit.tipo === "TRANSPORTE"
+                ? await tx.configuracaoBeneficio.findMany({
+                    where: {
+                      unidadeId: body.unidadeId,
+                      tipo: "TRANSPORTE",
+                      fornecedorId: { in: transportSupplierIds },
+                      ativa: true,
+                      fornecedor: { ativo: true },
+                    },
+                  })
+                : benefit.configuracaoRecorrente?.fornecedor.ativo
+                  ? [benefit.configuracaoRecorrente]
+                  : await tx.configuracaoBeneficio.findMany({
+                      where: {
+                        unidadeId: body.unidadeId,
+                        tipo: benefit.tipo,
+                        ativa: true,
+                        fornecedor: { ativo: true },
+                      },
+                    });
+            if (benefit.tipo !== "TRANSPORTE" && configurations.length > 1) {
               pending.push({
                 beneficioVinculoId: benefit.id,
                 motivo:
@@ -402,11 +421,14 @@ export function registerBenefitAcquisitions(
             }
             if (
               benefit.tipo === "TRANSPORTE" &&
-              !benefit.transporteItens.length
+              (!benefit.transporteItens.length ||
+                benefit.transporteItens.some((item) => !item.fornecedorId) ||
+                configurations.length !== transportSupplierIds.length)
             ) {
               pending.push({
                 beneficioVinculoId: benefit.id,
-                motivo: "Transporte sem itens vigentes.",
+                motivo:
+                  "Transporte sem itens vigentes ou com fornecedor não informado.",
               });
               continue;
             }
@@ -453,7 +475,7 @@ export function registerBenefitAcquisitions(
                     competenciaId: competence.id,
                     origemItemId: item.id,
                     tipoConducao: item.tipoConducao,
-                    cartaoTransporteId: item.cartaoTransporteId,
+                    fornecedorId: item.fornecedorId,
                     valorDiario: item.valorDiario,
                   },
                 });
@@ -499,7 +521,6 @@ export function registerBenefitAcquisitions(
       },
       include: {
         fornecedor: true,
-        cartaoTransporte: true,
         itens: { include: { movimentacoes: true } },
       },
       orderBy: { criadoEm: "desc" },
@@ -518,17 +539,10 @@ export function registerBenefitAcquisitions(
         async () => {
           await ensureOpen(tx, body.unidadeId, month);
           const valid = await preview(tx, body.unidadeId, month);
-          if (body.tipo === "TRANSPORTE" && !body.cartaoTransporteId)
-            throw new DomainError(
-              422,
-              "Selecione o cartão para o pedido de transporte.",
-            );
           const byId = new Map(valid.map((item) => [String(item.chave), item]));
           const selected = body.itens.map((item) => ({
             input: item,
-            row: byId.get(
-              `${item.competenciaId}:${body.cartaoTransporteId ?? ""}`,
-            ),
+            row: byId.get(`${item.competenciaId}:${body.fornecedorId}`),
           }));
           if (
             new Set(body.itens.map((item) => item.competenciaId)).size !==
@@ -542,9 +556,7 @@ export function registerBenefitAcquisitions(
             if (
               !item.row ||
               item.row.beneficio !== body.tipo ||
-              String((item.row.fornecedor as Row).id) !== body.fornecedorId ||
-              String(item.row.cartaoTransporteId ?? "") !==
-                String(body.cartaoTransporteId ?? "")
+              String((item.row.fornecedor as Row).id) !== body.fornecedorId
             )
               throw new DomainError(
                 422,
@@ -566,9 +578,6 @@ export function registerBenefitAcquisitions(
               competencia: month,
               tipo: body.tipo,
               fornecedorId: body.fornecedorId,
-              ...(body.cartaoTransporteId
-                ? { cartaoTransporteId: body.cartaoTransporteId }
-                : {}),
               ...(body.observacoes !== undefined
                 ? { observacoes: body.observacoes }
                 : {}),
@@ -583,9 +592,7 @@ export function registerBenefitAcquisitions(
                 vinculoId: String(item.row!.vinculoId),
                 pessoaNome: String(item.row!.pessoa),
                 equipeNome: item.row!.equipe ? String(item.row!.equipe) : null,
-                destino:
-                  body.cartaoTransporteId ??
-                  String((item.row!.fornecedor as Row).nome),
+                destino: String((item.row!.fornecedor as Row).nome),
                 valorPrevisto: String(item.row!.previsto),
                 valorReservado: item.input.valor,
               },
@@ -601,12 +608,12 @@ export function registerBenefitAcquisitions(
           );
           return tx.aquisicaoBeneficio.findUniqueOrThrow({
             where: { id: order.id },
-            include: { fornecedor: true, cartaoTransporte: true, itens: true },
+            include: { fornecedor: true, itens: true },
           });
         },
         {
           userId: req.userId,
-          scope: `${body.unidadeId}:${body.competencia}:${body.tipo}:${body.fornecedorId}:${body.cartaoTransporteId ?? ""}`,
+          scope: `${body.unidadeId}:${body.competencia}:${body.tipo}:${body.fornecedorId}`,
         },
       ),
     );

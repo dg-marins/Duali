@@ -64,7 +64,11 @@ O documento atual é aquele cuja vigência contém a data de consulta. Sobreposi
 
 ## RN-009.1 — Contrato de estágio
 
-`Estagio.dataTerminoPrevista` representa o fim planejado do contrato e `Vinculo.dataDesligamento` representa somente o encerramento efetivo do vínculo. Os ciclos contratuais e documentais são independentes. A ausência de instituição não bloqueia a admissão, mas gera pendência operacional.
+`Estagio.dataTerminoPrevista` representa o término do contrato/TCE e `Vinculo.dataDesligamento` representa somente o encerramento efetivo do vínculo. O TCE começa na admissão e novos contratos têm limite máximo de 24 meses. A vigência documental do TCE e dos aditivos é independente, sugerida em seis meses e configurável. A ausência de instituição não bloqueia a admissão, mas gera pendência operacional.
+
+O desligamento de estágio é efetivado por um documento `DISTRATO`, cuja data de referência é obrigatória. A reversão exige ação explícita, motivo e auditoria; nenhum distrato ou desligamento histórico é apagado.
+
+Para estágio, o saldo acumulado de férias de 15 dias é apenas informativo, 30 dias gera advertência e saldo superior a 30 dias gera alerta. Trainee segue a política de férias de CLT: 30 dias a cada 12 meses.
 
 Alertas de contrato são emitidos para 90, 60 e 30 dias, além de término ultrapassado. Um documento pode terminar depois do contrato sem bloqueio automático, pois o contrato é a referência do término efetivo.
 
@@ -78,7 +82,11 @@ Benefícios devem ser registrados por vínculo e competência mensal. Janeiro, f
 
 O cadastro em lote deve selecionar categoria, unidade, competência e fornecedor ativo configurado para a unidade. Apenas vínculos ativos participam. Alterar uma adesão em lote cria nova vigência no mês escolhido e encerra a anterior, preservando o histórico.
 
-Alimentação e transporte são calculados por dias; transporte mantém condução e cartão. Cesta básica, premiação e outros são calculados por quantidade e valor unitário. Valores ausentes devem permanecer como pendência explícita.
+Alimentação e transporte são calculados por dias; transporte mantém condução e fornecedor. Cesta básica, premiação e outros são calculados por quantidade e valor unitário. Valores ausentes devem permanecer como pendência explícita.
+
+Cada item recorrente de transporte identifica sua condução, fornecedor, valor diário e vigência. Uma pessoa pode combinar fornecedores e conduções. A quantidade de dias pertence à pessoa na competência mensal e se aplica a todas as linhas copiadas para o snapshot daquele mês. Configurações antigas sem fornecedor permanecem preservadas e exigem revisão, sem inferência automática.
+
+A remoção do cadastro de cartões de transporte descarta somente as associações de cartão. Antes de aplicar essa migration em produção, deve existir backup validado do banco. O retorno ao modelo anterior exige restauração desse backup, pois os vínculos históricos de cartão não são reconstruídos automaticamente.
 
 O modelo deve suportar diferentes tipos/meios utilizados atualmente, como transporte, alimentação, premiação, Flash, Riocard, JAÉ, SPTrans, TDMax e Mobilidade, sem transformar cada fornecedor em uma coluna permanente.
 
@@ -86,7 +94,7 @@ O modelo deve suportar diferentes tipos/meios utilizados atualmente, como transp
 
 Uma competência é preparada quando as categorias aplicáveis estão sem impedimentos. Transporte e alimentação são operados e fechados independentemente por unidade e categoria. Cada categoria pode estar não preparada, com pendências, preparada, com pedido emitido, parcialmente confirmada, confirmada ou fechada. Categoria sem adesão elegível é não aplicável.
 
-Dias de alimentação são definidos na competência e podem ser ajustados manualmente com auditoria. Escala registrada no vínculo é uma referência operacional de dias trabalhados, mas não altera automaticamente competências já preparadas. Férias, faltas, feriados, admissões e afastamentos não aplicam descontos automáticos: a correção mensal é explícita e auditada.
+Dias de alimentação são definidos na competência e podem ser ajustados manualmente com auditoria. A escala do vínculo pode registrar dias específicos da semana ou uma quantidade semanal. Dias específicos geram uma sugestão para o transporte no mês; quantidade semanal exige confirmação mensal. A escala não altera automaticamente competências já preparadas. Férias, faltas, feriados, admissões e afastamentos não aplicam descontos automáticos: a correção mensal é explícita e auditada.
 
 ## RN-012 — Valores calculados e informados
 

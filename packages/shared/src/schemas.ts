@@ -12,6 +12,32 @@ export const date = z
 export const optionalText = z.string().trim().max(5000).nullable().optional();
 export const shortText = z.string().trim().min(1).max(180);
 export const optionalDate = date.nullable().optional();
+export const diasSemana = [
+  "SEGUNDA",
+  "TERCA",
+  "QUARTA",
+  "QUINTA",
+  "SEXTA",
+  "SABADO",
+  "DOMINGO",
+] as const;
+export const escalaEstruturadaSchema = z
+  .discriminatedUnion("tipo", [
+    z
+      .object({
+        tipo: z.literal("DIAS_SEMANA"),
+        diasSemana: z.array(z.enum(diasSemana)).min(1).max(7),
+      })
+      .strict(),
+    z
+      .object({
+        tipo: z.literal("QUANTIDADE_SEMANAL"),
+        quantidadeDiasSemana: z.coerce.number().int().min(1).max(7),
+      })
+      .strict(),
+  ])
+  .nullable()
+  .optional();
 export const money = z.preprocess((value) => {
   if (value === null || typeof value === "boolean") return Number.NaN;
   if (typeof value === "number")
@@ -119,7 +145,7 @@ export const vinculoSchema = z
     pessoaId: id,
     unidadeId: id,
     equipeId: id.nullable().optional(),
-    tipo: z.enum(["CLT", "ESTAGIO", "APRENDIZ"]),
+    tipo: z.enum(["CLT", "ESTAGIO", "APRENDIZ", "TRAINEE"]),
     status: z.enum(["ATIVO", "AFASTADO", "DESLIGADO"]).default("ATIVO"),
     matricula: optionalText,
     dataAdmissao: date,
@@ -127,6 +153,7 @@ export const vinculoSchema = z
     cargoFuncao: optionalText,
     gestor: optionalText,
     escala: optionalText,
+    escalaEstruturada: escalaEstruturadaSchema,
     observacoes: optionalText,
   })
   .strict()
@@ -148,13 +175,14 @@ export const vinculoCadastroSchema = z
   .object({
     unidadeId: id,
     equipeId: id.nullable().optional(),
-    tipo: z.enum(["CLT", "ESTAGIO", "APRENDIZ"]),
+    tipo: z.enum(["CLT", "ESTAGIO", "APRENDIZ", "TRAINEE"]),
     matricula: optionalText,
     dataAdmissao: date,
     dataDesligamento: optionalDate,
     cargoFuncao: optionalText,
     gestor: optionalText,
     escala: optionalText,
+    escalaEstruturada: escalaEstruturadaSchema,
     observacoes: optionalText,
   })
   .strict();

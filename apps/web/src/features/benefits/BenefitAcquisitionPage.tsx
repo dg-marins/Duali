@@ -5,6 +5,7 @@ import { Notice } from "../../components";
 import { Button } from "../../components/ui/button";
 import {
   FormSheet,
+  CurrencyInput,
   LoadingSkeleton,
   PageHeader,
   RefreshingContent,
@@ -43,8 +44,13 @@ export function BenefitAcquisitionPage({
         new Date().toISOString().slice(0, 7)
       ).slice(0, 7),
     ),
+    [type, setType] = useState(
+      () => new URLSearchParams(window.location.search).get("tipo") ?? "",
+    ),
     [daysTransport, setDaysTransport] = useState("22"),
     [daysFood, setDaysFood] = useState("22"),
+    [transportLinks, setTransportLinks] = useState<Row[]>([]),
+    [transportDays, setTransportDays] = useState<Record<string, string>>({}),
     [rows, setRows] = useState<Row[]>([]),
     [orders, setOrders] = useState<Row[]>([]),
     [selected, setSelected] = useState<Set<string>>(() => new Set()),
@@ -61,6 +67,14 @@ export function BenefitAcquisitionPage({
     [reversing, setReversing] = useState<Row | null>(null),
     [reversal, setReversal] = useState({ itemId: "", valor: "", motivo: "" });
   const competencia = `${month}-01`;
+  const visibleRows = useMemo(
+    () => rows.filter((row) => !type || row.beneficio === type),
+    [rows, type],
+  );
+  const visibleOrders = useMemo(
+    () => orders.filter((order) => !type || order.tipo === type),
+    [orders, type],
+  );
   async function load() {
     if (!unit) return;
     setLoading(true);
@@ -100,7 +114,18 @@ export function BenefitAcquisitionPage({
     })().catch((e) => setError((e as Error).message));
   }, []);
   useEffect(() => {
+    const query = new URLSearchParams({ unidadeId: unit, competencia });
+    if (type) query.set("tipo", type);
+    history.replaceState({}, "", `${location.pathname}?${query.toString()}`);
     void load();
+  }, [unit, month, type]);
+  useEffect(() => {
+    if (!unit) return;
+    void api<{ vinculos: Row[] }>(
+      `beneficios/lote/opcoes?unidadeId=${unit}&tipo=TRANSPORTE&competencia=${competencia}`,
+    )
+      .then((result) => setTransportLinks(result.vinculos))
+      .catch((reason) => setError((reason as Error).message));
   }, [unit, month]);
   async function prepare() {
     if (!unit) return;
@@ -114,6 +139,19 @@ export function BenefitAcquisitionPage({
           competencia,
           diasTransporte: daysTransport,
           diasAlimentacao: daysFood,
+          excecoes: transportLinks.flatMap((link) => {
+            const benefit = ((link.beneficios as Row[] | undefined) ?? [])[0];
+            if (!benefit) return [];
+            const amount = transportDays[String(benefit.id)];
+            return amount === undefined || amount === ""
+              ? []
+              : [
+                  {
+                    beneficioVinculoId: benefit.id,
+                    quantidadeDias: amount,
+                  },
+                ];
+          }),
         },
         { idempotencyKey: crypto.randomUUID() },
       );
@@ -136,27 +174,19 @@ export function BenefitAcquisitionPage({
   const groups = useMemo(
     () =>
       Object.entries(
-        rows
+        visibleRows
           .filter(
             (row) =>
               selected.has(String(row.chave)) && Number(row.disponivel) > 0,
           )
           .reduce<Record<string, Row[]>>((acc, row) => {
             const supplier = row.fornecedor as Row;
-            const key = [
-              row.beneficio,
-              supplier.id,
-              row.cartaoTransporteId ?? "",
-            ].join(":");
+            const key = [row.beneficio, supplier.id].join(":");
             (acc[key] ??= []).push(row);
             return acc;
           }, {}),
-      ).map(([key, items]) => ({
-        items,
-        cardId: String(items[0]?.cartaoTransporteId ?? "") || null,
-        key,
-      })),
-    [rows, selected],
+      ).map(([key, items]) => ({ items, key })),
+    [visibleRows, selected],
   );
   async function createOrders() {
     setWorking(true);
@@ -172,7 +202,6 @@ export function BenefitAcquisitionPage({
             competencia,
             tipo: String(first.beneficio),
             fornecedorId: supplier.id,
-            ...(group.cardId ? { cartaoTransporteId: group.cardId } : {}),
             itens: group.items.map((row) => ({
               competenciaId: row.id,
               valor: row.disponivel,
@@ -307,6 +336,30 @@ export function BenefitAcquisitionPage({
             />
           </label>
           <label>
+            <span>Categoria</span>
+            <select
+              value={type}
+              onChange={(event) => setType(event.target.value)}
+            >
+              <option value="">Todas</option>
+              {Object.entries(labels)
+                .filter(([key]) =>
+                  [
+                    "TRANSPORTE",
+                    "ALIMENTACAO",
+                    "CESTA_BASICA",
+                    "PREMIACAO",
+                    "OUTRO",
+                  ].includes(key),
+                )
+                .map(([key, value]) => (
+                  <option key={key} value={key}>
+                    {value}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
             <span>Dias padrão de transporte</span>
             <input
               type="number"
@@ -325,6 +378,44 @@ export function BenefitAcquisitionPage({
             />
           </label>
         </div>
+        {(type === "" || type === "TRANSPORTE") &&
+          transportLinks.some(
+            (link) => ((link.beneficios as Row[] | undefined) ?? []).length,
+          ) && (
+            <details className="preparation-overrides">
+              <summary>Ajustar dias de transporte por pessoa</summary>
+              <p className="muted">
+                O valor individual substitui os dias padrão somente nesta
+                competência e será aplicado a todas as conduções da pessoa.
+              </p>
+              <div className="compact-override-grid">
+                {transportLinks.flatMap((link) => {
+                  const benefit = ((link.beneficios as Row[] | undefined) ??
+                    [])[0];
+                  if (!benefit) return [];
+                  const benefitId = String(benefit.id);
+                  return [
+                    <label key={benefitId}>
+                      <span>{display(link.pessoa)}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={transportDays[benefitId] ?? ""}
+                        placeholder={daysTransport}
+                        onChange={(event) =>
+                          setTransportDays((current) => ({
+                            ...current,
+                            [benefitId]: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>,
+                  ];
+                })}
+              </div>
+            </details>
+          )}
         <div className="form-actions">
           <Button disabled={working || !unit} onClick={() => void prepare()}>
             Preparar competência
@@ -338,7 +429,7 @@ export function BenefitAcquisitionPage({
           </Button>
         </div>
       </section>
-      {loading && !rows.length ? (
+      {loading && !visibleRows.length ? (
         <LoadingSkeleton variant="table" label="Carregando aquisições…" />
       ) : (
         <RefreshingContent refreshing={loading}>
@@ -365,7 +456,7 @@ export function BenefitAcquisitionPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
+                  {visibleRows.map((row) => (
                     <tr key={String(row.chave)}>
                       <td>
                         <input
@@ -411,7 +502,7 @@ export function BenefitAcquisitionPage({
           </section>
           <section className="panel">
             <h2>Pedidos da competência</h2>
-            {orders.length ? (
+            {visibleOrders.length ? (
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -425,7 +516,7 @@ export function BenefitAcquisitionPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {orders.map((order) => (
+                    {visibleOrders.map((order) => (
                       <tr key={String(order.id)}>
                         <td>{display(order.fornecedor)}</td>
                         <td>
@@ -525,13 +616,11 @@ export function BenefitAcquisitionPage({
                   </label>
                   <label>
                     <span>Valor comprado</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
+                    <CurrencyInput
                       disabled={current?.status === "REJEITADO"}
                       value={current?.valor ?? ""}
-                      onChange={(event) =>
+                      ariaLabel={`Valor comprado de ${display(item.pessoaNome)}`}
+                      onValueChange={(value) =>
                         setConfirmationItems((all) => ({
                           ...all,
                           [String(item.id)]: {
@@ -539,7 +628,7 @@ export function BenefitAcquisitionPage({
                               status: "CONFIRMADO",
                               motivo: "",
                             }),
-                            valor: event.target.value,
+                            valor: value,
                           },
                         }))
                       }
@@ -611,15 +700,13 @@ export function BenefitAcquisitionPage({
           </label>
           <label>
             <span>Valor a reverter</span>
-            <input
-              type="number"
-              min="0.01"
-              step="0.01"
+            <CurrencyInput
               value={reversal.valor}
-              onChange={(event) =>
+              ariaLabel="Valor a reverter"
+              onValueChange={(value) =>
                 setReversal((current) => ({
                   ...current,
-                  valor: event.target.value,
+                  valor: value,
                 }))
               }
             />

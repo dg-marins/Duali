@@ -21,14 +21,11 @@ export const transportTypes = [
   "BARCA",
   "METRO",
 ] as const;
-export const cartaoTransporteSchema = z
-  .object({ nome: shortText, ativo: z.boolean().default(true) })
-  .strict();
 const transporteItemBase = z
   .object({
     beneficioVinculoId: id,
     tipoConducao: z.enum(transportTypes),
-    cartaoTransporteId: id,
+    fornecedorId: id,
     valorDiario: money,
     inicioVigencia: date,
     fimVigencia: optionalDate,
@@ -45,7 +42,16 @@ export const transporteItemSchema = transporteItemBase.superRefine((v, ctx) => {
 });
 export const transporteItemInputSchema = transporteItemBase
   .omit({ beneficioVinculoId: true })
-  .strict();
+  .extend({ id: id.optional() })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.fimVigencia && v.fimVigencia < v.inicioVigencia)
+      ctx.addIssue({
+        code: "custom",
+        path: ["fimVigencia"],
+        message: "Fim anterior ao início.",
+      });
+  });
 export const transporteCompetenciaSchema = z
   .object({
     beneficioVinculoId: id,
@@ -128,7 +134,6 @@ export const aquisicaoPedidoSchema = z
     ),
     tipo: z.enum(benefitTypes),
     fornecedorId: id,
-    cartaoTransporteId: id.nullable().optional(),
     itens: z
       .array(
         z
@@ -147,7 +152,7 @@ export const beneficioLoteSchema = z
       (v) => v.endsWith("-01"),
       "Informe o primeiro dia do mês.",
     ),
-    configuracaoId: id,
+    configuracaoId: id.nullable().optional(),
     itens: z
       .array(
         z
@@ -162,7 +167,7 @@ export const beneficioLoteSchema = z
                 z
                   .object({
                     tipoConducao: z.enum(transportTypes),
-                    cartaoTransporteId: id,
+                    fornecedorId: id,
                     valorDiario: money,
                   })
                   .strict(),
@@ -173,7 +178,15 @@ export const beneficioLoteSchema = z
       )
       .min(1),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.tipo !== "TRANSPORTE" && !value.configuracaoId)
+      ctx.addIssue({
+        code: "custom",
+        path: ["configuracaoId"],
+        message: "Selecione o fornecedor.",
+      });
+  });
 export const aquisicaoConfirmarSchema = z
   .object({
     referenciaExterna: optionalText,

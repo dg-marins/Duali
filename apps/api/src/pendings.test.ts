@@ -48,7 +48,7 @@ test("pending center aggregates persistent import review and dependencies", asyn
       ],
     });
     const response = await f.app.inject({
-      url: "/api/pendencias?modulo=IMPORTACAO&pageSize=100",
+      url: "/api/pendencias?modulo=IMPORTACAO&q=synthetic.xlsx&pageSize=100",
       headers: f.headers,
     });
     expect(response.statusCode, response.body).toBe(200);

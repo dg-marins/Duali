@@ -74,11 +74,25 @@ enum TipoVinculo {
  CLT
  ESTAGIO
  APRENDIZ
+ TRAINEE
 }
 enum StatusVinculo {
  ATIVO
  AFASTADO
  DESLIGADO
+}
+enum TipoEscalaVinculo {
+ DIAS_SEMANA
+ QUANTIDADE_SEMANAL
+}
+enum DiaSemana {
+ SEGUNDA
+ TERCA
+ QUARTA
+ QUINTA
+ SEXTA
+ SABADO
+ DOMINGO
 }
 model Vinculo {
  beneficios BeneficioVinculo[]
@@ -104,6 +118,9 @@ model Vinculo {
  cargoFuncao String?
  gestor String?
  escala String?
+ tipoEscala TipoEscalaVinculo?
+ diasSemana DiaSemana[] @default([])
+ quantidadeDiasSemana Int?
  observacoes String?
  criadoEm DateTime @default(now())
  atualizadoEm DateTime @updatedAt
@@ -390,22 +407,14 @@ model Fornecedor {
  ativo Boolean @default(true)
  configuracoes ConfiguracaoBeneficio[]
  aquisicoes AquisicaoBeneficio[]
+ transporteItens BeneficioTransporteItem[]
+ transporteSnapshots BeneficioTransporteCompetenciaItem[]
 }
 enum TipoConducao {
  ONIBUS
  ONIBUS_INTER
  BARCA
  METRO
-}
-model CartaoTransporte {
- id String @id @default(uuid()) @db.Uuid
- nome String @unique @db.VarChar(120)
- ativo Boolean @default(true)
- criadoEm DateTime @default(now())
- atualizadoEm DateTime @updatedAt
- itens BeneficioTransporteItem[]
- snapshots BeneficioTransporteCompetenciaItem[]
- aquisicoes AquisicaoBeneficio[]
 }
 model ConfiguracaoBeneficio {
  id String @id @default(uuid()) @db.Uuid
@@ -468,8 +477,6 @@ model AquisicaoBeneficio {
  tipo TipoBeneficio
  fornecedorId String @db.Uuid
  fornecedor Fornecedor @relation(fields:[fornecedorId],references:[id])
- cartaoTransporteId String? @db.Uuid
- cartaoTransporte CartaoTransporte? @relation(fields:[cartaoTransporteId],references:[id])
  status StatusAquisicaoBeneficio @default(PENDENTE)
  referenciaExterna String? @db.VarChar(180)
  dataCompra DateTime? @db.Date
@@ -480,7 +487,7 @@ model AquisicaoBeneficio {
  atualizadoEm DateTime @updatedAt
  itens AquisicaoBeneficioItem[]
  @@index([unidadeId,competencia,tipo,status])
- @@index([fornecedorId,cartaoTransporteId])
+ @@index([fornecedorId])
 }
 model AquisicaoBeneficioItem {
  id String @id @default(uuid()) @db.Uuid
@@ -518,8 +525,8 @@ model BeneficioTransporteItem {
  beneficioVinculoId String @db.Uuid
  beneficioVinculo BeneficioVinculo @relation(fields:[beneficioVinculoId],references:[id])
  tipoConducao TipoConducao
- cartaoTransporteId String @db.Uuid
- cartaoTransporte CartaoTransporte @relation(fields:[cartaoTransporteId],references:[id])
+ fornecedorId String? @db.Uuid
+ fornecedor Fornecedor? @relation(fields:[fornecedorId],references:[id])
  valorDiario Decimal @db.Decimal(12,2)
  inicioVigencia DateTime @db.Date
  fimVigencia DateTime? @db.Date
@@ -528,7 +535,8 @@ model BeneficioTransporteItem {
  atualizadoEm DateTime @updatedAt
  snapshots BeneficioTransporteCompetenciaItem[]
  @@index([beneficioVinculoId,ativo,inicioVigencia])
- @@index([cartaoTransporteId,tipoConducao])
+ @@index([tipoConducao])
+ @@index([fornecedorId,ativo,inicioVigencia])
 }
 model BeneficioTransporteCompetenciaItem {
  id String @id @default(uuid()) @db.Uuid
@@ -537,12 +545,13 @@ model BeneficioTransporteCompetenciaItem {
  origemItemId String? @db.Uuid
  origemItem BeneficioTransporteItem? @relation(fields:[origemItemId],references:[id],onDelete:SetNull)
  tipoConducao TipoConducao
- cartaoTransporteId String @db.Uuid
- cartaoTransporte CartaoTransporte @relation(fields:[cartaoTransporteId],references:[id])
+ fornecedorId String? @db.Uuid
+ fornecedor Fornecedor? @relation(fields:[fornecedorId],references:[id])
  valorDiario Decimal @db.Decimal(12,2)
  ajustesDistribuidos BeneficioAjusteTransporteItem[]
  @@index([competenciaId])
- @@index([cartaoTransporteId,tipoConducao])
+ @@index([tipoConducao])
+ @@index([fornecedorId])
 }
 model BeneficioAjuste {
  id String @id @default(uuid()) @db.Uuid

@@ -51,6 +51,30 @@ test("authentication, CSRF, people, team history, uniqueness and revocation", as
       (await f.db.vinculo.findUniqueOrThrow({ where: { id: apprentice.id } }))
         .escala,
     ).toBe("Segunda a quinta (rodízio)");
+    const scheduledLink = await create("vinculos", {
+      pessoaId: pessoa.id,
+      unidadeId: unit.id,
+      tipo: "CLT",
+      dataAdmissao: "2026-01-02",
+      escalaEstruturada: {
+        tipo: "DIAS_SEMANA",
+        diasSemana: ["TERCA", "QUINTA"],
+      },
+    });
+    expect(
+      await f.db.vinculo.findUniqueOrThrow({
+        where: { id: scheduledLink.id },
+        select: {
+          tipoEscala: true,
+          diasSemana: true,
+          quantidadeDiasSemana: true,
+        },
+      }),
+    ).toEqual({
+      tipoEscala: "DIAS_SEMANA",
+      diasSemana: ["TERCA", "QUINTA"],
+      quantidadeDiasSemana: null,
+    });
     expect(
       await f.db.vinculoEquipeHistorico.count({
         where: { vinculoId: vinculo.id },
@@ -224,6 +248,47 @@ test("estágio ativo aceita término previsto e rejeita data anterior à admiss�
     });
     expect(invalid.statusCode).toBe(422);
     expect(invalid.body).toContain("fim previsto");
+    const tooLong = await f.app.inject({
+      method: "POST",
+      url: "/api/pessoas-com-vinculo",
+      headers: f.headers,
+      payload: {
+        pessoa: { nomeCompleto: `Estagiário longo ${f.suffix}` },
+        vinculo: {
+          unidadeId: unit.id,
+          tipo: "ESTAGIO",
+          dataAdmissao: "2025-09-01",
+        },
+        estagio: { dataTerminoPrevista: "2027-09-02" },
+      },
+    });
+    expect(tooLong.statusCode, tooLong.body).toBe(422);
+
+    const trainee = await f.app.inject({
+      method: "POST",
+      url: "/api/pessoas-com-vinculo",
+      headers: f.headers,
+      payload: {
+        pessoa: { nomeCompleto: `Trainee ${f.suffix}` },
+        vinculo: {
+          unidadeId: unit.id,
+          tipo: "TRAINEE",
+          dataAdmissao: "2025-09-01",
+        },
+      },
+    });
+    expect(trainee.statusCode, trainee.body).toBe(201);
+    const traineeLink = trainee.json<{ vinculo: { id: string } }>().vinculo;
+    expect(
+      (
+        await f.db.descansoDireito.findFirstOrThrow({
+          where: {
+            vinculoId: traineeLink.id,
+            dataAquisicao: new Date("2026-09-01"),
+          },
+        })
+      ).quantidadeDias.toString(),
+    ).toBe("30");
   } finally {
     await f.app.close();
   }

@@ -129,6 +129,29 @@ export async function balance(tx: Tx, vinculoId: string) {
   ).filter((e) => e.dataAquisicao > now);
   if (v.tipo === "ESTAGIO" && next.length)
     alerts.push("Nova aquisição de descanso próxima.");
+  const internshipBalance =
+    v.tipo !== "ESTAGIO"
+      ? null
+      : saldo > 30
+        ? {
+            nivelSaldo: "ALERTA",
+            codigoAlerta: "FERIAS_ESTAGIO_SALDO_ACIMA_30",
+            mensagem: "Saldo de férias de estágio acima de 30 dias.",
+          }
+        : saldo === 30
+          ? {
+              nivelSaldo: "ADVERTENCIA",
+              codigoAlerta: "FERIAS_ESTAGIO_SALDO_30",
+              mensagem: "Saldo de férias de estágio atingiu 30 dias.",
+            }
+          : saldo === 15
+            ? {
+                nivelSaldo: "INFORMATIVA",
+                codigoAlerta: "FERIAS_ESTAGIO_SALDO_15",
+                mensagem: "Saldo de férias de estágio disponível: 15 dias.",
+              }
+            : { nivelSaldo: "NORMAL", codigoAlerta: null, mensagem: null };
+  if (internshipBalance?.mensagem) alerts.push(internshipBalance.mensagem);
   return {
     vinculoId,
     pessoa: v.pessoa.nomeCompleto,
@@ -148,5 +171,7 @@ export async function balance(tx: Tx, vinculoId: string) {
     consumos: consumptions,
     ajustesHistorico: adjustments,
     alertas: [...new Set(alerts)],
+    nivelSaldo: internshipBalance?.nivelSaldo ?? "NORMAL",
+    codigoAlerta: internshipBalance?.codigoAlerta ?? null,
   };
 }
