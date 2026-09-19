@@ -22,6 +22,7 @@ import {
 import { PendingsPage } from "./features/pendings/PendingsPage";
 import { BenefitClosingPage } from "./features/benefits/BenefitClosingPage";
 import { BenefitAcquisitionPage } from "./features/benefits/BenefitAcquisitionPage";
+import { MonthlyOrderPage } from "./features/benefits/MonthlyOrderPage";
 import { BenefitBatchPage } from "./features/benefits/BenefitBatchPage";
 import { Toaster } from "sonner";
 import {
@@ -497,6 +498,8 @@ function RouteContent({
   if (path === "/app/beneficios/fechamento")
     return <BenefitClosingPage navigate={navigate} />;
   if (path === "/app/beneficios/aquisicao")
+    return <MonthlyOrderPage navigate={navigate} />;
+  if (path === "/app/beneficios/competencias")
     return <BenefitAcquisitionPage navigate={navigate} />;
   if (path === "/app/beneficios/lote")
     return <BenefitBatchPage navigate={navigate} />;

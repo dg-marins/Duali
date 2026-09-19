@@ -13,6 +13,8 @@ A interface principal é organizada pelos fluxos diários de RH. A pessoa é o p
 - `/app/ferias`: saldo reconstruído, alertas, programação e ajustes.
 - `/app/beneficios`: resumo mensal com previsto, comprado líquido, reservas e lançamentos pendentes; gráfico compartilhado com o dashboard.
 - `/app/beneficios/lancamentos`: consulta, edição, conferência e cancelamento dos lançamentos mensais, com contexto preservado no retorno ao resumo.
+- `/app/beneficios/aquisicao`: Fazer pedido. Seleciona competência, unidade e benefício, carrega elegíveis e emite todos os pedidos por fornecedor na mesma transação.
+- `/app/beneficios/competencias`: acompanhamento dos pedidos, confirmações parciais, rejeições, cancelamentos, reversões e fechamento por unidade e mês.
 - `/app/importacoes`: fluxo de tipo, arquivo, análise e revisão.
 - `/app/relatorios`: consulta filtrada e exportação auditada.
 - `/app/cadastros/*`: cadastros auxiliares e seus relacionamentos.
@@ -38,7 +40,6 @@ O endereço estruturado é opcional e possui CEP, logradouro, número, complemen
 
 O fluxo mostra as etapas e os totais por estado e decisão. A publicação parcial continua automática: dados válidos aparecem nas telas operacionais e somente erros ou dependências permanecem no staging. O perfil dedicado da Listagem de Estagiários Geral continua sendo reconhecido automaticamente.
 
-
 ## Golden Reference
 
 O shell possui topbar utilitária e sidebar recolhível com a marca atual. O redesign é restrito a Pessoas, Perfil e Cadastros > Benefícios; demais módulos preservam sua apresentação.
@@ -46,3 +47,7 @@ O shell possui topbar utilitária e sidebar recolhível com a marca atual. O red
 Cadastros > Benefícios permite Benefício → Fornecedor → uma ou mais Unidades. Cada associação mantém seu registro existente; a criação multiunidade é transacional e não duplica, sobrescreve ou reativa associações. Edição e inativação permanecem explícitas por associação. Competências, cálculos e compras não são alterados.
 
 O cadastro em lote segue Unidade → Categoria → Fornecedor → Competência → Pessoas e valores → Revisão. Só oferece fornecedores ativos associados à unidade e categoria; em transporte, cada condução pode usar outro fornecedor configurado. Correspondências ambíguas de adesão exigem revisão antes do envio. Os formulários genéricos de criação de competência e de ajuste deixam de ser ações da interface. Ajustes de benefícios são registrados no lançamento da pessoa dentro de Fechamento de competência, com distribuição por condução quando se tratar de transporte. O atalho de ajuste de férias também deixa de ser exibido, sem alteração dos históricos ou APIs.
+
+O lote e o perfil registram somente a adesão recorrente: fornecedor, valores e vigência. Eles não criam competências nem pedidos. Em alimentação, a adesão pode ter valor diário ou valor mensal fixo; neste último caso, os dias e o valor diário, quando informados, são somente referência de cálculo. O pedido mensal cria o snapshot necessário e preserva o valor solicitado e sua composição.
+
+Em Fazer pedido, pessoas ativas com vínculo ativo e adesão aplicável entram selecionadas. Vínculos afastados exigem inclusão manual com motivo; pessoas inativas, desligadas ou com adesão encerrada não são elegíveis. A retirada de uma pessoa afeta somente aquela emissão. Transporte mantém a distribuição explícita por condução e fornecedor, enquanto alimentação pode ter total solicitado diferente da referência diária.

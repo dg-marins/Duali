@@ -4,7 +4,7 @@ import argon2 from "argon2";
 import { PrismaClient } from "@duali/database";
 import { testDatabaseUrl } from "../src/test-helper.js";
 
-test("administra preparação, pedido e confirmação de aquisição mensal", async ({
+test("administra pedido e confirmação de aquisição mensal", async ({
   page,
 }) => {
   const db = new PrismaClient({ datasourceUrl: testDatabaseUrl() });
@@ -64,7 +64,7 @@ test("administra preparação, pedido e confirmação de aquisição mensal", as
     ).toBeVisible();
     await page.goto("/app/beneficios/aquisicao");
     await expect(
-      page.getByRole("heading", { name: "Aquisição mensal" }),
+      page.getByRole("heading", { name: "Fazer pedido" }),
     ).toBeVisible({ timeout: 15000 });
     const unitSelect = page.getByRole("combobox", {
       name: "Unidade",
@@ -74,13 +74,13 @@ test("administra preparação, pedido e confirmação de aquisição mensal", as
       1,
     );
     await unitSelect.selectOption(unit.id);
-    await page.getByRole("button", { name: "Preparar competência" }).click();
     await expect(
       page.getByText("Colaboradora aquisição E2E", { exact: true }),
     ).toBeVisible();
-    await expect(page.getByText(/R\$\s*561,00/).first()).toBeVisible();
-    await page.getByLabel("Selecionar Colaboradora aquisição E2E").check();
-    await page.getByRole("button", { name: /Gerar 1 pedido/ }).click();
+    await page.getByLabel("Dias de Colaboradora aquisição E2E").fill("22");
+    await page
+      .getByRole("button", { name: "Gerar pedido", exact: true })
+      .click();
     await expect(page.getByText("Pendente", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Confirmar", exact: true }).click();
     await page

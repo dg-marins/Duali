@@ -804,7 +804,7 @@ test("monthly acquisition reserves, confirms partially and preserves reversals",
   }
 });
 
-test("batch benefit registration preserves history and prepares non-daily acquisition", async () => {
+test("batch benefit registration preserves history without creating a monthly competence", async () => {
   const f = await fixture();
   try {
     const pessoa = await f.db.pessoa.create({
@@ -861,14 +861,14 @@ test("batch benefit registration preserves history and prepares non-daily acquis
       where: { vinculoId: vinculo.id },
     });
     expect(benefits).toHaveLength(1);
-    const competence = await f.db.beneficioCompetencia.findFirstOrThrow({
+    const competence = await f.db.beneficioCompetencia.findFirst({
       where: {
         beneficioVinculoId: benefits[0]!.id,
         competencia: new Date("2026-09-01"),
       },
-      include: { ajustes: true },
     });
-    expect(benefitCalculation(competence).valorFinal).toBe("150.00");
+    expect(competence).toBeNull();
+    expect(benefits[0]!.quantidadeRecorrente?.toFixed(2)).toBe("3.00");
     const next = await f.app.inject({
       method: "POST",
       url: "/api/beneficios/lote",
@@ -890,6 +890,97 @@ test("batch benefit registration preserves history and prepares non-daily acquis
         where: { acao: "CADASTRAR_BENEFICIO_EM_LOTE" },
       }),
     ).toBeGreaterThanOrEqual(2);
+  } finally {
+    await f.app.close();
+  }
+});
+
+test("monthly order snapshots fixed food value and is idempotent", async () => {
+  const f = await fixture();
+  try {
+    const person = await f.db.pessoa.create({
+      data: { nomeCompleto: "Pedido mensal" },
+    });
+    const unit = await f.db.unidade.create({
+      data: { nome: "Unidade pedido", sigla: f.suffix.slice(0, 8), uf: "RJ" },
+    });
+    const link = await f.db.vinculo.create({
+      data: {
+        pessoaId: person.id,
+        unidadeId: unit.id,
+        tipo: "CLT",
+        dataAdmissao: new Date("2025-01-01"),
+      },
+    });
+    const supplier = await f.db.fornecedor.create({
+      data: { nome: `Fornecedor pedido ${f.suffix}` },
+    });
+    const configuration = await f.db.configuracaoBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        fornecedorId: supplier.id,
+        tipo: "ALIMENTACAO",
+      },
+    });
+    const benefit = await f.db.beneficioVinculo.create({
+      data: {
+        vinculoId: link.id,
+        tipo: "ALIMENTACAO",
+        configuracaoRecorrenteId: configuration.id,
+        inicioVigencia: new Date("2026-09-01"),
+        valorDiario: 33.33,
+        valorMensalRecorrente: 700,
+      },
+    });
+    const preview = await f.app.inject({
+      method: "GET",
+      url: `/api/aquisicoes-beneficios/pedido/previa?unidadeId=${unit.id}&competencia=2026-09-01&tipo=ALIMENTACAO`,
+      headers: f.headers,
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(
+      preview.json<Array<{ valorSugerido: string }>>()[0]?.valorSugerido,
+    ).toBe("700.00");
+    const payload = {
+      unidadeId: unit.id,
+      competencia: "2026-09-01",
+      tipo: "ALIMENTACAO",
+      itens: [
+        {
+          beneficioVinculoId: benefit.id,
+          incluir: true,
+          quantidadeDias: 21,
+          valorUnitario: "33.33",
+          valorSolicitado: "700.00",
+        },
+      ],
+    };
+    const headers = { ...f.headers, "idempotency-key": `pedido-${f.suffix}` };
+    const created = await f.app.inject({
+      method: "POST",
+      url: "/api/aquisicoes-beneficios/pedido/gerar",
+      headers,
+      payload,
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect(created.json<{ pedidos: number }>().pedidos).toBe(1);
+    const repeat = await f.app.inject({
+      method: "POST",
+      url: "/api/aquisicoes-beneficios/pedido/gerar",
+      headers,
+      payload,
+    });
+    expect(repeat.statusCode, repeat.body).toBe(201);
+    expect(
+      await f.db.aquisicaoBeneficio.count({ where: { unidadeId: unit.id } }),
+    ).toBe(1);
+    const competence = await f.db.beneficioCompetencia.findFirstOrThrow({
+      where: {
+        beneficioVinculoId: benefit.id,
+        competencia: new Date("2026-09-01"),
+      },
+    });
+    expect(competence.valorMensalBase?.toFixed(2)).toBe("700.00");
   } finally {
     await f.app.close();
   }

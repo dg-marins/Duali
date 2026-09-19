@@ -135,10 +135,10 @@ export function BenefitSummaryPage({
           Cadastrar benefícios em lote
         </button>
         <button onClick={() => go("/app/beneficios/aquisicao")}>
-          Aquisição mensal
+          Fazer pedido
         </button>
-        <button onClick={() => go("/app/beneficios/fechamento")}>
-          Fechamento por competência
+        <button onClick={() => go("/app/beneficios/competencias")}>
+          Competências
         </button>
       </div>
       <section

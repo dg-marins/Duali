@@ -46,6 +46,7 @@ type BatchItem = {
   selected: boolean;
   ambiguous: boolean;
   valorDiario: string;
+  valorMensalRecorrente: string;
   quantidadeDias: string;
   quantidade: string;
   valorUnitario: string;
@@ -130,6 +131,9 @@ export function BenefitBatchPage({
                   selected: false,
                   ambiguous: matching.length > 1,
                   valorDiario: String(existing?.valorDiario ?? ""),
+                  valorMensalRecorrente: String(
+                    existing?.valorMensalRecorrente ?? "",
+                  ),
                   quantidadeDias:
                     type === "TRANSPORTE" && link.sugestaoDiasTransporte != null
                       ? String(link.sugestaoDiasTransporte)
@@ -249,13 +253,13 @@ export function BenefitBatchPage({
       }
       if (
         type === "ALIMENTACAO" &&
-        (!item.valorDiario.trim() || !item.quantidadeDias.trim())
+        !item.valorDiario.trim() &&
+        !item.valorMensalRecorrente.trim()
       )
-        errors[String(link.id)] = "Informe valor diário e dias.";
+        errors[String(link.id)] = "Informe valor diário ou valor mensal.";
       if (
         type === "TRANSPORTE" &&
-        (!item.quantidadeDias.trim() ||
-          !item.transporteItens.length ||
+        (!item.transporteItens.length ||
           item.transporteItens.some(
             (transport) =>
               !transport.fornecedorId || !transport.valorDiario.trim(),
@@ -265,7 +269,7 @@ export function BenefitBatchPage({
           ))
       )
         errors[String(link.id)] =
-          "Informe dias, valor e fornecedor para cada condução, incluindo o fornecedor de referência.";
+          "Informe valor e fornecedor para cada condução, incluindo o fornecedor de referência.";
       if (
         !["ALIMENTACAO", "TRANSPORTE"].includes(type) &&
         (!item.quantidade.trim() || !item.valorUnitario.trim())
@@ -296,11 +300,10 @@ export function BenefitBatchPage({
               ...(type === "ALIMENTACAO"
                 ? {
                     valorDiario: item.valorDiario,
-                    quantidadeDias: item.quantidadeDias,
+                    valorMensalRecorrente: item.valorMensalRecorrente,
                   }
                 : type === "TRANSPORTE"
                   ? {
-                      quantidadeDias: item.quantidadeDias,
                       transporteItens: item.transporteItens.map(
                         (transport) => ({
                           ...transport,
@@ -321,9 +324,7 @@ export function BenefitBatchPage({
         `${selected.length} benefício(s) cadastrados ou atualizados.`,
       );
       setDirty(false);
-      navigate(
-        `/app/beneficios/aquisicao?unidadeId=${unitId}&competencia=${month}-01`,
-      );
+      navigate(`/app/beneficios?unidadeId=${unitId}&competencia=${month}-01`);
     } catch (reason) {
       setError((reason as Error).message);
     } finally {
@@ -334,7 +335,7 @@ export function BenefitBatchPage({
     <div className="page-stack">
       <PageHeader
         title="Cadastrar benefícios em lote"
-        description="Defina adesões, valores e competência para colaboradores ativos da unidade."
+        description="Defina regras recorrentes e valores para colaboradores ativos da unidade."
         action={
           <Button
             variant="outline"
@@ -540,13 +541,12 @@ export function BenefitBatchPage({
                     <th>Benefício atual</th>
                     {type === "ALIMENTACAO" || type === "TRANSPORTE" ? (
                       <>
-                        <th>Dias</th>
                         <th>
                           {type === "TRANSPORTE"
                             ? "Total diário"
                             : "Valor diário"}
                         </th>
-                        {type === "TRANSPORTE" && <th>Total mensal</th>}
+                        {type === "ALIMENTACAO" && <th>Valor mensal</th>}
                       </>
                     ) : (
                       <>
@@ -588,21 +588,6 @@ export function BenefitBatchPage({
                                 : `${labels[String(existing.tipo)] ?? display(existing.tipo)} · ${display((existing.configuracaoRecorrente as Row | undefined)?.fornecedor)}`
                               : "Novo"}
                         </td>
-                        {(type === "ALIMENTACAO" || type === "TRANSPORTE") && (
-                          <td>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={item.quantidadeDias}
-                              onChange={(event) =>
-                                update(String(link.id), {
-                                  quantidadeDias: event.target.value,
-                                })
-                              }
-                            />
-                          </td>
-                        )}
                         {type === "ALIMENTACAO" && (
                           <td>
                             <CurrencyInput
@@ -611,6 +596,19 @@ export function BenefitBatchPage({
                               onValueChange={(value) =>
                                 update(String(link.id), {
                                   valorDiario: value,
+                                })
+                              }
+                            />
+                          </td>
+                        )}
+                        {type === "ALIMENTACAO" && (
+                          <td>
+                            <CurrencyInput
+                              value={item.valorMensalRecorrente}
+                              ariaLabel={`Valor mensal de ${display(link.pessoa)}`}
+                              onValueChange={(value) =>
+                                update(String(link.id), {
+                                  valorMensalRecorrente: value,
                                 })
                               }
                             />
@@ -821,9 +819,14 @@ export function BenefitBatchPage({
                           </td>
                           <td>
                             {type === "ALIMENTACAO"
-                              ? `${item.quantidadeDias || "—"} dias · ${money(item.valorDiario)} por dia`
+                              ? `${item.valorDiario ? `${money(item.valorDiario)} por dia` : "Sem valor diário"}${item.valorMensalRecorrente ? ` · ${money(item.valorMensalRecorrente)} mensal` : ""}`
                               : type === "TRANSPORTE"
-                                ? `${item.quantidadeDias || "—"} dias · ${item.transporteItens.map((transport) => `${labels[transport.tipoConducao] ?? transport.tipoConducao}: ${money(transport.valorDiario)} (${display(configs.find((config) => String(config.fornecedorId) === transport.fornecedorId)?.fornecedor)})`).join("; ") || "Sem conduções"}`
+                                ? item.transporteItens
+                                    .map(
+                                      (transport) =>
+                                        `${labels[transport.tipoConducao] ?? transport.tipoConducao}: ${money(transport.valorDiario)} (${display(configs.find((config) => String(config.fornecedorId) === transport.fornecedorId)?.fornecedor)})`,
+                                    )
+                                    .join("; ") || "Sem conduções"
                                 : `${item.quantidade || "—"} × ${money(item.valorUnitario)}`}
                           </td>
                           <td className="field-error">

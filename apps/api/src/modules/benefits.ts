@@ -25,7 +25,6 @@ import {
 } from "../core.js";
 import { registerResource, saveResource, type Resource } from "./resources.js";
 import { transportCalculation } from "./transport.js";
-const recurringComponent = "__RECORRENTE__";
 const monthEnd = (month: Date) =>
   new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0));
 const weekdayIndexes: Record<string, number> = {
@@ -117,11 +116,13 @@ export function benefitCalculation(row: Row): Row {
     new Prisma.Decimal(0),
   );
   const base =
-    quantity != null && row.valorUnitario != null
-      ? new Prisma.Decimal(String(quantity))
-          .times(String(row.valorUnitario))
-          .toDecimalPlaces(2)
-      : null;
+    row.valorMensalBase != null
+      ? new Prisma.Decimal(String(row.valorMensalBase)).toDecimalPlaces(2)
+      : quantity != null && row.valorUnitario != null
+        ? new Prisma.Decimal(String(quantity))
+            .times(String(row.valorUnitario))
+            .toDecimalPlaces(2)
+        : null;
   const final = base?.plus(adjustment).toDecimalPlaces(2) ?? null;
   return {
     ...row,
@@ -172,10 +173,13 @@ export const benefitResources: Resource[] = [
         (data.vinculoId !== previous.vinculoId || data.tipo !== previous.tipo)
       )
         throw new DomainError(409, "Vínculo e tipo históricos são imutáveis.");
-      if (data.valorDiario != null && data.tipo !== "ALIMENTACAO")
+      if (
+        (data.valorDiario != null || data.valorMensalRecorrente != null) &&
+        data.tipo !== "ALIMENTACAO"
+      )
         throw new DomainError(
           422,
-          "Valor diário recorrente é permitido somente para alimentação.",
+          "Valores recorrentes são permitidos somente para alimentação.",
         );
       if (
         data.tipo === "ALIMENTACAO" &&
@@ -243,6 +247,7 @@ export const benefitResources: Resource[] = [
         const protectedFields = [
           "configuracaoRecorrenteId",
           "valorDiario",
+          "valorMensalRecorrente",
           "quantidadeRecorrente",
           "valorUnitarioRecorrente",
           "inicioVigencia",
@@ -766,19 +771,17 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
           for (const item of body.itens) {
             if (
               body.tipo === "ALIMENTACAO" &&
-              (item.valorDiario == null || item.quantidadeDias == null)
+              item.valorDiario == null &&
+              item.valorMensalRecorrente == null
             )
               throw new DomainError(
                 422,
-                "Informe valor diário e dias para alimentação.",
+                "Informe valor diário ou valor mensal para alimentação.",
               );
-            if (
-              body.tipo === "TRANSPORTE" &&
-              (!item.quantidadeDias || !item.transporteItens.length)
-            )
+            if (body.tipo === "TRANSPORTE" && !item.transporteItens.length)
               throw new DomainError(
                 422,
-                "Informe dias e ao menos um transporte por pessoa.",
+                "Informe ao menos um transporte por pessoa.",
               );
             if (
               !["ALIMENTACAO", "TRANSPORTE"].includes(body.tipo) &&
@@ -836,7 +839,11 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
                   configuracaoRecorrenteId:
                     body.tipo === "TRANSPORTE" ? null : config.id,
                   ...(body.tipo === "ALIMENTACAO"
-                    ? { valorDiario: item.valorDiario ?? null }
+                    ? {
+                        valorDiario: item.valorDiario ?? null,
+                        valorMensalRecorrente:
+                          item.valorMensalRecorrente ?? null,
+                      }
                     : {}),
                   ...(!["ALIMENTACAO", "TRANSPORTE"].includes(body.tipo)
                     ? {
@@ -855,7 +862,11 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
                   configuracaoRecorrenteId:
                     body.tipo === "TRANSPORTE" ? null : config.id,
                   ...(body.tipo === "ALIMENTACAO"
-                    ? { valorDiario: item.valorDiario ?? null }
+                    ? {
+                        valorDiario: item.valorDiario ?? null,
+                        valorMensalRecorrente:
+                          item.valorMensalRecorrente ?? null,
+                      }
                     : {}),
                   ...(!["ALIMENTACAO", "TRANSPORTE"].includes(body.tipo)
                     ? {
@@ -875,50 +886,6 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
                 benefit,
               );
             }
-            const allCompetences = await tx.beneficioCompetencia.findMany({
-              where: {
-                beneficioVinculoId: benefit.id,
-                competencia: month,
-              },
-              include: { aquisicaoItens: true },
-            });
-            if (allCompetences.some((row) => row.aquisicaoItens.length))
-              throw new DomainError(
-                409,
-                "Não altere benefício com aquisição já emitida nesta competência.",
-              );
-            const existing =
-              allCompetences.find(
-                (row) => row.componente === recurringComponent,
-              ) ?? allCompetences.find((row) => row.componente === "Principal");
-            const data = {
-              configuracaoId: config.id,
-              quantidadeDias: ["ALIMENTACAO", "TRANSPORTE"].includes(body.tipo)
-                ? (item.quantidadeDias ?? null)
-                : null,
-              quantidade: !["ALIMENTACAO", "TRANSPORTE"].includes(body.tipo)
-                ? (item.quantidade ?? null)
-                : null,
-              valorUnitario:
-                body.tipo === "ALIMENTACAO"
-                  ? (item.valorDiario ?? null)
-                  : !["TRANSPORTE"].includes(body.tipo)
-                    ? (item.valorUnitario ?? null)
-                    : null,
-            };
-            const competence = existing
-              ? await tx.beneficioCompetencia.update({
-                  where: { id: existing.id },
-                  data,
-                })
-              : await tx.beneficioCompetencia.create({
-                  data: {
-                    beneficioVinculoId: benefit.id,
-                    competencia: month,
-                    componente: recurringComponent,
-                    ...data,
-                  },
-                });
             if (body.tipo === "TRANSPORTE") {
               const currentTransportItems =
                 await tx.beneficioTransporteItem.findMany({
@@ -1001,20 +968,6 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
                   current,
                   closed,
                 );
-              }
-              await tx.beneficioTransporteCompetenciaItem.deleteMany({
-                where: { competenciaId: competence.id },
-              });
-              for (const source of createdTransportItems) {
-                await tx.beneficioTransporteCompetenciaItem.create({
-                  data: {
-                    competenciaId: competence.id,
-                    origemItemId: source.id,
-                    tipoConducao: source.tipoConducao,
-                    fornecedorId: source.fornecedorId,
-                    valorDiario: source.valorDiario,
-                  },
-                });
               }
             }
             await audit(

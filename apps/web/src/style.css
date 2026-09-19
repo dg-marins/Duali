@@ -2285,6 +2285,32 @@ th {
   max-width: 100%;
   white-space: normal;
 }
+.monthly-order-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+.monthly-order-heading h2 {
+  margin: 0 0 4px;
+}
+.monthly-order-page table input:not([type="checkbox"]) {
+  min-width: 92px;
+}
+.transport-composition {
+  display: block;
+  max-width: 320px;
+  margin-top: 5px;
+  color: var(--muted);
+  white-space: normal;
+}
+@media (max-width: 700px) {
+  .monthly-order-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
 
 .benefit-summary-filters {
   display: flex;
@@ -2441,4 +2467,12 @@ th {
 .person-create-dialog .person-modal-close:hover {
   background: var(--surface-strong);
   color: var(--brand-dark);
+}
+
+/* Preparação e emissão foram unificadas na tela Fazer pedido. */
+.competency-filters .filter-grid > label:nth-child(4),
+.competency-filters .filter-grid > label:nth-child(5),
+.competency-filters .preparation-overrides,
+.competency-filters > .form-actions {
+  display: none;
 }

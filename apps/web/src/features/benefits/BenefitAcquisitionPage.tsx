@@ -49,11 +49,11 @@ export function BenefitAcquisitionPage({
     ),
     [daysTransport, setDaysTransport] = useState("22"),
     [daysFood, setDaysFood] = useState("22"),
-    [transportLinks, setTransportLinks] = useState<Row[]>([]),
+    [transportLinks] = useState<Row[]>([]),
     [transportDays, setTransportDays] = useState<Record<string, string>>({}),
     [rows, setRows] = useState<Row[]>([]),
     [orders, setOrders] = useState<Row[]>([]),
-    [selected, setSelected] = useState<Set<string>>(() => new Set()),
+    [selected] = useState<Set<string>>(() => new Set()),
     [loading, setLoading] = useState(true),
     [working, setWorking] = useState(false),
     [error, setError] = useState(""),
@@ -89,7 +89,6 @@ export function BenefitAcquisitionPage({
       ]);
       setRows(next);
       setOrders(acquired);
-      setSelected(new Set());
       setError("");
     } catch (reason) {
       setError((reason as Error).message);
@@ -119,14 +118,6 @@ export function BenefitAcquisitionPage({
     history.replaceState({}, "", `${location.pathname}?${query.toString()}`);
     void load();
   }, [unit, month, type]);
-  useEffect(() => {
-    if (!unit) return;
-    void api<{ vinculos: Row[] }>(
-      `beneficios/lote/opcoes?unidadeId=${unit}&tipo=TRANSPORTE&competencia=${competencia}`,
-    )
-      .then((result) => setTransportLinks(result.vinculos))
-      .catch((reason) => setError((reason as Error).message));
-  }, [unit, month]);
   async function prepare() {
     if (!unit) return;
     setWorking(true);
@@ -306,8 +297,8 @@ export function BenefitAcquisitionPage({
   return (
     <div className="page-stack">
       <PageHeader
-        title="Aquisição mensal"
-        description="Prepare, confira e registre os créditos comprados por colaborador."
+        title="Competências"
+        description="Acompanhe pedidos, confirmações, reversões e pendências do mês."
         action={
           <Button variant="outline" onClick={() => navigate("/app/beneficios")}>
             Voltar
@@ -315,7 +306,7 @@ export function BenefitAcquisitionPage({
         }
       />
       <Notice text={error} error />
-      <section className="panel filter-panel">
+      <section className="panel filter-panel competency-filters">
         <div className="filter-grid">
           <label>
             <span>Unidade</span>
@@ -434,16 +425,15 @@ export function BenefitAcquisitionPage({
       ) : (
         <RefreshingContent refreshing={loading}>
           <section className="panel">
-            <h2>Conferência por colaborador</h2>
+            <h2>Lançamentos e saldos do mês</h2>
             <p className="muted">
-              Selecione apenas valores disponíveis. Vínculos afastados exigem
-              conferência manual dos dias.
+              Consulte o previsto, o saldo reservado e as compras já
+              registradas.
             </p>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th aria-label="Selecionar" />
                     <th>Pessoa</th>
                     <th>Equipe</th>
                     <th>Benefício</th>
@@ -458,23 +448,6 @@ export function BenefitAcquisitionPage({
                 <tbody>
                   {visibleRows.map((row) => (
                     <tr key={String(row.chave)}>
-                      <td>
-                        <input
-                          aria-label={`Selecionar ${String(row.pessoa)}`}
-                          type="checkbox"
-                          disabled={Number(row.disponivel) <= 0}
-                          checked={selected.has(String(row.chave))}
-                          onChange={() =>
-                            setSelected((current) => {
-                              const next = new Set(current);
-                              if (next.has(String(row.chave)))
-                                next.delete(String(row.chave));
-                              else next.add(String(row.chave));
-                              return next;
-                            })
-                          }
-                        />
-                      </td>
                       <td>
                         {display(row.pessoa)}
                         {Boolean(row.alerta) && (

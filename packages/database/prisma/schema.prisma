@@ -442,6 +442,7 @@ model BeneficioVinculo {
   configuracaoRecorrenteId String? @db.Uuid
   configuracaoRecorrente ConfiguracaoBeneficio? @relation("ConfiguracaoRecorrenteBeneficio", fields:[configuracaoRecorrenteId],references:[id])
   valorDiario Decimal? @db.Decimal(12,2)
+  valorMensalRecorrente Decimal? @db.Decimal(12,2)
   quantidadeRecorrente Decimal? @db.Decimal(7,2)
   valorUnitarioRecorrente Decimal? @db.Decimal(12,2)
  competencias BeneficioCompetencia[]
@@ -460,6 +461,7 @@ model BeneficioCompetencia {
  quantidadeDias Decimal? @db.Decimal(7,2)
  quantidade Decimal? @db.Decimal(7,2)
  valorUnitario Decimal? @db.Decimal(12,2)
+ valorMensalBase Decimal? @db.Decimal(12,2)
  valorInformado Decimal? @db.Decimal(12,2)
  status StatusLancamentoBeneficio @default(PENDENTE)
  observacoes String?
@@ -501,7 +503,9 @@ model AquisicaoBeneficioItem {
  equipeNome String? @db.VarChar(180)
  destino String @db.VarChar(180)
  valorPrevisto Decimal @db.Decimal(12,2)
+ valorSolicitado Decimal? @db.Decimal(12,2)
  valorReservado Decimal @db.Decimal(12,2)
+ composicao Json?
  status StatusItemAquisicaoBeneficio @default(PENDENTE)
  criadoEm DateTime @default(now())
  movimentacoes MovimentacaoAquisicaoBeneficio[]

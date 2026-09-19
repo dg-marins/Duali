@@ -91,6 +91,7 @@ export const beneficioVinculoSchema = z
     status: z.enum(["ATIVO", "ENCERRADO"]).default("ATIVO"),
     configuracaoRecorrenteId: id.nullable().optional(),
     valorDiario: money.nullable().optional(),
+    valorMensalRecorrente: money.nullable().optional(),
     quantidadeRecorrente: recurringQuantity,
     valorUnitarioRecorrente: money.nullable().optional(),
     observacoes: optionalText,
@@ -145,6 +146,46 @@ export const aquisicaoPedidoSchema = z
     observacoes: optionalText,
   })
   .strict();
+export const pedidoMensalSimulacaoSchema = z
+  .object({
+    unidadeId: id,
+    competencia: date.refine(
+      (v) => v.endsWith("-01"),
+      "Informe o primeiro dia do mês.",
+    ),
+    tipo: z.enum(benefitTypes),
+  })
+  .strict();
+export const pedidoMensalGerarSchema = pedidoMensalSimulacaoSchema.extend({
+  itens: z
+    .array(
+      z
+        .object({
+          beneficioVinculoId: id,
+          incluir: z.boolean().default(true),
+          quantidadeDias: nonNegativeNumber(999).nullable().optional(),
+          quantidade: nonNegativeNumber().nullable().optional(),
+          valorUnitario: money.nullable().optional(),
+          valorMensalBase: money.nullable().optional(),
+          valorSolicitado: money.nullable().optional(),
+          motivoAfastado: optionalText,
+          observacoes: optionalText,
+          transporteItens: z
+            .array(
+              z
+                .object({
+                  tipoConducao: z.enum(transportTypes),
+                  fornecedorId: id,
+                  valorDiario: money,
+                })
+                .strict(),
+            )
+            .optional(),
+        })
+        .strict(),
+    )
+    .min(1),
+});
 export const beneficioLoteSchema = z
   .object({
     unidadeId: id,
@@ -160,6 +201,7 @@ export const beneficioLoteSchema = z
           .object({
             vinculoId: id,
             valorDiario: money.nullable().optional(),
+            valorMensalRecorrente: money.nullable().optional(),
             quantidadeDias: recurringQuantity,
             quantidade: recurringQuantity,
             valorUnitario: money.nullable().optional(),
@@ -237,6 +279,7 @@ export const competenciaSchema = z
     quantidadeDias: quantity,
     quantidade: quantity,
     valorUnitario: money.nullable().optional(),
+    valorMensalBase: money.nullable().optional(),
     valorInformado: money.nullable().optional(),
     status: z
       .enum(["PENDENTE", "CONFERIDO", "PAGO", "CANCELADO"])
