@@ -28,6 +28,7 @@ import {
 } from "./ui";
 import { Notice, RecordForm } from "./components";
 import { screens } from "./resources";
+import { X } from "lucide-react";
 
 type Navigate = (path: string) => void;
 const benefitLabels: Record<string, string> = {
@@ -49,6 +50,13 @@ const documentLabels: Record<string, string> = {
   RENOVACAO: "Renovação histórica",
   DISTRATO: "Distrato",
   OUTRO: "Outro documento",
+};
+const conductionLabels: Record<string, string> = {
+  ONIBUS: "Ônibus",
+  ONIBUS_INTER: "Ônibus Intermunicipal",
+  BARCA: "Barca",
+  METRO: "Metrô",
+  TREM: "Trem",
 };
 const decimalInputValue = (value: string) => {
   const cleaned = value.replace(/[^\d,.-]/g, "").trim();
@@ -128,12 +136,15 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
   const [filters, setFilters] = useState({
     q: initial.get("q") ?? "",
     status: initial.get("status") ?? "",
-    tipo: initial.get("tipo") ?? "",
+    tipo: initial.get("segmento") ?? initial.get("tipo") ?? "",
+    instituicaoId: initial.get("instituicaoId") ?? "",
     unidadeId: initial.get("unidadeId") ?? "",
     equipeId: initial.get("equipeId") ?? "",
   });
   const [page, setPage] = useState(Number(initial.get("page") ?? 1)),
-    [data, setData] = useState<ListResult>({
+    [data, setData] = useState<
+      ListResult & { segmentos?: Record<string, number> }
+    >({
       items: [],
       total: 0,
       page: 1,
@@ -143,7 +154,14 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
     [hasLoaded, setHasLoaded] = useState(false),
     [error, setError] = useState(""),
     [creating, setCreating] = useState(false),
-    [version, setVersion] = useState(0);
+    [version, setVersion] = useState(0),
+    [advanced, setAdvanced] = useState(
+      Boolean(
+        initial.get("equipeId") ||
+          initial.get("status") ||
+          initial.get("instituicaoId"),
+      ),
+    );
   useEffect(() => {
     let active = true;
     const query = filtersQuery(filters, page);
@@ -151,7 +169,9 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
     setLoading(true);
     const timer = setTimeout(
       () =>
-        void api<ListResult>(`pessoas-operacional?${query}`)
+        void api<ListResult & { segmentos: Record<string, number> }>(
+          `pessoas-operacional?${query}`,
+        )
           .then((result) => {
             if (active) {
               setData(result);
@@ -174,12 +194,33 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
       clearTimeout(timer);
     };
   }, [filters, page, version]);
+  useEffect(() => {
+    if (loading || !hasLoaded) return;
+    const stored = sessionStorage.getItem("duali.people.return");
+    if (!stored) return;
+    const context = JSON.parse(stored) as {
+      url: string;
+      scroll: number;
+      id: string;
+    };
+    if (context.url !== location.pathname + location.search) return;
+    requestAnimationFrame(() => {
+      const row = document.querySelector<HTMLElement>(
+        `[data-person-id="${context.id}"]`,
+      );
+      row?.focus({ preventScroll: true });
+      window.scrollTo({ top: context.scroll });
+      sessionStorage.removeItem("duali.people.return");
+    });
+  }, [loading, hasLoaded]);
   const update = (key: string, value: string) => {
     setFilters({ ...filters, [key]: value });
     setPage(1);
   };
   return (
-    <>
+    <div
+      className={`golden-people${filters.tipo === "ESTAGIO" ? " people-stage" : ""}`}
+    >
       <PageHeader
         title="Pessoas"
         description="Encontre rapidamente uma pessoa e acompanhe sua situação atual."
@@ -187,14 +228,17 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
           <button onClick={() => setCreating(true)}>+ Nova pessoa</button>
         }
       />
-      <FormSheet
+      <FormDialog
         open={creating}
         onOpenChange={setCreating}
         title="Nova pessoa"
-        description="Cadastre a pessoa e seu vínculo inicial."
+        description="Cadastre a pessoa e, se desejar, seu vínculo inicial."
+        hideHeader
+        className="person-create-dialog"
       >
         {creating && (
           <PersonForm
+            modal
             options={options}
             onClose={() => setCreating(false)}
             onSaved={() => {
@@ -203,8 +247,33 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
             }}
           />
         )}
-      </FormSheet>
+      </FormDialog>
       <Notice text={error} error />
+      <div className="people-segments" aria-label="Situação atual das pessoas">
+        {[
+          ["CLT", "CLT"],
+          ["ESTAGIO", "Estágio"],
+          ["APRENDIZ", "Aprendiz"],
+          ["TRAINEE", "Trainee"],
+          ["SEM_VINCULO", "Sem vínculo"],
+          ["INATIVO", "Inativas"],
+        ].map(([value, title]) => (
+          <button
+            key={value}
+            data-segment={value}
+            className={
+              filters.tipo === value
+                ? "people-segment selected"
+                : "people-segment"
+            }
+            aria-pressed={filters.tipo === value}
+            onClick={() => update("tipo", filters.tipo === value ? "" : value!)}
+          >
+            <span>{title}</span>
+            <strong>{data.segmentos?.[value!] ?? "—"}</strong>
+          </button>
+        ))}
+      </div>
       <section className="panel filter-panel">
         <div className="filter-grid">
           <label>
@@ -217,25 +286,6 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
             />
           </label>
           <FilterSelect
-            label="Status"
-            value={filters.status}
-            onChange={(v) => update("status", v)}
-          >
-            <option>ATIVO</option>
-            <option>AFASTADO</option>
-            <option>DESLIGADO</option>
-          </FilterSelect>
-          <FilterSelect
-            label="Vínculo"
-            value={filters.tipo}
-            onChange={(v) => update("tipo", v)}
-          >
-            <option value="CLT">CLT</option>
-            <option value="ESTAGIO">Estágio</option>
-            <option value="APRENDIZ">Aprendiz</option>
-            <option value="TRAINEE">Trainee</option>
-          </FilterSelect>
-          <FilterSelect
             label="Unidade"
             value={filters.unidadeId}
             onChange={(v) => update("unidadeId", v)}
@@ -246,17 +296,13 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
               </option>
             ))}
           </FilterSelect>
-          <FilterSelect
-            label="Equipe"
-            value={filters.equipeId}
-            onChange={(v) => update("equipeId", v)}
+          <button
+            className="secondary"
+            aria-expanded={advanced}
+            onClick={() => setAdvanced(!advanced)}
           >
-            {options.teams.map((row) => (
-              <option key={String(row.id)} value={String(row.id)}>
-                {display(row)}
-              </option>
-            ))}
-          </FilterSelect>
+            Filtros
+          </button>
           <button
             className="secondary clear-filter"
             onClick={() => {
@@ -264,6 +310,7 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
                 q: "",
                 status: "",
                 tipo: "",
+                instituicaoId: "",
                 unidadeId: "",
                 equipeId: "",
               });
@@ -273,6 +320,43 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
             Limpar filtros
           </button>
         </div>
+        {advanced && (
+          <div className="filter-grid advanced-filters">
+            {" "}
+            <FilterSelect
+              label="Status"
+              value={filters.status}
+              onChange={(v) => update("status", v)}
+            >
+              <option>ATIVO</option>
+              <option>AFASTADO</option>
+            </FilterSelect>
+            <FilterSelect
+              label="Equipe"
+              value={filters.equipeId}
+              onChange={(v) => update("equipeId", v)}
+            >
+              {options.teams.map((row) => (
+                <option key={String(row.id)} value={String(row.id)}>
+                  {display(row)}
+                </option>
+              ))}
+            </FilterSelect>
+            {(filters.tipo === "ESTAGIO" || Boolean(filters.instituicaoId)) && (
+              <FilterSelect
+                label="Instituição"
+                value={filters.instituicaoId}
+                onChange={(v) => update("instituicaoId", v)}
+              >
+                {options.institutions.map((row) => (
+                  <option key={String(row.id)} value={String(row.id)}>
+                    {display(row)}
+                  </option>
+                ))}
+              </FilterSelect>
+            )}
+          </div>
+        )}
       </section>
       <section className="panel">
         <div className="result-count">{data.total} pessoas encontradas</div>
@@ -283,7 +367,17 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
             <DataTable
               rows={data.items}
               primaryKey="nomeCompleto"
-              onRow={(row) => navigate(`/app/pessoas/${row.id}`)}
+              onRow={(row) => {
+                sessionStorage.setItem(
+                  "duali.people.return",
+                  JSON.stringify({
+                    url: location.pathname + location.search,
+                    scroll: window.scrollY,
+                    id: row.id,
+                  }),
+                );
+                navigate(`/app/pessoas/${row.id}`);
+              }}
               empty={
                 <EmptyState
                   title="Nenhuma pessoa encontrada"
@@ -296,11 +390,49 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
                 />
               }
               columns={[
-                { key: "nomeCompleto", label: "Nome" },
-                { key: "vinculo", label: "Vínculo" },
+                {
+                  key: "nomeCompleto",
+                  label: "Nome",
+                  render: (row) => (
+                    <button
+                      className="link-button people-name"
+                      data-person-id={String(row.id)}
+                      title={String(row.nomeCompleto)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        sessionStorage.setItem(
+                          "duali.people.return",
+                          JSON.stringify({
+                            url: location.pathname + location.search,
+                            scroll: window.scrollY,
+                            id: row.id,
+                          }),
+                        );
+                        navigate(`/app/pessoas/${row.id}`);
+                      }}
+                    >
+                      {String(row.nomeCompleto)}
+                    </button>
+                  ),
+                },
+                {
+                  key: "vinculo",
+                  label: "Vínculo",
+                  mobile: "hidden",
+                  render: (row) =>
+                    (
+                      ({
+                        ESTAGIO: "Estágio",
+                        APRENDIZ: "Aprendiz",
+                        TRAINEE: "Trainee",
+                        CLT: "CLT",
+                      }) as Record<string, string>
+                    )[String(row.vinculo)] ?? "Sem vínculo",
+                },
                 {
                   key: "unidade",
                   label: "Unidade",
+                  mobile: "hidden",
                   render: (row) => display(row.unidade),
                 },
                 {
@@ -308,12 +440,40 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
                   label: "Equipe",
                   render: (row) => display(row.equipe),
                 },
-                {
-                  key: "admissao",
-                  label: "Admissão",
-                  render: (row) => formatDate(row.admissao),
-                },
-                { key: "cpf", label: "CPF", render: (row) => maskCpf(row.cpf) },
+                ...(filters.tipo === "ESTAGIO"
+                  ? [
+                      {
+                        key: "instituicao",
+                        label: "Instituição",
+                        render: (row: Row) => {
+                          const institution = row.instituicao as Row | null;
+                          if (!institution) return "—";
+                          const name = String(institution.nome ?? "");
+                          const abbreviation = String(
+                            institution.sigla ?? "",
+                          ).trim();
+                          const label = abbreviation
+                            ? `${abbreviation} - ${name}`
+                            : name;
+                          return (
+                            <span className="people-institution" title={label}>
+                              {label}
+                            </span>
+                          );
+                        },
+                      },
+                      {
+                        key: "admissao",
+                        label: "Início",
+                        render: (row: Row) => formatDate(row.admissao),
+                      },
+                      {
+                        key: "terminoPrevisto",
+                        label: "Término do contrato",
+                        render: (row: Row) => formatDate(row.terminoPrevisto),
+                      },
+                    ]
+                  : []),
                 {
                   key: "status",
                   label: "Situação",
@@ -332,7 +492,7 @@ export function PeoplePage({ navigate }: { navigate: Navigate }) {
         )}
         <Pagination page={page} total={data.total} onChange={setPage} />
       </section>
-    </>
+    </div>
   );
 }
 
@@ -400,12 +560,15 @@ function StructuredScaleFields({
       </div>
       {type === "DIAS_SEMANA" && (
         <div
-          className="checkbox-group"
+          className="scale-weekdays"
           role="group"
           aria-label="Dias da semana"
         >
           {Object.entries(weekdayLabels).map(([day, label]) => (
-            <label className="checkbox-label" key={day}>
+            <label
+              className={`scale-weekday${selected.includes(day) ? " is-selected" : ""}`}
+              key={day}
+            >
               <input
                 type="checkbox"
                 checked={selected.includes(day)}
@@ -418,7 +581,7 @@ function StructuredScaleFields({
                   })
                 }
               />
-              {label}
+              <span>{label}</span>
             </label>
           ))}
         </div>
@@ -427,12 +590,14 @@ function StructuredScaleFields({
   );
 }
 function PersonForm({
+  modal = false,
   person,
   options = { units: [], teams: [], institutions: [], suppliers: [] },
   onClose,
   onSaved,
   onDirtyChange,
 }: {
+  modal?: boolean;
   person?: Row;
   options?: ReturnType<typeof useOptions>;
   onClose: () => void;
@@ -449,6 +614,7 @@ function PersonForm({
       telefone: "",
       observacoes: "",
       ativa: true,
+      incluirVinculo: true,
       unidadeId: "",
       equipeId: "",
       tipo: "CLT",
@@ -532,46 +698,50 @@ function PersonForm({
                 "dataTerminoPrevista",
                 "periodicidadeDocumentoMeses",
                 "tceStatus",
+                "incluirVinculo",
               ].includes(key),
           )
           .map(([key, value]) => [key, value === "" ? null : value]),
       );
       const saved = person?.id
         ? await api<Row>(`pessoas/${person.id}`, "PUT", payload)
-        : await api<Row>("pessoas-com-vinculo", "POST", {
-            pessoa: payload,
-            vinculo: Object.fromEntries(
-              [
-                "unidadeId",
-                "equipeId",
-                "tipo",
-                "dataAdmissao",
-                "matricula",
-                "cargoFuncao",
-                "gestor",
-                "escala",
-                "escalaEstruturada",
-              ].map((key) => [key, data[key] === "" ? null : data[key]]),
-            ),
-            ...(data.tipo === "ESTAGIO"
-              ? {
-                  estagio: {
-                    instituicaoEnsinoId: data.instituicaoEnsinoId || null,
-                    periodoAcademico: data.periodoAcademico || null,
-                    valorBolsa: data.valorBolsa === "" ? null : data.valorBolsa,
-                    dataTerminoPrevista:
-                      data.dataTerminoPrevista === ""
-                        ? null
-                        : data.dataTerminoPrevista,
-                    periodicidadeDocumentoMeses:
-                      data.periodicidadeDocumentoMeses === ""
-                        ? undefined
-                        : data.periodicidadeDocumentoMeses,
-                    tceStatus: data.tceStatus || "AGUARDANDO_ASSINATURA",
-                  },
-                }
-              : {}),
-          });
+        : !data.incluirVinculo
+          ? await api<Row>("pessoas", "POST", payload)
+          : await api<Row>("pessoas-com-vinculo", "POST", {
+              pessoa: payload,
+              vinculo: Object.fromEntries(
+                [
+                  "unidadeId",
+                  "equipeId",
+                  "tipo",
+                  "dataAdmissao",
+                  "matricula",
+                  "cargoFuncao",
+                  "gestor",
+                  "escala",
+                  "escalaEstruturada",
+                ].map((key) => [key, data[key] === "" ? null : data[key]]),
+              ),
+              ...(data.tipo === "ESTAGIO"
+                ? {
+                    estagio: {
+                      instituicaoEnsinoId: data.instituicaoEnsinoId || null,
+                      periodoAcademico: data.periodoAcademico || null,
+                      valorBolsa:
+                        data.valorBolsa === "" ? null : data.valorBolsa,
+                      dataTerminoPrevista:
+                        data.dataTerminoPrevista === ""
+                          ? null
+                          : data.dataTerminoPrevista,
+                      periodicidadeDocumentoMeses:
+                        data.periodicidadeDocumentoMeses === ""
+                          ? undefined
+                          : data.periodicidadeDocumentoMeses,
+                      tceStatus: data.tceStatus || "AGUARDANDO_ASSINATURA",
+                    },
+                  }
+                : {}),
+            });
       onSaved(String(saved.id ?? person?.id ?? ""));
     } catch (e) {
       setError((e as Error).message);
@@ -583,8 +753,13 @@ function PersonForm({
     <section className="panel form-panel">
       <div className="section-heading">
         <h2>{person ? "Editar pessoa" : "Nova pessoa"}</h2>
-        <button type="button" className="secondary" onClick={close}>
-          Fechar
+        <button
+          type="button"
+          className={modal ? "person-modal-close" : "secondary"}
+          aria-label="Fechar"
+          onClick={close}
+        >
+          {modal ? <X size={18} aria-hidden="true" /> : "Fechar"}
         </button>
       </div>
       <Notice text={error} error />
@@ -628,6 +803,18 @@ function PersonForm({
           </fieldset>
         )}
         {!person && (
+          <label className="optional-link">
+            <input
+              type="checkbox"
+              checked={Boolean(data.incluirVinculo)}
+              onChange={(e) =>
+                setData({ ...data, incluirVinculo: e.target.checked })
+              }
+            />
+            <span>Adicionar vínculo inicial</span>
+          </label>
+        )}
+        {!person && Boolean(data.incluirVinculo) && (
           <fieldset>
             <legend>Vínculo inicial</legend>
             <div className="form-grid">
@@ -657,11 +844,17 @@ function PersonForm({
                   }
                 >
                   <option value="">Sem equipe</option>
-                  {options.teams.map((row) => (
-                    <option key={String(row.id)} value={String(row.id)}>
-                      {display(row)}
-                    </option>
-                  ))}
+                  {[...options.teams]
+                    .sort((a, b) =>
+                      display(a).localeCompare(display(b), "pt-BR", {
+                        sensitivity: "base",
+                      }),
+                    )
+                    .map((row) => (
+                      <option key={String(row.id)} value={String(row.id)}>
+                        {display(row)}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label>
@@ -836,6 +1029,54 @@ export function PersonEditor({
   );
 }
 
+function TransportSupplierSummary({ items }: { items: Row[] }) {
+  if (!items.length)
+    return <p className="muted">Transporte não configurado.</p>;
+  const suppliers = new Map<string, { name: string; items: Row[] }>();
+  for (const item of items) {
+    const supplier = item.fornecedor as Row | undefined;
+    const name = supplier?.nome
+      ? String(supplier.nome)
+      : "Fornecedor não informado";
+    const key = String(item.fornecedorId ?? name);
+    const group = suppliers.get(key) ?? { name, items: [] };
+    group.items.push(item);
+    suppliers.set(key, group);
+  }
+  return (
+    <section
+      className="transport-suppliers"
+      aria-label="Fornecedores de transporte"
+    >
+      <h3>Fornecedores e conduções</h3>
+      <div className="transport-supplier-grid">
+        {[...suppliers].map(([key, supplier]) => (
+          <section className="transport-supplier-card" key={key}>
+            <h4>{supplier.name}</h4>
+            <ul>
+              {supplier.items.map((item) => (
+                <li key={String(item.id)}>
+                  <span>
+                    {conductionLabels[String(item.tipoConducao)] ??
+                      display(item.tipoConducao)}
+                    {item.ativo === false && (
+                      <small className="muted"> · Inativo</small>
+                    )}
+                  </span>
+                  <strong>
+                    {money(item.valorDiario)}
+                    <small> / dia</small>
+                  </strong>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ProfileBenefitForm({
   person,
   link,
@@ -876,20 +1117,16 @@ function ProfileBenefitForm({
         tipoConducao: string;
         fornecedorId: string;
         valorDiario: string;
-        inicioVigencia: string;
-        fimVigencia: string;
-        ativo: boolean;
       }>
     >(
-      ((record?.transporteItens as Row[] | undefined) ?? []).map((item) => ({
-        ...(item.id ? { id: String(item.id) } : {}),
-        tipoConducao: String(item.tipoConducao ?? "ONIBUS"),
-        fornecedorId: String(item.fornecedorId ?? ""),
-        valorDiario: String(item.valorDiario ?? ""),
-        inicioVigencia: String(item.inicioVigencia ?? start).slice(0, 10),
-        fimVigencia: String(item.fimVigencia ?? "").slice(0, 10),
-        ativo: Boolean(item.ativo ?? true),
-      })),
+      ((record?.transporteItens as Row[] | undefined) ?? [])
+        .filter((item) => item.ativo !== false)
+        .map((item) => ({
+          ...(item.id ? { id: String(item.id) } : {}),
+          tipoConducao: String(item.tipoConducao ?? "ONIBUS"),
+          fornecedorId: String(item.fornecedorId ?? ""),
+          valorDiario: String(item.valorDiario ?? ""),
+        })),
     ),
     [loading, setLoading] = useState(false),
     [saving, setSaving] = useState(false),
@@ -960,9 +1197,9 @@ function ProfileBenefitForm({
               tipoConducao: item.tipoConducao,
               fornecedorId: item.fornecedorId,
               valorDiario: item.valorDiario,
-              inicioVigencia: item.inicioVigencia,
-              fimVigencia: item.fimVigencia || null,
-              ativo: item.ativo,
+              inicioVigencia: start,
+              fimVigencia: end || null,
+              ativo: status === "ATIVO",
             })),
           },
         );
@@ -1152,10 +1389,11 @@ function ProfileBenefitForm({
                     >
                       <option value="ONIBUS">Ônibus</option>
                       <option value="ONIBUS_INTER">
-                        Ônibus intermunicipal
+                        Ônibus Intermunicipal
                       </option>
                       <option value="BARCA">Barca</option>
                       <option value="METRO">Metrô</option>
+                      <option value="TREM">Trem</option>
                     </select>
                   </label>
                   <label>
@@ -1202,64 +1440,6 @@ function ProfileBenefitForm({
                       }}
                     />
                   </label>
-                  <label>
-                    <span>Início da vigência *</span>
-                    <input
-                      type="date"
-                      required
-                      value={item.inicioVigencia}
-                      onChange={(event) => {
-                        setTransportItems((all) =>
-                          all.map((current, itemIndex) =>
-                            itemIndex === index
-                              ? {
-                                  ...current,
-                                  inicioVigencia: event.target.value,
-                                }
-                              : current,
-                          ),
-                        );
-                        setDirty(true);
-                      }}
-                    />
-                  </label>
-                  <label>
-                    <span>Fim da vigência</span>
-                    <input
-                      type="date"
-                      value={item.fimVigencia}
-                      onChange={(event) => {
-                        setTransportItems((all) =>
-                          all.map((current, itemIndex) =>
-                            itemIndex === index
-                              ? {
-                                  ...current,
-                                  fimVigencia: event.target.value,
-                                }
-                              : current,
-                          ),
-                        );
-                        setDirty(true);
-                      }}
-                    />
-                  </label>
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={item.ativo}
-                      onChange={(event) => {
-                        setTransportItems((all) =>
-                          all.map((current, itemIndex) =>
-                            itemIndex === index
-                              ? { ...current, ativo: event.target.checked }
-                              : current,
-                          ),
-                        );
-                        setDirty(true);
-                      }}
-                    />
-                    Ativo
-                  </label>
                   <button
                     type="button"
                     className="secondary"
@@ -1285,9 +1465,6 @@ function ProfileBenefitForm({
                         tipoConducao: "ONIBUS",
                         fornecedorId: "",
                         valorDiario: "",
-                        inicioVigencia: start,
-                        fimVigencia: end,
-                        ativo: true,
                       },
                     ]);
                     setDirty(true);
@@ -1560,7 +1737,7 @@ export function PersonProfile({
   const tabs: Array<[string, string]> = [
     ["visao", "Visão geral"],
     ["vinculo", "Vínculo"],
-    ["descanso", "Férias"],
+    ["descanso", current?.tipo === "ESTAGIO" ? "Descanso" : "Férias"],
     ["beneficios", "Benefícios"],
     ["documentos", "Documentos"],
     ["historico", "Histórico"],
@@ -1569,37 +1746,52 @@ export function PersonProfile({
     formScreen === "beneficios-vinculo" ? FormDialog : FormSheet;
   return (
     <RefreshingContent refreshing={loading}>
-      <>
+      <div className="golden-profile">
         <Notice text={error} error />
-        <PageHeader
-          title={String(person.nomeCompleto)}
-          description={`${current?.tipo === "ESTAGIO" ? "Estagiário(a)" : current?.tipo === "APRENDIZ" ? "Aprendiz" : current?.tipo === "TRAINEE" ? "Trainee" : (current?.tipo ?? "Sem vínculo")} · ${display(current?.unidade)}`}
-          breadcrumb={
-            <button
-              className="link-button"
-              onClick={() => {
-                if (history.length > 1) history.back();
-                else navigate("/app/pessoas");
-              }}
-            >
-              ← Pessoas
-            </button>
-          }
-          action={
-            <div className="form-actions">
-              <button onClick={() => navigate(`/app/pessoas/${id}/editar`)}>
-                Editar pessoa
+        <div className="profile-identity">
+          <div className="person-avatar" aria-hidden="true">
+            {String(person.nomeCompleto)
+              .split(" ")
+              .filter(Boolean)
+              .slice(0, 2)
+              .map((name) => name[0])
+              .join("")}
+          </div>
+          <PageHeader
+            title={String(person.nomeCompleto)}
+            description={`${current?.tipo === "ESTAGIO" ? "Estagiário(a)" : current?.tipo === "APRENDIZ" ? "Aprendiz" : current?.tipo === "TRAINEE" ? "Trainee" : (current?.tipo ?? "Sem vínculo")} · ${display(current?.unidade)}`}
+            breadcrumb={
+              <button
+                className="link-button"
+                onClick={() => {
+                  const stored = sessionStorage.getItem("duali.people.return");
+                  if (stored)
+                    navigate((JSON.parse(stored) as { url: string }).url);
+                  else navigate("/app/pessoas");
+                }}
+              >
+                ← Pessoas
               </button>
-            </div>
-          }
-        />
-        {profile.multiplosVinculosAtivos && (
+            }
+            action={
+              <div className="form-actions">
+                <button onClick={() => navigate(`/app/pessoas/${id}/editar`)}>
+                  Editar pessoa
+                </button>
+              </div>
+            }
+          />
+        </div>
+        {Boolean(profile.multiplosVinculosAtivos) && (
           <Notice
             text="Mais de um vínculo ativo encontrado. Revise esta situação."
             error
           />
         )}
         <ProfileOverlay
+          className={
+            formScreen === "beneficios-vinculo" ? "benefit-dialog" : undefined
+          }
           open={Boolean(formScreen)}
           onOpenChange={(open) => {
             if (!open) setFormScreen(null);
@@ -1812,43 +2004,17 @@ export function PersonProfile({
               </button>
             )}
             {tab === "descanso" && (
-              <>
-                <button onClick={() => setFormScreen("periodos")}>
-                  Programar descanso
-                </button>
-                <ActionMenu
-                  items={[
-                    {
-                      label: "Registrar ajuste",
-                      onSelect: () => setFormScreen("ajustes-descanso"),
-                    },
-                  ]}
-                />
-              </>
+              <button onClick={() => setFormScreen("periodos")}>
+                Programar descanso
+              </button>
             )}
             {tab === "beneficios" && (
-              <>
-                <button
-                  disabled={
-                    !current || Boolean(profile.multiplosVinculosAtivos)
-                  }
-                  onClick={() => setFormScreen("beneficios-vinculo")}
-                >
-                  Adicionar benefício
-                </button>
-                <ActionMenu
-                  items={[
-                    {
-                      label: "Nova competência",
-                      onSelect: () => setFormScreen("competencias"),
-                    },
-                    {
-                      label: "Registrar ajuste",
-                      onSelect: () => setFormScreen("ajustes-beneficios"),
-                    },
-                  ]}
-                />
-              </>
+              <button
+                disabled={!current || Boolean(profile.multiplosVinculosAtivos)}
+                onClick={() => setFormScreen("beneficios-vinculo")}
+              >
+                Adicionar benefício
+              </button>
             )}
             {tab === "documentos" && (
               <>
@@ -2048,156 +2214,180 @@ export function PersonProfile({
                 />
               </label>
             </section>
-            {links.flatMap((link) =>
-              ((link.beneficios as Row[] | undefined) ?? []).map((benefit) => {
-                const config = benefit.configuracaoRecorrente as
-                  | Row
-                  | undefined;
-                const competencies =
-                  (benefit.competencias as Row[] | undefined) ?? [];
-                const competence = competencies.find(
-                  (item) =>
-                    String(item.competencia).slice(0, 7) === benefitMonth,
-                );
-                return (
-                  <section
-                    className="panel benefit-profile-card"
-                    key={String(benefit.id)}
-                  >
-                    <div className="section-heading">
-                      <div>
-                        <h2>
-                          {benefitLabels[String(benefit.tipo)] ??
-                            String(benefit.tipo)}
-                        </h2>
-                        <p>
-                          {display(config?.fornecedor)} ·{" "}
-                          {benefitLabels[String(benefit.status)] ??
-                            String(benefit.status)}
-                        </p>
-                      </div>
-                      <button
-                        className="secondary"
-                        onClick={() => {
-                          setEditingBenefit(benefit);
-                          setFormScreen("beneficios-vinculo");
-                        }}
+            {[...links]
+              .sort(
+                (a, b) =>
+                  Number(b.id === current?.id) - Number(a.id === current?.id),
+              )
+              .flatMap((link) =>
+                [...((link.beneficios as Row[] | undefined) ?? [])]
+                  .sort(
+                    (a, b) =>
+                      Number(b.status === "ATIVO") -
+                      Number(a.status === "ATIVO"),
+                  )
+                  .map((benefit) => {
+                    const config = benefit.configuracaoRecorrente as
+                      | Row
+                      | undefined;
+                    const competencies =
+                      (benefit.competencias as Row[] | undefined) ?? [];
+                    const competence = competencies.find(
+                      (item) =>
+                        String(item.competencia).slice(0, 7) === benefitMonth,
+                    );
+                    return (
+                      <details
+                        className="panel benefit-profile-card"
+                        key={String(benefit.id)}
+                        open={
+                          link.id === current?.id && benefit.status === "ATIVO"
+                        }
                       >
-                        Editar benefício
-                      </button>
-                      {benefit.status === "ATIVO" && (
-                        <button
-                          className="secondary"
-                          onClick={() => {
-                            setEndingBenefit(benefit);
-                            setBenefitEndDate(
-                              String(
-                                benefit.fimVigencia ?? new Date().toISOString(),
-                              ).slice(0, 10),
-                            );
-                          }}
-                        >
-                          Encerrar benefício
-                        </button>
-                      )}
-                    </div>
-                    <dl className="benefit-compact-grid">
-                      <div>
-                        <dt>Fornecedor</dt>
-                        <dd>{display(config?.fornecedor)}</dd>
-                      </div>
-                      <div>
-                        <dt>Vigência</dt>
-                        <dd>
-                          {formatDate(benefit.inicioVigencia)} até{" "}
-                          {formatDate(benefit.fimVigencia)}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Competência</dt>
-                        <dd>{benefitMonth.split("-").reverse().join("/")}</dd>
-                      </div>
-                      <div>
-                        <dt>Valor diário</dt>
-                        <dd>
-                          {benefit.tipo === "ALIMENTACAO"
-                            ? money(
-                                competence?.valorUnitario ??
-                                  benefit.valorDiario,
+                        <summary>
+                          {link.id === current?.id && benefit.status === "ATIVO"
+                            ? "Benefício atual"
+                            : "Histórico"}{" "}
+                          ·{" "}
+                          {benefitLabels[String(benefit.tipo)] ??
+                            String(benefit.tipo)}{" "}
+                          · {display(link.unidade)}
+                        </summary>
+                        <section>
+                          <div className="section-heading">
+                            <div>
+                              <h2>
+                                {benefitLabels[String(benefit.tipo)] ??
+                                  String(benefit.tipo)}
+                              </h2>
+                              <p>
+                                {benefit.tipo !== "TRANSPORTE" && (
+                                  <>{display(config?.fornecedor)} · </>
+                                )}
+                                {benefitLabels[String(benefit.status)] ??
+                                  String(benefit.status)}
+                              </p>
+                            </div>
+                            <button
+                              className="secondary"
+                              onClick={() => {
+                                setEditingBenefit(benefit);
+                                setFormScreen("beneficios-vinculo");
+                              }}
+                            >
+                              Editar benefício
+                            </button>
+                            {benefit.status === "ATIVO" && (
+                              <button
+                                className="secondary"
+                                onClick={() => {
+                                  setEndingBenefit(benefit);
+                                  setBenefitEndDate(
+                                    String(
+                                      benefit.fimVigencia ??
+                                        new Date().toISOString(),
+                                    ).slice(0, 10),
+                                  );
+                                }}
+                              >
+                                Encerrar benefício
+                              </button>
+                            )}
+                          </div>
+                          <dl className="benefit-compact-grid">
+                            {benefit.tipo !== "TRANSPORTE" && (
+                              <div>
+                                <dt>Fornecedor</dt>
+                                <dd>{display(config?.fornecedor)}</dd>
+                              </div>
+                            )}
+                            <div>
+                              <dt>Vigência</dt>
+                              <dd>
+                                {formatDate(benefit.inicioVigencia)} até{" "}
+                                {formatDate(benefit.fimVigencia)}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Competência</dt>
+                              <dd>
+                                {benefitMonth.split("-").reverse().join("/")}
+                              </dd>
+                            </div>
+                            {benefit.tipo === "ALIMENTACAO" && (
+                              <div>
+                                <dt>Valor diário</dt>
+                                <dd>
+                                  {money(
+                                    competence?.valorUnitario ??
+                                      benefit.valorDiario,
+                                  )}
+                                </dd>
+                              </div>
+                            )}
+                            <div>
+                              <dt>Dias</dt>
+                              <dd>
+                                {competence?.quantidadeDias == null
+                                  ? "Não informado"
+                                  : display(competence.quantidadeDias)}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Valor total</dt>
+                              <dd>
+                                {competence
+                                  ? money(competence.valorFinal)
+                                  : "Não informado"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Situação</dt>
+                              <dd>
+                                {competence ? (
+                                  <StatusBadge value={competence.status} />
+                                ) : (
+                                  "Mês não preparado"
+                                )}
+                              </dd>
+                            </div>
+                          </dl>
+                          <div className="info-list">
+                            {!["ALIMENTACAO", "TRANSPORTE"].includes(
+                              String(benefit.tipo),
+                            ) && (
+                              <p>
+                                Quantidade recorrente:{" "}
+                                {display(benefit.quantidadeRecorrente)} · Valor
+                                unitário:{" "}
+                                {money(benefit.valorUnitarioRecorrente)}
+                              </p>
+                            )}
+                            {benefit.tipo === "TRANSPORTE" && (
+                              <TransportSupplierSummary
+                                items={
+                                  (benefit.transporteItens as
+                                    | Row[]
+                                    | undefined) ?? []
+                                }
+                              />
+                            )}
+                          </div>
+                          <button
+                            className="link-button benefit-history-link"
+                            onClick={() =>
+                              navigate(
+                                `/app/beneficios?competencia=${benefitMonth}&q=${encodeURIComponent(String(person.nomeCompleto))}`,
                               )
-                            : "Não aplicável"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Dias</dt>
-                        <dd>
-                          {competence?.quantidadeDias == null
-                            ? "Não informado"
-                            : display(competence.quantidadeDias)}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Valor total</dt>
-                        <dd>
-                          {competence
-                            ? money(competence.valorFinal)
-                            : "Não informado"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Situação</dt>
-                        <dd>
-                          {competence ? (
-                            <StatusBadge value={competence.status} />
-                          ) : (
-                            "Mês não preparado"
-                          )}
-                        </dd>
-                      </div>
-                    </dl>
-                    <div className="info-list">
-                      {!["ALIMENTACAO", "TRANSPORTE"].includes(
-                        String(benefit.tipo),
-                      ) && (
-                        <p>
-                          Quantidade recorrente:{" "}
-                          {display(benefit.quantidadeRecorrente)} · Valor
-                          unitário: {money(benefit.valorUnitarioRecorrente)}
-                        </p>
-                      )}
-                      {benefit.tipo === "TRANSPORTE" && (
-                        <div className="transport-summary-list">
-                          {(
-                            (benefit.transporteItens as Row[] | undefined) ?? []
-                          ).map((item) => (
-                            <p key={String(item.id)}>
-                              {display(item.tipoConducao)} ·{" "}
-                              {display(
-                                (item.fornecedor as Row | undefined)?.nome,
-                              )}{" "}
-                              · {money(item.valorDiario)} por dia
-                            </p>
-                          ))}
-                          {!(
-                            (benefit.transporteItens as Row[] | undefined) ?? []
-                          ).length && <p>Não configurado</p>}
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      className="link-button benefit-history-link"
-                      onClick={() =>
-                        navigate(
-                          `/app/beneficios?competencia=${benefitMonth}&q=${encodeURIComponent(String(person.nomeCompleto))}`,
-                        )
-                      }
-                    >
-                      Ver histórico
-                    </button>
-                  </section>
-                );
-              }),
-            )}
+                            }
+                          >
+                            Ver histórico
+                          </button>
+                        </section>
+                      </details>
+                    );
+                  }),
+              )}
             {!links.some(
               (link) => ((link.beneficios as Row[] | undefined) ?? []).length,
             ) && (
@@ -2274,12 +2464,12 @@ export function PersonProfile({
           <Timeline
             items={(profile.historico as Row[]).map((item) => ({
               date: item.criadoEm,
-              title: `${String(item.acao)} · ${String(item.entidade)}`,
+              title: `${({ CRIAR: "Cadastro criado", ALTERAR: "Dados atualizados", CANCELAR: "Registro cancelado", CANCELAR_DISTRATO: "Distrato revertido", REATIVAR_POR_REVERSAO_DISTRATO: "Vínculo reativado" } as Record<string, string>)[String(item.acao)] ?? String(item.acao).replaceAll("_", " ")} · ${({ pessoa: "Pessoa", vinculo: "Vínculo", estagio: "Estágio", documentoVinculo: "Documento", beneficioVinculo: "Benefício", beneficioCompetencia: "Competência" } as Record<string, string>)[String(item.entidade)] ?? String(item.entidade)}`,
               detail: `Por ${display(item.usuario)}`,
             }))}
           />
         )}
-      </>
+      </div>
     </RefreshingContent>
   );
 }
@@ -2577,6 +2767,8 @@ function OperationalList({
       equipeId: initialFilters.get("equipeId") ?? "",
       instituicaoId: initialFilters.get("instituicaoId") ?? "",
       fornecedorId: initialFilters.get("fornecedorId") ?? "",
+      categoria: initialFilters.get("categoria") ?? "",
+      visao: initialFilters.get("visao") ?? "",
       competencia:
         kind === "beneficios"
           ? (initialFilters.get("competencia")?.slice(0, 7) ??
@@ -2593,7 +2785,11 @@ function OperationalList({
     [loading, setLoading] = useState(true),
     [hasLoaded, setHasLoaded] = useState(false),
     [error, setError] = useState(""),
-    [formScreen, setFormScreen] = useState<string | null>(null),
+    [formScreen, setFormScreen] = useState<string | null>(
+      kind === "beneficios" && initialFilters.get("novo") === "1"
+        ? "beneficios-vinculo"
+        : null,
+    ),
     [editingCompetence, setEditingCompetence] = useState<Row | null>(null),
     [cancelingCompetence, setCancelingCompetence] = useState<Row | null>(null),
     [actionPending, setActionPending] = useState(false),
@@ -2844,13 +3040,7 @@ function OperationalList({
             ).length,
           }
         : kind === "beneficios"
-          ? {
-              total: rows.reduce(
-                (sum, row) => sum + Number(row.valorFinal ?? 0),
-                0,
-              ),
-              pending: rows.filter((r) => r.status === "PENDENTE").length,
-            }
+          ? {}
           : {
               alerts: rows.reduce(
                 (sum, row) => sum + (row.alertas as unknown[]).length,
@@ -2866,12 +3056,21 @@ function OperationalList({
         description={description}
         action={
           <div className="form-actions">
-            {kind === "descansos" && (
+            {kind === "beneficios" && (
               <button
                 className="secondary"
-                onClick={() => setFormScreen("ajustes-descanso")}
+                onClick={() => {
+                  const params = new URLSearchParams({
+                    competencia: `${filters.competencia}-01`,
+                  });
+                  if (filters.unidadeId)
+                    params.set("unidadeId", filters.unidadeId);
+                  if (filters.categoria)
+                    params.set("categoria", filters.categoria);
+                  navigate(`/app/beneficios?${params}`);
+                }}
               >
-                Registrar ajuste
+                Voltar ao resumo
               </button>
             )}
             {kind === "estagiarios" && (
@@ -2891,38 +3090,24 @@ function OperationalList({
               </>
             )}
             {kind === "beneficios" && (
-              <>
-                <button
-                  className="secondary"
-                  onClick={() => setFormScreen("beneficios-vinculo")}
-                >
-                  Nova adesão
-                </button>
-                <button
-                  className="secondary"
-                  onClick={() => setFormScreen("ajustes-beneficios")}
-                >
-                  Registrar ajuste
-                </button>
-              </>
+              <button
+                className="secondary"
+                onClick={() => setFormScreen("beneficios-vinculo")}
+              >
+                Nova adesão
+              </button>
             )}
-            <button
-              onClick={() =>
-                setFormScreen(
-                  kind === "estagiarios"
-                    ? "estagios"
-                    : kind === "descansos"
-                      ? "periodos"
-                      : "competencias",
-                )
-              }
-            >
-              {kind === "estagiarios"
-                ? "Novo estágio"
-                : kind === "descansos"
-                  ? "Programar período"
-                  : "Nova competência"}
-            </button>
+            {kind !== "beneficios" && (
+              <button
+                onClick={() =>
+                  setFormScreen(
+                    kind === "estagiarios" ? "estagios" : "periodos",
+                  )
+                }
+              >
+                {kind === "estagiarios" ? "Novo estágio" : "Programar período"}
+              </button>
+            )}
           </div>
         }
       />
@@ -2998,16 +3183,7 @@ function OperationalList({
                   tone="warning"
                 />
               </>
-            ) : kind === "beneficios" ? (
-              <>
-                <MetricCard label="Valor total" value={money(summary.total)} />
-                <MetricCard
-                  label="Pendências"
-                  value={summary.pending}
-                  tone="warning"
-                />
-              </>
-            ) : (
+            ) : kind === "beneficios" ? null : (
               <>
                 <MetricCard
                   label="Estagiários encontrados"
@@ -3041,6 +3217,18 @@ function OperationalList({
               <option>ATIVO</option>
               <option>AFASTADO</option>
               <option>DESLIGADO</option>
+            </FilterSelect>
+          )}
+          {kind === "beneficios" && (
+            <FilterSelect
+              label="Visão"
+              value={filters.visao}
+              onChange={(value) => update("visao", value)}
+            >
+              <option value="previsto">Previsto</option>
+              <option value="comprado">Com compra líquida</option>
+              <option value="pedido">Em pedido</option>
+              <option value="pendente">Aguardando conferência</option>
             </FilterSelect>
           )}
           {kind === "beneficios" && (
@@ -3093,6 +3281,17 @@ function OperationalList({
           )}
           {kind === "beneficios" && (
             <>
+              <FilterSelect
+                label="Categoria"
+                value={filters.categoria}
+                onChange={(value) => update("categoria", value)}
+              >
+                <option value="ALIMENTACAO">Alimentação</option>
+                <option value="TRANSPORTE">Transporte</option>
+                <option value="CESTA_BASICA">Cesta básica</option>
+                <option value="PREMIACAO">Premiação</option>
+                <option value="OUTRO">Outro</option>
+              </FilterSelect>
               <label>
                 <span>Competência</span>
                 <input
@@ -3163,26 +3362,13 @@ export const LeavePage = ({ navigate }: { navigate: Navigate }) => (
     navigate={navigate}
   />
 );
-export const BenefitsPage = ({ navigate }: { navigate: Navigate }) => (
-  <>
-    <div className="form-actions">
-      <button onClick={() => navigate("/app/beneficios/lote")}>
-        Cadastrar benefícios em lote
-      </button>
-      <button onClick={() => navigate("/app/beneficios/aquisicao")}>
-        Aquisição mensal
-      </button>
-      <button onClick={() => navigate("/app/beneficios/fechamento")}>
-        Fechamento por competência
-      </button>
-    </div>
-    <OperationalList
-      kind="beneficios"
-      title="Benefícios"
-      description="Competências, fornecedores, valores e pendências."
-      navigate={navigate}
-    />
-  </>
+export const BenefitLaunchesPage = ({ navigate }: { navigate: Navigate }) => (
+  <OperationalList
+    kind="beneficios"
+    title="Lançamentos de benefícios"
+    description="Consulte, confira e corrija os lançamentos da competência."
+    navigate={navigate}
+  />
 );
 
 const registryRelations: Record<

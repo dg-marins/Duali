@@ -62,7 +62,14 @@ export async function createApp(
         return reply.code(409).send({
           error: {
             code: "CONFLICT",
-            message: "Já existe registro com estes dados únicos.",
+            message:
+              JSON.stringify(error.meta ?? {}).includes(
+                "Vinculo_pessoaId_current_key",
+              ) ||
+              (error.meta?.modelName === "Vinculo" &&
+                JSON.stringify(error.meta?.target ?? "").includes("pessoaId"))
+                ? "Esta pessoa já possui um vínculo ATIVO ou AFASTADO. Encerre o vínculo atual antes de continuar."
+                : "Já existe registro com estes dados únicos.",
           },
         });
       if (["P2003", "P2025"].includes(error.code))

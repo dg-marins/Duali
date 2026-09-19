@@ -23,7 +23,7 @@ import {
   type Row,
   type Tx,
 } from "../core.js";
-import { registerResource, type Resource } from "./resources.js";
+import { registerResource, saveResource, type Resource } from "./resources.js";
 import { transportCalculation } from "./transport.js";
 const recurringComponent = "__RECORRENTE__";
 const monthEnd = (month: Date) =>
@@ -420,6 +420,54 @@ export const benefitResources: Resource[] = [
   },
 ];
 export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
+  app.post("/api/configuracoes-beneficios/multiunidade", async (req) => {
+    const body = configuracaoBeneficioSchema
+      .omit({ unidadeId: true })
+      .extend({
+        unidadeIds: z
+          .array(z.string().uuid())
+          .min(1)
+          .max(100)
+          .refine(
+            (ids) => new Set(ids).size === ids.length,
+            "Unidades repetidas.",
+          ),
+      })
+      .strict()
+      .parse(req.body);
+    return transaction(db, async (tx) => {
+      const { unidadeIds, ...configuration } = body;
+      const result = [];
+      const resource = benefitResources.find(
+        (item) => item.path === "configuracoes-beneficios",
+      )!;
+      for (const unidadeId of unidadeIds) {
+        const existing = await tx.configuracaoBeneficio.findUnique({
+          where: {
+            unidadeId_tipo_fornecedorId: {
+              unidadeId,
+              tipo: body.tipo,
+              fornecedorId: body.fornecedorId,
+            },
+          },
+        });
+        result.push(
+          existing
+            ? { id: existing.id, criada: false, ativa: existing.ativa }
+            : {
+                ...(await saveResource(
+                  tx,
+                  resource,
+                  { ...configuration, unidadeId },
+                  req.userId!,
+                )),
+                criada: true,
+              },
+        );
+      }
+      return { items: result };
+    });
+  });
   for (const resource of benefitResources) registerResource(app, db, resource);
   app.post("/api/competencias/:id/conferir", async (req) => {
     const { id } = paramsId.parse(req.params);
@@ -626,7 +674,12 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
         orderBy: { pessoa: { nomeCompleto: "asc" } },
       }),
       db.configuracaoBeneficio.findMany({
-        where: { unidadeId: query.unidadeId, tipo: query.tipo, ativa: true },
+        where: {
+          unidadeId: query.unidadeId,
+          tipo: query.tipo,
+          ativa: true,
+          fornecedor: { ativo: true },
+        },
         include: { fornecedor: true },
         orderBy: { fornecedor: { nome: "asc" } },
       }),
@@ -678,7 +731,10 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
                     fornecedor: { ativo: true },
                   },
           });
-          const config = validConfigs[0];
+          const config =
+            body.tipo === "TRANSPORTE" && body.configuracaoId
+              ? validConfigs.find((row) => row.id === body.configuracaoId)
+              : validConfigs[0];
           if (
             !config ||
             (body.tipo === "TRANSPORTE" &&
@@ -1097,8 +1153,10 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
       },
       include: {
         ajustes: true,
-        configuracao: true,
-        beneficioVinculo: { include: { vinculo: true } },
+        configuracao: { include: { fornecedor: true } },
+        beneficioVinculo: {
+          include: { vinculo: { include: { pessoa: true } } },
+        },
         transporteItens: { include: { fornecedor: true } },
       },
     });
@@ -1119,6 +1177,7 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
     );
     return {
       ...closing,
+      lancamentos: rows.map((row) => benefitCalculation(row)),
       pessoasCobertas: new Set(
         rows.map((r) => r.beneficioVinculo.vinculo.pessoaId),
       ).size,

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { Prisma, type PrismaClient } from "@duali/database";
 import {
   beneficioVinculoSchema,
+  transportTypes,
   transporteCompetenciaSchema,
   transporteItemInputSchema,
   z,
@@ -31,7 +32,7 @@ const transportConfigurationSchema = z
   .strict();
 const snapshotInputSchema = z
   .object({
-    tipoConducao: z.enum(["ONIBUS", "ONIBUS_INTER", "BARCA", "METRO"]),
+    tipoConducao: z.enum(transportTypes),
     fornecedorId: z.string().uuid(),
     valorDiario: z.coerce
       .number()

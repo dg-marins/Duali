@@ -1,3 +1,4 @@
+import { assertCurrentEmployment } from "./current-employment.js";
 import type { FastifyInstance } from "fastify";
 import type { PrismaClient } from "@duali/database";
 import {
@@ -140,6 +141,31 @@ async function syncDistrato(
     where: { id: String(document.vinculoId) },
   });
   const effective = document.dataReferencia as Date;
+  const person = await tx.pessoa.findUniqueOrThrow({
+    where: { id: link.pessoaId },
+  });
+  const otherCurrent = await tx.vinculo.count({
+    where: {
+      pessoaId: link.pessoaId,
+      id: { not: link.id },
+      status: { in: ["ATIVO", "AFASTADO"] },
+    },
+  });
+  if (person.ativa && !otherCurrent) {
+    const inactive = await tx.pessoa.update({
+      where: { id: person.id },
+      data: { ativa: false },
+    });
+    await audit(
+      tx,
+      userId,
+      "INATIVAR_POR_DISTRATO",
+      "pessoa",
+      person.id,
+      person,
+      inactive,
+    );
+  }
   if (
     link.status === "DESLIGADO" &&
     link.dataDesligamento?.toISOString().slice(0, 10) ===
@@ -259,10 +285,29 @@ export function registerInternship(app: FastifyInstance, db: PrismaClient) {
             .join("\n"),
         },
       });
+      await assertCurrentEmployment(tx, link.pessoaId, "ATIVO", link.id);
       const restored = await tx.vinculo.update({
         where: { id: link.id },
         data: { status: "ATIVO", dataDesligamento: null },
       });
+      const person = await tx.pessoa.findUniqueOrThrow({
+        where: { id: link.pessoaId },
+      });
+      if (!person.ativa) {
+        const active = await tx.pessoa.update({
+          where: { id: person.id },
+          data: { ativa: true },
+        });
+        await audit(
+          tx,
+          req.userId,
+          "REATIVAR_POR_REVERSAO_DISTRATO",
+          "pessoa",
+          person.id,
+          person,
+          active,
+        );
+      }
       await audit(
         tx,
         req.userId,

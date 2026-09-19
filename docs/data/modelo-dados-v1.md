@@ -343,3 +343,10 @@ Persistidos:
 `pessoa` possui os campos opcionais `cep`, `logradouro`, `numero_endereco`, `complemento`, `bairro`, `cidade_endereco` e `uf_endereco`. O campo `endereco` permanece como texto legado para preservar importações anteriores sem inferir uma divisão potencialmente incorreta.
 
 A migration `202609070002_structured_person_address` adiciona esses campos sem alterar os valores já armazenados.
+
+
+## Unicidade do vínculo atual
+
+O índice PostgreSQL parcial `Vinculo_pessoaId_current_key` limita cada pessoa a um vínculo com status ATIVO ou AFASTADO. Vínculos DESLIGADO não participam da restrição e são preservados. O diagnóstico deve preceder o rollout; conflitos exigem resolução explícita pelo RH.
+
+Rollback técnico: remover somente o índice com `DROP INDEX "Vinculo_pessoaId_current_key";` e restaurar a versão compatível da aplicação. Nenhum dado histórico é removido pela migration ou pelo rollback. A migration aborta se houver conflitos; não os resolve automaticamente.

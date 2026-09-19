@@ -86,6 +86,10 @@ Alimentação e transporte são calculados por dias; transporte mantém conduç�
 
 Cada item recorrente de transporte identifica sua condução, fornecedor, valor diário e vigência. Uma pessoa pode combinar fornecedores e conduções. A quantidade de dias pertence à pessoa na competência mensal e se aplica a todas as linhas copiadas para o snapshot daquele mês. Configurações antigas sem fornecedor permanecem preservadas e exigem revisão, sem inferência automática.
 
+No formulário de benefício de transporte do perfil, a vigência e o status são informados uma vez na adesão e aplicados às conduções exibidas ao salvar. Cada linha solicita apenas condução, fornecedor e valor diário; remover uma linha encerra o item sem apagar seu histórico.
+
+As conduções disponíveis são Ônibus, Ônibus Intermunicipal, Barca, Metrô e Trem. A inclusão de Trem não altera itens ou competências já cadastrados.
+
 A remoção do cadastro de cartões de transporte descarta somente as associações de cartão. Antes de aplicar essa migration em produção, deve existir backup validado do banco. O retorno ao modelo anterior exige restauração desse backup, pois os vínculos históricos de cartão não são reconstruídos automaticamente.
 
 O modelo deve suportar diferentes tipos/meios utilizados atualmente, como transporte, alimentação, premiação, Flash, Riocard, JAÉ, SPTrans, TDMax e Mobilidade, sem transformar cada fornecedor em uma coluna permanente.

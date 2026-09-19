@@ -94,6 +94,9 @@ test("internship records, renewals and expiry alerts preserve history", async ()
     });
     expect(distrato.statusCode, distrato.body).toBe(201);
     expect(
+      await f.db.pessoa.findUnique({ where: { id: v.pessoaId } }),
+    ).toMatchObject({ ativa: false });
+    expect(
       await f.db.vinculo.findUnique({ where: { id: v.id } }),
     ).toMatchObject({
       status: "DESLIGADO",
@@ -134,6 +137,9 @@ test("internship records, renewals and expiry alerts preserve history", async ()
       payload: { motivo: "Registro lançado em duplicidade" },
     });
     expect(revert.statusCode, revert.body).toBe(200);
+    expect(
+      await f.db.pessoa.findUnique({ where: { id: v.pessoaId } }),
+    ).toMatchObject({ ativa: true });
     expect(
       await f.db.vinculo.findUnique({ where: { id: v.id } }),
     ).toMatchObject({

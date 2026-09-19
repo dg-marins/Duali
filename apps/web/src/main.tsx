@@ -1,3 +1,5 @@
+import { BenefitRegistryPage } from "./features/benefits/BenefitRegistryPage";
+import { BenefitSummaryPage } from "./features/benefits/BenefitSummaryPage";
 import React, { useEffect, useRef, useState, type FormEvent } from "react";
 import dualiBrand from "./assets/duali-brand.png";
 import dualiMark from "./assets/duali-mark.png";
@@ -14,7 +16,7 @@ import {
   PersonProfile,
   InternsPage,
   LeavePage,
-  BenefitsPage,
+  BenefitLaunchesPage,
   RegistryDetail,
 } from "./Operational";
 import { PendingsPage } from "./features/pendings/PendingsPage";
@@ -55,7 +57,6 @@ const grouped = [
     title: "Operação",
     icon: BriefcaseBusiness,
     items: [
-      ["/app/estagiarios", "Estagiários", GraduationCap],
       ["/app/ferias", "Férias", CalendarDays],
       ["/app/beneficios", "Benefícios", WalletCards],
     ],
@@ -75,12 +76,8 @@ const grouped = [
       ["/app/cadastros/unidades", "Unidades", Building2],
       ["/app/cadastros/equipes", "Equipes", Users],
       ["/app/cadastros/instituicoes", "Instituições", GraduationCap],
-      ["/app/cadastros/fornecedores", "Fornecedores / meios", WalletCards],
-      [
-        "/app/cadastros/configuracoes-beneficios",
-        "Configurações de benefícios",
-        Settings2,
-      ],
+      ["/app/cadastros/fornecedores", "Fornecedores", WalletCards],
+      ["/app/cadastros/configuracoes-beneficios", "Benefícios", Settings2],
     ],
   },
   {
@@ -177,6 +174,14 @@ function App() {
   }
 
   useEffect(loadSession, []);
+  useEffect(() => {
+    setFlyoutGroup(null);
+    if (path === "/app/estagiarios" && !window.location.search) {
+      const query = new URLSearchParams(window.location.search);
+      query.set("tipo", "ESTAGIO");
+      navigate(`/app/pessoas?${query}`);
+    }
+  }, [currentRoute]);
 
   useEffect(() => {
     if (auth.status === "unavailable") retryButton.current?.focus();
@@ -190,7 +195,11 @@ function App() {
     return () => document.removeEventListener("keydown", close);
   }, [drawer]);
   useEffect(() => {
-    const close = () => setFlyoutGroup(null);
+    const close = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest(".nav-group"))
+        return;
+      setFlyoutGroup(null);
+    };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, []);
@@ -308,7 +317,9 @@ function App() {
     setFlyoutGroup(null);
   };
   return (
-    <div className={`shell ${collapsed ? "sidebar-collapsed" : ""}`}>
+    <div
+      className={`shell golden-shell ${collapsed ? "sidebar-collapsed" : ""}`}
+    >
       {drawer && (
         <button
           className="drawer-backdrop"
@@ -431,7 +442,9 @@ function App() {
           >
             <Menu size={20} />
           </button>
-          <span>{routeTitle(path)}</span>
+          <span className="topbar-context">
+            Duali <span>Gestão de Pessoas</span>
+          </span>
           <div className="top-account">
             <span>{String(user.nome)}</span>
             <span className="online-dot" title="Sessão ativa" />
@@ -442,17 +455,6 @@ function App() {
         <Toaster richColors position="top-right" />
       </main>
     </div>
-  );
-}
-function routeTitle(path: string) {
-  if (/^\/app\/pessoas\//.test(path)) return "Pessoas / Perfil";
-  return (
-    [
-      ...primary,
-      ...grouped.flatMap((group) =>
-        group.items.map(([route, label]) => [route, label, ""] as const),
-      ),
-    ].find(([route]) => route === path)?.[1] ?? "Duali"
   );
 }
 function RouteContent({
@@ -488,7 +490,10 @@ function RouteContent({
   if (path === "/app/pessoas") return <PeoplePage navigate={navigate} />;
   if (path === "/app/estagiarios") return <InternsPage navigate={navigate} />;
   if (path === "/app/ferias") return <LeavePage navigate={navigate} />;
-  if (path === "/app/beneficios") return <BenefitsPage navigate={navigate} />;
+  if (path === "/app/beneficios")
+    return <BenefitSummaryPage navigate={navigate} />;
+  if (path === "/app/beneficios/lancamentos")
+    return <BenefitLaunchesPage navigate={navigate} />;
   if (path === "/app/beneficios/fechamento")
     return <BenefitClosingPage navigate={navigate} />;
   if (path === "/app/beneficios/aquisicao")
@@ -498,6 +503,8 @@ function RouteContent({
   if (path === "/app/importacoes") return <Imports />;
   if (path === "/app/relatorios") return <Reporting />;
   if (path === "/app/admin/auditoria") return <Audit />;
+  if (path === "/app/cadastros/configuracoes-beneficios")
+    return <BenefitRegistryPage />;
   const resource = auxiliary[path],
     screen = screens.find((item) => item.path === resource);
   if (screen)

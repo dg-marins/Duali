@@ -26,8 +26,11 @@ import { leaveScreens } from "./leave";
 import { benefitScreens } from "./benefits";
 export const screens: Screen[] = [
   ...internshipScreens,
-  ...leaveScreens,
-  ...benefitScreens,
+  ...leaveScreens.filter((screen) => screen.path !== "ajustes-descanso"),
+  ...benefitScreens.filter(
+    (screen) =>
+      screen.path !== "competencias" && screen.path !== "ajustes-beneficios",
+  ),
   {
     path: "pessoas",
     title: "Pessoas",

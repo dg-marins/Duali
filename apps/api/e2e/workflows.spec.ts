@@ -121,6 +121,20 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       where: { nomeCompleto: `Pessoa E2E ${suffix}` },
     });
     await page.getByRole("tab", { name: "Vínculo", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Editar vínculo", exact: true })
+      .click();
+    const closeCurrent = page.getByRole("dialog");
+    await page
+      .getByRole("combobox", { name: "Status" })
+      .selectOption("DESLIGADO");
+    await page
+      .getByRole("textbox", { name: "Data de desligamento" })
+      .fill("2024-12-31");
+    await closeCurrent
+      .getByRole("button", { name: "Salvar", exact: true })
+      .click();
+    await expect(closeCurrent).toBeHidden();
     await page.getByRole("button", { name: "Adicionar vínculo" }).click();
     const linkForm = page.locator(".form-panel");
     await linkForm.getByLabel("Tipo", { exact: true }).selectOption("ESTAGIO");
@@ -132,12 +146,14 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       where: { pessoaId: person.id, tipo: "ESTAGIO" },
     });
 
-    await page.goto("/app/estagiarios");
-    await page.getByRole("button", { name: "Novo estágio" }).click();
-    const internshipForm = page.locator(".form-panel");
-    await selectLookup(internshipForm, "Vínculo", `${suffix}.*ESTAGIO`, suffix);
+    await page.goto(`/app/pessoas/${person.id}?tab=vinculo`);
+    await page
+      .getByRole("button", { name: "Editar vínculo", exact: true })
+      .last()
+      .click();
+    const internshipForm = page.getByRole("dialog").last();
     await internshipForm.getByLabel("Período acadêmico").fill("5º");
-    await internshipForm.getByLabel("Bolsa (R$)").fill("1800");
+    await internshipForm.getByLabel("Bolsa", { exact: true }).fill("1800");
     await internshipForm
       .getByRole("button", { name: "Salvar", exact: true })
       .click();
@@ -158,105 +174,10 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       .click();
     await expect(leaveForm).toBeHidden();
 
-    const supplier = await db.fornecedor.create({
-      data: { nome: `Fornecedor E2E ${suffix}` },
-    });
-    await db.configuracaoBeneficio.create({
-      data: {
-        unidadeId: unit.id,
-        fornecedorId: supplier.id,
-        tipo: "ALIMENTACAO",
-      },
-    });
-    await page.goto("/app/beneficios");
-    await page.getByRole("button", { name: "Nova adesão" }).click();
-    const enrollmentForm = page.locator(".form-panel");
-    await selectLookup(enrollmentForm, "Vínculo", `${suffix}.*ESTAGIO`, suffix);
-    await enrollmentForm
-      .getByLabel("Tipo", { exact: true })
-      .selectOption("ALIMENTACAO");
-    await enrollmentForm.getByLabel("Início da vigência").fill("2026-01-01");
-    await enrollmentForm
-      .getByRole("button", { name: "Salvar", exact: true })
-      .click();
-    await expect(enrollmentForm).toBeHidden();
-    const enrollment = await db.beneficioVinculo.findFirstOrThrow({
-      where: { vinculoId: link.id },
-    });
-    await page.getByRole("button", { name: "Nova competência" }).click();
-    const competenceForm = page.locator(".form-panel");
-    await selectLookup(
-      competenceForm,
-      "Benefício do vínculo",
-      enrollment.id,
-      enrollment.id,
-    );
-    await selectLookup(
-      competenceForm,
-      "Configuração por unidade",
-      suffix,
-      suffix,
-    );
-    await competenceForm
-      .getByLabel("Competência (primeiro dia do mês)")
-      .fill("2026-01-01");
-    await competenceForm.getByLabel("Dias", { exact: true }).fill("20");
-    await competenceForm.getByLabel("Valor unitário (R$)").fill("25");
-    await competenceForm
-      .getByRole("button", { name: "Salvar", exact: true })
-      .click();
-    await expect(competenceForm).toBeHidden();
-    await Promise.all([
-      page.waitForResponse(
-        (response) =>
-          response.url().includes("beneficios-operacional") &&
-          response.url().includes("competencia=2026-01"),
-      ),
-      page.locator('input[type="month"]').fill("2026-01"),
-    ]);
-    await page.getByLabel("Buscar", { exact: true }).fill(suffix);
-    await expect(
-      page.getByRole("button", { name: `Pessoa E2E ${suffix}`, exact: true }),
-    ).toBeVisible({ timeout: 15_000 });
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page
-      .getByRole("button", { name: `Pessoa E2E ${suffix}`, exact: true })
-      .locator("xpath=ancestor::tr")
-      .getByRole("button", { name: "Detalhes" })
-      .click();
-    await expect(
-      page
-        .locator(".mobile-details-row")
-        .getByText("Fornecedor", { exact: true }),
-    ).toBeVisible();
-    await page.setViewportSize({ width: 1280, height: 720 });
-
     expect(await db.estagio.count({ where: { vinculoId: link.id } })).toBe(1);
     expect(
       await db.descansoPeriodo.count({ where: { vinculoId: link.id } }),
     ).toBe(1);
-    expect(
-      await db.beneficioCompetencia.count({
-        where: { beneficioVinculoId: enrollment.id },
-      }),
-    ).toBe(1);
-    await page.screenshot({
-      path: "artifacts/beneficios-desktop.png",
-      fullPage: true,
-    });
-    await page
-      .getByRole("button", { name: "Fechamento por competência" })
-      .click();
-    await page.getByLabel("Buscar unidade").fill(suffix);
-    await page.getByLabel("Unidade", { exact: true }).selectOption(unit.id);
-    await page
-      .getByRole("textbox", { name: "Competência", exact: true })
-      .fill("2026-01");
-    await page.getByRole("button", { name: "Preparar competência" }).click();
-    await page.getByRole("button", { name: "Iniciar revisão" }).click();
-    await page.getByRole("button", { name: "Fechar competência" }).click();
-    await expect(page.getByText("FECHADA", { exact: true })).toBeVisible();
-
     await page.goto("/app/importacoes");
     await expect(page.getByLabel("Etapas da importação")).toBeVisible();
     await page.locator("input[type=file]").setInputFiles({

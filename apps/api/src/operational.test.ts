@@ -58,6 +58,8 @@ test("operational people search, current link, profile and audit filters", async
       pessoaId: person.id,
       unidadeId: unit.id,
       tipo: "CLT",
+      status: "DESLIGADO",
+      dataDesligamento: "2024-12-31",
       matricula: `MAT-${f.suffix}`,
       dataAdmissao: "2020-01-01",
     });
@@ -98,6 +100,18 @@ test("operational people search, current link, profile and audit filters", async
       textSearch.json<{ items: Array<{ id: string }> }>().items,
     ).toContainEqual(expect.objectContaining({ id: person.id }));
 
+    const accentPerson = await create("pessoas", {
+      nomeCompleto: `Ana Vitória ${f.suffix.slice(0, 8)}`,
+    });
+    const accentSearch = await f.app.inject({
+      url: `/api/pessoas-operacional?q=${encodeURIComponent(`ana vitoria ${f.suffix.slice(0, 8)}`)}`,
+      headers: f.headers,
+    });
+    expect(accentSearch.statusCode, accentSearch.body).toBe(200);
+    expect(
+      accentSearch.json<{ items: Array<{ id: string }> }>().items,
+    ).toContainEqual(expect.objectContaining({ id: accentPerson.id }));
+
     const filtered = await f.app.inject({
       url: `/api/pessoas-operacional?tipo=ESTAGIO&unidadeId=${unit.id}`,
       headers: f.headers,
@@ -123,7 +137,7 @@ test("operational people search, current link, profile and audit filters", async
       endereco: "Valor legado preservado",
     });
     expect(body.vinculoAtual.id).toBe(current.id);
-    expect(body.multiplosVinculosAtivos).toBe(true);
+    expect(body.multiplosVinculosAtivos).toBe(false);
 
     const interns = await f.app.inject({
       url: `/api/estagiarios-operacional?q=${encodeURIComponent(`ACA-${f.suffix}`)}&instituicaoId=${institution.id}`,

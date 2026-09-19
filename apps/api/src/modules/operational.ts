@@ -1,15 +1,23 @@
+import { currentEmployment } from "./current-employment.js";
 import type { FastifyInstance } from "fastify";
 import { Prisma, type PrismaClient } from "@duali/database";
 import { listSchema, z } from "@duali/shared";
-import { paramsId } from "../core.js";
+import { paramsId, transaction } from "../core.js";
 import { balance } from "./leave-domain.js";
 import { operationalAlerts } from "./reporting.js";
 import { benefitCalculation } from "./benefits.js";
 import { presentDocument, resolveDocumentCycle } from "./internship-cycle.js";
 
 const operationalListSchema = listSchema.extend({
+  segmento: z
+    .enum(["CLT", "ESTAGIO", "APRENDIZ", "TRAINEE", "SEM_VINCULO", "INATIVO"])
+    .optional(),
   instituicaoId: z.string().uuid().optional(),
   fornecedorId: z.string().uuid().optional(),
+  visao: z.enum(["previsto", "comprado", "pedido", "pendente"]).optional(),
+  categoria: z
+    .enum(["ALIMENTACAO", "TRANSPORTE", "CESTA_BASICA", "PREMIACAO", "OUTRO"])
+    .optional(),
   competencia: z
     .string()
     .regex(/^\d{4}-\d{2}$/)
@@ -24,18 +32,6 @@ const linkInclude = {
   estagio: { include: { instituicaoEnsino: true } },
   documentos: true,
 } satisfies Prisma.VinculoInclude;
-
-function currentLink<T extends { status: string; dataAdmissao: Date }>(
-  links: T[],
-) {
-  return (
-    [...links].sort((a, b) => {
-      const active =
-        Number(b.status === "ATIVO") - Number(a.status === "ATIVO");
-      return active || b.dataAdmissao.getTime() - a.dataAdmissao.getTime();
-    })[0] ?? null
-  );
-}
 
 function linkFilters(
   query: z.infer<typeof operationalListSchema>,
@@ -53,7 +49,18 @@ function linkFilters(
   };
 }
 
-function personSearch(q: string): Prisma.PessoaWhereInput {
+const accentedLetters = "áàâãäåāéèêëēíìîïīóòôõöōúùûüūçñýÿ";
+const foldAccents = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+const plainLetters = [...accentedLetters].map(foldAccents).join("");
+
+function personSearch(
+  q: string,
+  nameIds: string[] = [],
+): Prisma.PessoaWhereInput {
   const digits = q.replace(/\D/g, "");
   const alternatives: Prisma.PessoaWhereInput[] = [
     { nomeCompleto: { contains: q, mode: "insensitive" } },
@@ -73,6 +80,7 @@ function personSearch(q: string): Prisma.PessoaWhereInput {
       },
     },
   ];
+  if (nameIds.length) alternatives.push({ id: { in: nameIds } });
   if (digits) alternatives.push({ cpf: { contains: digits } });
   return {
     OR: alternatives,
@@ -84,65 +92,158 @@ function iso(value: Date | null | undefined) {
 }
 
 export function registerOperational(app: FastifyInstance, db: PrismaClient) {
-  app.get("/api/pessoas-operacional", async (req) => {
-    const query = operationalListSchema.parse(req.query),
-      links = linkFilters(query);
-    const where: Prisma.PessoaWhereInput = {
-      ...(query.status || query.tipo || query.unidadeId || query.equipeId
-        ? { vinculos: { some: links } }
-        : {}),
-      ...(query.q
-        ? {
-            ...personSearch(query.q),
-          }
-        : {}),
-    };
-    const [records, total] = await Promise.all([
-      db.pessoa.findMany({
+  app.get("/api/pessoas-operacional", async (req) =>
+    transaction(db, async (db) => {
+      const query = operationalListSchema.parse(req.query);
+      const nameIds = query.q
+        ? (
+            await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+              SELECT id FROM "Pessoa"
+              WHERE strpos(
+                translate(lower("nomeCompleto"), ${accentedLetters}, ${plainLetters}),
+                ${foldAccents(query.q)}
+              ) > 0
+            `)
+          ).map((row) => row.id)
+        : [];
+      const secondary: Prisma.VinculoWhereInput = {
+        status: query.status
+          ? (query.status as "ATIVO" | "AFASTADO" | "DESLIGADO")
+          : { in: ["ATIVO", "AFASTADO"] },
+        ...(query.unidadeId ? { unidadeId: query.unidadeId } : {}),
+        ...(query.equipeId ? { equipeId: query.equipeId } : {}),
+        ...(query.instituicaoId
+          ? { estagio: { instituicaoEnsinoId: query.instituicaoId } }
+          : {}),
+      };
+      const where: Prisma.PessoaWhereInput = {
+        ...(query.status ||
+        query.unidadeId ||
+        query.equipeId ||
+        query.instituicaoId
+          ? {
+              vinculos: {
+                some: {
+                  ...secondary,
+                  AND: [{ status: { in: ["ATIVO", "AFASTADO"] } }],
+                },
+              },
+            }
+          : {}),
+        ...(query.q ? personSearch(query.q, nameIds) : {}),
+      };
+      const segments = [
+        "CLT",
+        "ESTAGIO",
+        "APRENDIZ",
+        "TRAINEE",
+        "SEM_VINCULO",
+        "INATIVO",
+      ] as const;
+      const segmentWhere = (
+        segment: (typeof segments)[number],
+      ): Prisma.PessoaWhereInput =>
+        segment === "SEM_VINCULO"
+          ? { ativa: true, vinculos: { none: {} } }
+          : segment === "INATIVO"
+            ? {
+                OR: [
+                  { ativa: false },
+                  {
+                    vinculos: {
+                      some: {},
+                      none: { status: { in: ["ATIVO", "AFASTADO"] } },
+                    },
+                  },
+                ],
+              }
+            : {
+                ativa: true,
+                vinculos: {
+                  some: {
+                    tipo: segment,
+                    status: { in: ["ATIVO", "AFASTADO"] },
+                  },
+                },
+              };
+      const selected = query.segmento ?? query.tipo;
+      if (selected) z.enum(segments).parse(selected);
+      const population = await db.pessoa.findMany({
         where,
-        include: {
-          vinculos: { include: linkInclude, orderBy: { dataAdmissao: "desc" } },
+        select: {
+          vinculos: {
+            where: { status: { in: ["ATIVO", "AFASTADO"] } },
+            select: { status: true },
+          },
         },
-        orderBy:
-          query.sort === "nome"
-            ? { nomeCompleto: query.direction }
-            : { atualizadoEm: "desc" },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-      db.pessoa.count({ where }),
-    ]);
-    return {
-      items: records.map((person) => {
-        const link = currentLink(person.vinculos);
-        const cycle = link ? resolveDocumentCycle(link.documentos) : null;
-        return {
-          id: person.id,
-          nomeCompleto: person.nomeCompleto,
-          cpf: person.cpf,
-          email: person.email,
-          ativa: person.ativa,
-          vinculo: link?.tipo ?? null,
-          unidade: link?.unidade ?? null,
-          equipe: link?.equipe ?? null,
-          admissao: iso(link?.dataAdmissao),
-          terminoPrevisto: iso(link?.estagio?.dataTerminoPrevista),
-          escala: link?.escala ?? null,
-          documentoAtual: cycle?.atual ? presentDocument(cycle.atual) : null,
-          proximoDocumento: cycle?.proximo
-            ? presentDocument(cycle.proximo)
-            : null,
-          status: link?.status ?? (person.ativa ? "SEM_VINCULO" : "INATIVO"),
-          vinculosAtivos: person.vinculos.filter(
-            (item) => item.status === "ATIVO",
-          ).length,
-        };
-      }),
-      total,
-      page: query.page,
-      pageSize: query.pageSize,
-    };
-  });
+      });
+      population.forEach((person) => currentEmployment(person.vinculos));
+      const selectedWhere = selected
+        ? { AND: [where, segmentWhere(selected as (typeof segments)[number])] }
+        : where;
+      const [records, total, counts] = await Promise.all([
+        db.pessoa.findMany({
+          where: selectedWhere,
+          include: {
+            vinculos: {
+              include: linkInclude,
+              orderBy: { dataAdmissao: "desc" },
+            },
+          },
+          orderBy:
+            query.sort === "nome"
+              ? { nomeCompleto: query.direction }
+              : { atualizadoEm: "desc" },
+          skip: (query.page - 1) * query.pageSize,
+          take: query.pageSize,
+        }),
+        db.pessoa.count({ where: selectedWhere }),
+        Promise.all(
+          segments.map((segment) =>
+            db.pessoa.count({ where: { AND: [where, segmentWhere(segment)] } }),
+          ),
+        ),
+      ]);
+      return {
+        items: records.map((person) => {
+          const link = currentEmployment(person.vinculos);
+          const cycle = link ? resolveDocumentCycle(link.documentos) : null;
+          return {
+            id: person.id,
+            nomeCompleto: person.nomeCompleto,
+            cpf: person.cpf,
+            email: person.email,
+            ativa: person.ativa,
+            vinculo: link?.tipo ?? null,
+            unidade: link?.unidade ?? null,
+            equipe: link?.equipe ?? null,
+            admissao: iso(link?.dataAdmissao),
+            terminoPrevisto: iso(link?.estagio?.dataTerminoPrevista),
+            instituicao: link?.estagio?.instituicaoEnsino ?? null,
+            escala: link?.escala ?? null,
+            documentoAtual: cycle?.atual ? presentDocument(cycle.atual) : null,
+            proximoDocumento: cycle?.proximo
+              ? presentDocument(cycle.proximo)
+              : null,
+            status:
+              !person.ativa || (!link && person.vinculos.length > 0)
+                ? "INATIVO"
+                : (link?.status ?? "SEM_VINCULO"),
+            vinculosAtivos: person.vinculos.filter(
+              (item) => item.status === "ATIVO",
+            ).length,
+          };
+        }),
+        segmentos: Object.fromEntries(
+          segments.map((segment, index) => [segment, counts[index]]),
+        ),
+        totalPopulacao: population.length,
+        total,
+        page: query.page,
+        pageSize: query.pageSize,
+      };
+    }),
+  );
 
   app.get("/api/pessoas/:id/perfil", async (req) => {
     const { id } = paramsId.parse(req.params);
@@ -202,7 +303,7 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
       },
     });
     const active = person.vinculos.filter((item) => item.status === "ATIVO"),
-      current = currentLink(person.vinculos),
+      current = currentEmployment(person.vinculos),
       balances = Object.fromEntries(
         await Promise.all(
           person.vinculos.map(
@@ -219,6 +320,40 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
           OR: [
             { entidade: "pessoa", entidadeId: id },
             { entidade: "vinculo", entidadeId: { in: linkIds } },
+            {
+              entidade: "estagio",
+              entidadeId: {
+                in: person.vinculos.flatMap((link) =>
+                  link.estagio ? [link.estagio.id] : [],
+                ),
+              },
+            },
+            {
+              entidade: "documentoVinculo",
+              entidadeId: {
+                in: person.vinculos.flatMap((link) =>
+                  link.documentos.map((doc) => doc.id),
+                ),
+              },
+            },
+            {
+              entidade: "beneficioVinculo",
+              entidadeId: {
+                in: person.vinculos.flatMap((link) =>
+                  link.beneficios.map((benefit) => benefit.id),
+                ),
+              },
+            },
+            {
+              entidade: "beneficioCompetencia",
+              entidadeId: {
+                in: person.vinculos.flatMap((link) =>
+                  link.beneficios.flatMap((benefit) =>
+                    benefit.competencias.map((competence) => competence.id),
+                  ),
+                ),
+              },
+            },
           ],
         },
         include: { usuario: { select: { nome: true } } },
@@ -337,7 +472,52 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
     const end = start
       ? new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1))
       : undefined;
+    let purchasedIds: string[] | undefined;
+    if (query.visao === "comprado") {
+      const purchaseItems = await db.aquisicaoBeneficioItem.findMany({
+        where: {
+          competencia: {
+            ...(start && end ? { competencia: { gte: start, lt: end } } : {}),
+            beneficioVinculo: { vinculo: linkFilters(query, false) },
+          },
+        },
+        include: { movimentacoes: true },
+      });
+      const byCompetence = new Map<string, Prisma.Decimal>();
+      for (const item of purchaseItems)
+        for (const movement of item.movimentacoes)
+          byCompetence.set(
+            item.competenciaId,
+            (
+              byCompetence.get(item.competenciaId) ?? new Prisma.Decimal(0)
+            ).plus(
+              movement.tipo === "CONFIRMACAO"
+                ? movement.valor
+                : movement.valor.negated(),
+            ),
+          );
+      purchasedIds = [...byCompetence]
+        .filter(([, amount]) => amount.greaterThan(0))
+        .map(([id]) => id);
+    }
     const where: Prisma.BeneficioCompetenciaWhereInput = {
+      ...(query.visao && !query.status
+        ? {
+            status:
+              query.visao === "pendente" ? "PENDENTE" : { not: "CANCELADO" },
+          }
+        : {}),
+      ...(query.visao === "comprado" ? { id: { in: purchasedIds ?? [] } } : {}),
+      ...(query.visao === "pedido"
+        ? {
+            aquisicaoItens: {
+              some: {
+                status: "PENDENTE",
+                aquisicao: { status: "PENDENTE" },
+              },
+            },
+          }
+        : {}),
       ...(start && end ? { competencia: { gte: start, lt: end } } : {}),
       ...(query.fornecedorId
         ? { configuracao: { fornecedorId: query.fornecedorId } }
@@ -352,6 +532,7 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
           }
         : {}),
       beneficioVinculo: {
+        ...(query.categoria ? { tipo: query.categoria } : {}),
         vinculo: {
           ...linkFilters(query, false),
           ...(query.q ? { pessoa: personSearch(query.q) } : {}),

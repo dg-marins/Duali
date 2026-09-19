@@ -1,3 +1,4 @@
+import { assertCurrentEmployment } from "./current-employment.js";
 import type { FastifyInstance } from "fastify";
 import type { PrismaClient } from "@duali/database";
 import {
@@ -224,6 +225,13 @@ export async function saveResource(
   if (recordId && !previous)
     throw new DomainError(404, "Registro não encontrado.");
   await resource.before?.(tx, data, previous, userId);
+  if (resource.model === "vinculo")
+    await assertCurrentEmployment(
+      tx,
+      String(data.pessoaId ?? previous?.pessoaId),
+      data.status,
+      recordId,
+    );
   const args = {
     data,
     ...(resource.select ? { select: resource.select } : {}),

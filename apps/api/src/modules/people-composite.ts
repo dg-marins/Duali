@@ -1,3 +1,4 @@
+import { assertCurrentEmployment } from "./current-employment.js";
 import type { FastifyInstance } from "fastify";
 import type { PrismaClient } from "@duali/database";
 import {
@@ -212,6 +213,7 @@ export function registerPeopleComposite(
         ["dataAdmissao", "dataDesligamento"],
       );
       await validateLink(tx, linkData);
+      await assertCurrentEmployment(tx, pessoa.id, "ATIVO");
       const vinculo = await tx.vinculo.create({
         data: linkData as never,
         include: { pessoa: true, unidade: true, equipe: true },
@@ -423,6 +425,7 @@ export function registerPeopleComposite(
         ["dataAdmissao", "dataDesligamento"],
       );
       await validateLink(tx, linkData);
+      await assertCurrentEmployment(tx, previous.pessoaId, linkData.status, id);
       const current = await tx.vinculo.update({
         where: { id },
         data: linkData as never,

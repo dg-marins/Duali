@@ -29,6 +29,79 @@ test("batch validation keeps missing monetary values explicit and accepts Brazil
   expect(parsed.itens[0]?.valorDiario).toBe(10.5);
 });
 
+test("batch options keep simultaneous benefits visible and exclude inactive suppliers", async () => {
+  const f = await fixture();
+  try {
+    const unit = await f.db.unidade.create({
+      data: {
+        nome: `Unidade lote ${f.suffix}`,
+        sigla: f.suffix.slice(0, 8),
+        uf: "RJ",
+      },
+    });
+    const person = await f.db.pessoa.create({
+      data: { nomeCompleto: `Pessoa lote ${f.suffix}` },
+    });
+    const link = await f.db.vinculo.create({
+      data: {
+        pessoaId: person.id,
+        unidadeId: unit.id,
+        tipo: "CLT",
+        dataAdmissao: new Date("2025-01-01"),
+      },
+    });
+    const active = await f.db.fornecedor.create({
+      data: { nome: `Ativo ${f.suffix}` },
+    });
+    const inactive = await f.db.fornecedor.create({
+      data: { nome: `Inativo ${f.suffix}`, ativo: false },
+    });
+    await Promise.all(
+      [active, inactive].map((supplier) =>
+        f.db.configuracaoBeneficio.create({
+          data: {
+            unidadeId: unit.id,
+            fornecedorId: supplier.id,
+            tipo: "ALIMENTACAO",
+          },
+        }),
+      ),
+    );
+    await f.db.beneficioVinculo.createMany({
+      data: [
+        {
+          vinculoId: link.id,
+          tipo: "ALIMENTACAO",
+          inicioVigencia: new Date("2026-08-01"),
+        },
+        {
+          vinculoId: link.id,
+          tipo: "ALIMENTACAO",
+          inicioVigencia: new Date("2026-09-01"),
+        },
+      ],
+    });
+    const response = await f.app.inject({
+      method: "GET",
+      url: `/api/beneficios/lote/opcoes?unidadeId=${unit.id}&tipo=ALIMENTACAO&competencia=2026-09-01`,
+      headers: f.headers,
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      vinculos: Array<{ beneficios: unknown[] }>;
+      configuracoes: Array<{ fornecedorId: string }>;
+    }>();
+    expect(
+      body.vinculos.find((row) => row.beneficios.length === 2),
+    ).toBeDefined();
+    expect(body.configuracoes.map((row) => row.fornecedorId)).toEqual([
+      active.id,
+    ]);
+  } finally {
+    await f.app.close();
+  }
+});
+
 test("benefit closure preserves the enrollment and records an audit trail", async () => {
   const f = await fixture();
   try {
@@ -460,10 +533,21 @@ test("structured transport snapshots calculate by supplier and conduction with D
             valorDiario: 15.8,
             inicioVigencia: "2026-01-01",
           },
+          {
+            tipoConducao: "TREM",
+            fornecedorId: supplier.id,
+            valorDiario: 5,
+            inicioVigencia: "2027-01-01",
+          },
         ],
       },
     });
     expect(items.statusCode, items.body).toBe(200);
+    expect(
+      await f.db.beneficioTransporteItem.count({
+        where: { beneficioVinculoId: benefit.id, tipoConducao: "TREM" },
+      }),
+    ).toBe(1);
     const response = await f.app.inject({
       method: "POST",
       url: "/api/competencias-transporte",
@@ -619,6 +703,19 @@ test("monthly acquisition reserves, confirms partially and preserves reversals",
     });
     const row = previous.json<Array<{ id: string; previsto: string }>>()[0]!;
     expect(row.previsto).toBe("510.00");
+    const summaryUrl = `/api/beneficios/resumo?unidadeId=${unidade.id}&competencia=2026-02-01`;
+    const initialSummary = await f.app.inject({
+      method: "GET",
+      url: summaryUrl,
+      headers: f.headers,
+    });
+    expect(initialSummary.statusCode, initialSummary.body).toBe(200);
+    expect(initialSummary.json()).toMatchObject({
+      previsto: "510.00",
+      compradoLiquido: "0.00",
+      emPedido: "0.00",
+      lancamentosPendentes: 1,
+    });
     const order = await f.app.inject({
       method: "POST",
       url: "/api/aquisicoes-beneficios",
@@ -632,6 +729,12 @@ test("monthly acquisition reserves, confirms partially and preserves reversals",
       },
     });
     expect(order.statusCode, order.body).toBe(201);
+    const reservedSummary = await f.app.inject({
+      method: "GET",
+      url: summaryUrl,
+      headers: f.headers,
+    });
+    expect(reservedSummary.json()).toMatchObject({ emPedido: "500.00" });
     const itemId = order.json<{ itens: Array<{ id: string }> }>().itens[0]!.id;
     const confirmed = await f.app.inject({
       method: "POST",
@@ -676,6 +779,23 @@ test("monthly acquisition reserves, confirms partially and preserves reversals",
       after.json<Array<{ compradoLiquido: string; disponivel: string }>>()[0]!;
     expect(final.compradoLiquido).toBe("400.00");
     expect(final.disponivel).toBe("60.00");
+    const finalSummary = await f.app.inject({
+      method: "GET",
+      url: summaryUrl,
+      headers: f.headers,
+    });
+    expect(finalSummary.json()).toMatchObject({
+      previsto: "510.00",
+      compradoLiquido: "400.00",
+      emPedido: "50.00",
+      lancamentosPendentes: 1,
+    });
+    const purchasedDetails = await f.app.inject({
+      method: "GET",
+      url: `/api/beneficios-operacional?unidadeId=${unidade.id}&competencia=2026-02&visao=comprado`,
+      headers: f.headers,
+    });
+    expect(purchasedDetails.json<{ total: number }>().total).toBe(1);
     expect(
       await f.db.auditoria.count({ where: { entidade: "aquisicaoBeneficio" } }),
     ).toBeGreaterThanOrEqual(2);

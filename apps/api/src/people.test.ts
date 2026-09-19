@@ -40,8 +40,11 @@ test("authentication, CSRF, people, team history, uniqueness and revocation", as
       tipo: "CLT",
       dataAdmissao: "2020-02-29",
     });
+    const apprenticePerson = await create("pessoas", {
+      nomeCompleto: "Aprendiz " + f.suffix,
+    });
     const apprentice = await create("vinculos", {
-      pessoaId: pessoa.id,
+      pessoaId: apprenticePerson.id,
       unidadeId: unit.id,
       tipo: "APRENDIZ",
       escala: "Segunda a quinta (rodízio)",
@@ -51,8 +54,11 @@ test("authentication, CSRF, people, team history, uniqueness and revocation", as
       (await f.db.vinculo.findUniqueOrThrow({ where: { id: apprentice.id } }))
         .escala,
     ).toBe("Segunda a quinta (rodízio)");
+    const scheduledPerson = await create("pessoas", {
+      nomeCompleto: "Escala " + f.suffix,
+    });
     const scheduledLink = await create("vinculos", {
-      pessoaId: pessoa.id,
+      pessoaId: scheduledPerson.id,
       unidadeId: unit.id,
       tipo: "CLT",
       dataAdmissao: "2026-01-02",

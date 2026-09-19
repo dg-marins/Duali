@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+﻿import { expect, test } from "vitest";
 import ExcelJS from "exceljs";
 import { fixture } from "./test-helper.js";
 import { json, transaction } from "./core.js";
@@ -9,8 +9,30 @@ import {
   stageGeneralInternList,
 } from "./modules/intern-import-profile.js";
 
+function uniqueCpf(seed: string) {
+  const digits = [...seed.replace(/\D/g, "")]
+    .slice(0, 9)
+    .join("")
+    .padEnd(9, "1")
+    .split("")
+    .map(Number);
+  if (digits.every((digit) => digit === digits[0]))
+    digits[8] = (digits[8]! + 1) % 10;
+  for (let length = 9; length <= 10; length++) {
+    const sum = digits
+      .slice(0, length)
+      .reduce((total, digit, index) => total + digit * (length + 1 - index), 0);
+    const result = (sum * 10) % 11;
+    digits.push(result === 10 ? 0 : result);
+  }
+  return digits.join("");
+}
+
 test("perfil de estagiários transforma pessoa, vínculo, estágio, documentos, seguro e movimentação", async () => {
   const f = await fixture();
+  const cpf = uniqueCpf(f.suffix);
+  const personName = f.suffix.slice(0, 8) + " Pessoa Estagiária Sintética";
+  const phone = "61" + f.suffix.replace(/\D/g, "").slice(0, 9).padEnd(9, "1");
   try {
     const workbook = new ExcelJS.Workbook();
     const bsb = workbook.addWorksheet("BSB");
@@ -19,7 +41,7 @@ test("perfil de estagiários transforma pessoa, vínculo, estágio, documentos, 
       ["BRASÍLIA"],
       ["Estagiário", "Admissão", "TCE"],
       [
-        "Pessoa Estagiária Sintética",
+        personName,
         new Date("2024-01-10"),
         "Assinado",
         new Date("2024-07-10"),
@@ -34,11 +56,11 @@ test("perfil de estagiários transforma pessoa, vínculo, estágio, documentos, 
         "8º",
         "R$ 2.150,00",
         "Banco sintético",
-        "(61) 99999-0000",
+        phone,
         `${f.suffix}@example.test`,
         new Date("2001-03-20"),
         "123456 SSP/DF",
-        "529.982.247-25",
+        cpf,
         "MAT-1",
         "Endereço sintético",
         "Universidade Sintética",
@@ -59,8 +81,8 @@ test("perfil de estagiários transforma pessoa, vínculo, estágio, documentos, 
         "Data",
       ],
       [
-        "Pessoa Estagiária Sintética",
-        "529.982.247-25",
+        personName,
+        cpf,
         new Date("2001-03-20"),
         "DF",
         "Yellum",
@@ -110,7 +132,7 @@ test("perfil de estagiários transforma pessoa, vínculo, estágio, documentos, 
     );
     await transaction(f.db, (tx) => confirm(tx, batch.id, f.user.id), 120000);
     const saved = await f.db.estagio.findFirstOrThrow({
-      where: { vinculo: { pessoa: { cpf: "52998224725" } } },
+      where: { vinculo: { pessoa: { cpf } } },
       include: {
         vinculo: { include: { pessoa: true } },
         instituicaoEnsino: true,

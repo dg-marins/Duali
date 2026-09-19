@@ -4,8 +4,10 @@ import { api, display, type Row } from "../../api";
 import { Notice } from "../../components";
 import { Button } from "../../components/ui/button";
 import {
+  ConfirmDialog,
   CurrencyInput,
   LoadingSkeleton,
+  money,
   PageHeader,
   RefreshingContent,
 } from "../../ui";
@@ -17,7 +19,7 @@ const types = [
   "PREMIACAO",
   "OUTRO",
 ];
-const transportTypes = ["ONIBUS", "ONIBUS_INTER", "BARCA", "METRO"];
+const transportTypes = ["ONIBUS", "ONIBUS_INTER", "BARCA", "METRO", "TREM"];
 const labels: Record<string, string> = {
   ALIMENTACAO: "Alimentação",
   TRANSPORTE: "Transporte",
@@ -25,9 +27,10 @@ const labels: Record<string, string> = {
   PREMIACAO: "Premiação",
   OUTRO: "Outro",
   ONIBUS: "Ônibus",
-  ONIBUS_INTER: "Ônibus intermunicipal",
+  ONIBUS_INTER: "Ônibus Intermunicipal",
   BARCA: "Barca",
   METRO: "Metrô",
+  TREM: "Trem",
 };
 const monthToday = () => new Date().toISOString().slice(0, 7);
 const decimalValue = (value: string) => {
@@ -41,6 +44,7 @@ const decimalValue = (value: string) => {
 
 type BatchItem = {
   selected: boolean;
+  ambiguous: boolean;
   valorDiario: string;
   quantidadeDias: string;
   quantidade: string;
@@ -57,10 +61,13 @@ export function BenefitBatchPage({
 }: {
   navigate: (path: string) => void;
 }) {
+  const initial = new URLSearchParams(location.search);
   const [units, setUnits] = useState<Row[]>([]),
-    [unitId, setUnitId] = useState(""),
-    [type, setType] = useState("ALIMENTACAO"),
-    [month, setMonth] = useState(monthToday()),
+    [unitId, setUnitId] = useState(initial.get("unidadeId") ?? ""),
+    [type, setType] = useState(initial.get("categoria") ?? "ALIMENTACAO"),
+    [month, setMonth] = useState(
+      initial.get("competencia")?.slice(0, 7) ?? monthToday(),
+    ),
     [configs, setConfigs] = useState<Row[]>([]),
     [links, setLinks] = useState<Row[]>([]),
     [configId, setConfigId] = useState(""),
@@ -72,7 +79,13 @@ export function BenefitBatchPage({
     [team, setTeam] = useState(""),
     [dirty, setDirty] = useState(false),
     [review, setReview] = useState(false),
-    [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+    [rowErrors, setRowErrors] = useState<Record<string, string>>({}),
+    [pendingChange, setPendingChange] = useState<(() => void) | null>(null),
+    [reloadKey, setReloadKey] = useState(0);
+  const confirmContextChange = (change: () => void) => {
+    if (dirty) setPendingChange(() => change);
+    else change();
+  };
 
   useEffect(() => {
     void api<{ items: Row[]; total: number }>("unidades?pageSize=100&page=1")
@@ -92,30 +105,30 @@ export function BenefitBatchPage({
   }, []);
   useEffect(() => {
     if (!unitId) return;
+    let active = true;
     setLoading(true);
     void api<{ vinculos: Row[]; configuracoes: Row[] }>(
       `beneficios/lote/opcoes?unidadeId=${unitId}&tipo=${type}&competencia=${month}-01`,
     )
       .then((result) => {
+        if (!active) return;
         setLinks(result.vinculos);
         setConfigs(result.configuracoes);
         setConfigId((current) =>
-          type === "TRANSPORTE"
-            ? ""
-            : result.configuracoes.some(
-                  (config) => String(config.id) === current,
-                )
-              ? current
-              : String(result.configuracoes[0]?.id ?? ""),
+          result.configuracoes.some((config) => String(config.id) === current)
+            ? current
+            : "",
         );
         setItems(
           Object.fromEntries(
             result.vinculos.map((link) => {
-              const existing = (link.beneficios as Row[] | undefined)?.[0];
+              const matching = (link.beneficios as Row[] | undefined) ?? [];
+              const existing = matching.length === 1 ? matching[0] : undefined;
               return [
                 String(link.id),
                 {
                   selected: false,
+                  ambiguous: matching.length > 1,
                   valorDiario: String(existing?.valorDiario ?? ""),
                   quantidadeDias:
                     type === "TRANSPORTE" && link.sugestaoDiasTransporte != null
@@ -146,9 +159,16 @@ export function BenefitBatchPage({
         setDirty(false);
         setRowErrors({});
       })
-      .catch((reason) => setError((reason as Error).message))
-      .finally(() => setLoading(false));
-  }, [unitId, type, month]);
+      .catch((reason) => {
+        if (active) setError((reason as Error).message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [unitId, type, month, reloadKey]);
   useEffect(() => {
     const protect = (event: BeforeUnloadEvent) => {
       if (!dirty) return;
@@ -214,10 +234,19 @@ export function BenefitBatchPage({
     });
   };
   async function submit() {
-    if (!selected.length || (type !== "TRANSPORTE" && !configId)) return;
+    if (!selected.length || !configId) return;
     const errors: Record<string, string> = {};
+    const referenceSupplierId = String(
+      configs.find((config) => String(config.id) === configId)?.fornecedorId ??
+        "",
+    );
     for (const link of selected) {
       const item = items[String(link.id)]!;
+      if (item.ambiguous) {
+        errors[String(link.id)] =
+          "Há mais de uma adesão vigente. Revise o benefício no perfil antes de incluí-lo no lote.";
+        continue;
+      }
       if (
         type === "ALIMENTACAO" &&
         (!item.valorDiario.trim() || !item.quantidadeDias.trim())
@@ -230,10 +259,13 @@ export function BenefitBatchPage({
           item.transporteItens.some(
             (transport) =>
               !transport.fornecedorId || !transport.valorDiario.trim(),
+          ) ||
+          !item.transporteItens.some(
+            (transport) => transport.fornecedorId === referenceSupplierId,
           ))
       )
         errors[String(link.id)] =
-          "Informe dias, fornecedor e valor para cada condução.";
+          "Informe dias, valor e fornecedor para cada condução, incluindo o fornecedor de referência.";
       if (
         !["ALIMENTACAO", "TRANSPORTE"].includes(type) &&
         (!item.quantidade.trim() || !item.valorUnitario.trim())
@@ -256,7 +288,7 @@ export function BenefitBatchPage({
           unidadeId: unitId,
           tipo: type,
           competencia: `${month}-01`,
-          configuracaoId: type === "TRANSPORTE" ? null : configId,
+          configuracaoId: configId,
           itens: selected.map((link) => {
             const item = items[String(link.id)]!;
             return {
@@ -304,7 +336,12 @@ export function BenefitBatchPage({
         title="Cadastrar benefícios em lote"
         description="Defina adesões, valores e competência para colaboradores ativos da unidade."
         action={
-          <Button variant="outline" onClick={() => navigate("/app/beneficios")}>
+          <Button
+            variant="outline"
+            onClick={() =>
+              confirmContextChange(() => navigate("/app/beneficios"))
+            }
+          >
             Voltar
           </Button>
         }
@@ -313,21 +350,16 @@ export function BenefitBatchPage({
       <section className="panel filter-panel">
         <div className="filter-grid">
           <label>
-            <span>Categoria</span>
-            <select
-              value={type}
-              onChange={(event) => setType(event.target.value)}
-            >
-              {types.map((option) => (
-                <option key={option}>{labels[option]}</option>
-              ))}
-            </select>
-          </label>
-          <label>
             <span>Unidade</span>
             <select
               value={unitId}
-              onChange={(event) => setUnitId(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value;
+                confirmContextChange(() => {
+                  setConfigId("");
+                  setUnitId(next);
+                });
+              }}
             >
               {units.map((unit) => (
                 <option key={String(unit.id)} value={String(unit.id)}>
@@ -337,29 +369,62 @@ export function BenefitBatchPage({
             </select>
           </label>
           <label>
+            <span>Categoria</span>
+            <select
+              value={type}
+              onChange={(event) => {
+                const next = event.target.value;
+                confirmContextChange(() => {
+                  setConfigId("");
+                  setType(next);
+                });
+              }}
+            >
+              {types.map((option) => (
+                <option key={option} value={option}>
+                  {labels[option]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>
+              {type === "TRANSPORTE"
+                ? "Fornecedor de referência"
+                : "Fornecedor"}
+            </span>
+            <select
+              value={configId}
+              onChange={(event) => {
+                const next = event.target.value;
+                confirmContextChange(() => {
+                  setConfigId(next);
+                  setReloadKey((current) => current + 1);
+                });
+              }}
+            >
+              <option value="">Selecione…</option>
+              {configs.map((config) => (
+                <option key={String(config.id)} value={String(config.id)}>
+                  {display(config.fornecedor)}
+                </option>
+              ))}
+            </select>
+            {type === "TRANSPORTE" && (
+              <small>Cada condução pode usar outro fornecedor.</small>
+            )}
+          </label>
+          <label>
             <span>Competência</span>
             <input
               type="month"
               value={month}
-              onChange={(event) => setMonth(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value;
+                confirmContextChange(() => setMonth(next));
+              }}
             />
           </label>
-          {type !== "TRANSPORTE" && (
-            <label>
-              <span>Fornecedor</span>
-              <select
-                value={configId}
-                onChange={(event) => setConfigId(event.target.value)}
-              >
-                <option value="">Selecione…</option>
-                {configs.map((config) => (
-                  <option key={String(config.id)} value={String(config.id)}>
-                    {display(config.fornecedor)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
         </div>
       </section>
       {loading ? (
@@ -489,15 +554,15 @@ export function BenefitBatchPage({
                         <th>Valor unitário</th>
                       </>
                     )}
-                    {type === "TRANSPORTE" && <th>Conduções e cartões</th>}
+                    {type === "TRANSPORTE" && <th>Conduções e fornecedores</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {visibleLinks.map((link) => {
                     const item = items[String(link.id)]!;
-                    const existing = (
-                      link.beneficios as Row[] | undefined
-                    )?.[0];
+                    const existing = item.ambiguous
+                      ? undefined
+                      : (link.beneficios as Row[] | undefined)?.[0];
                     return (
                       <tr key={String(link.id)}>
                         <td>
@@ -515,9 +580,13 @@ export function BenefitBatchPage({
                         <td>{display(link.pessoa)}</td>
                         <td>{display(link.equipe)}</td>
                         <td>
-                          {existing
-                            ? `${display(existing.tipo)} · ${display((existing.configuracaoRecorrente as Row | undefined)?.fornecedor)}`
-                            : "Novo"}
+                          {item.ambiguous
+                            ? "Mais de uma adesão vigente · revisão necessária"
+                            : existing
+                              ? type === "TRANSPORTE"
+                                ? "Transporte configurado"
+                                : `${labels[String(existing.tipo)] ?? display(existing.tipo)} · ${display((existing.configuracaoRecorrente as Row | undefined)?.fornecedor)}`
+                              : "Novo"}
                         </td>
                         {(type === "ALIMENTACAO" || type === "TRANSPORTE") && (
                           <td>
@@ -635,7 +704,7 @@ export function BenefitBatchPage({
                                   }
                                 >
                                   {transportTypes.map((option) => (
-                                    <option key={option}>
+                                    <option key={option} value={option}>
                                       {labels[option]}
                                     </option>
                                   ))}
@@ -674,7 +743,12 @@ export function BenefitBatchPage({
                                     ...item.transporteItens,
                                     {
                                       tipoConducao: "ONIBUS",
-                                      fornecedorId: "",
+                                      fornecedorId: String(
+                                        configs.find(
+                                          (config) =>
+                                            String(config.id) === configId,
+                                        )?.fornecedorId ?? "",
+                                      ),
                                       valorDiario: "",
                                     },
                                   ],
@@ -700,11 +774,7 @@ export function BenefitBatchPage({
             <div className="benefit-batch-footer" aria-live="polite">
               <span>{selected.length} pessoa(s) selecionada(s)</span>
               <Button
-                disabled={
-                  saving ||
-                  !selected.length ||
-                  (type !== "TRANSPORTE" && !configId)
-                }
+                disabled={saving || !selected.length || !configId}
                 onClick={() => setReview(true)}
               >
                 Revisar cadastro
@@ -718,9 +788,58 @@ export function BenefitBatchPage({
                 {selected.length} adesão(ões) serão criadas ou atualizadas a
                 partir de 01/{month}. O histórico anterior será preservado.
               </p>
+              <p>
+                {display(units.find((unit) => String(unit.id) === unitId))} ·{" "}
+                {labels[type]} ·{" "}
+                {display(
+                  configs.find((config) => String(config.id) === configId)
+                    ?.fornecedor,
+                )}
+              </p>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Pessoa</th>
+                      <th>Operação</th>
+                      <th>Valores do mês</th>
+                      <th>Impedimentos</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selected.map((link) => {
+                      const item = items[String(link.id)]!;
+                      const existing =
+                        (link.beneficios as Row[] | undefined) ?? [];
+                      return (
+                        <tr key={String(link.id)}>
+                          <td>{display(link.pessoa)}</td>
+                          <td>
+                            {existing.length
+                              ? "Atualizar adesão vigente"
+                              : "Nova adesão"}
+                          </td>
+                          <td>
+                            {type === "ALIMENTACAO"
+                              ? `${item.quantidadeDias || "—"} dias · ${money(item.valorDiario)} por dia`
+                              : type === "TRANSPORTE"
+                                ? `${item.quantidadeDias || "—"} dias · ${item.transporteItens.map((transport) => `${labels[transport.tipoConducao] ?? transport.tipoConducao}: ${money(transport.valorDiario)} (${display(configs.find((config) => String(config.fornecedorId) === transport.fornecedorId)?.fornecedor)})`).join("; ") || "Sem conduções"}`
+                                : `${item.quantidade || "—"} × ${money(item.valorUnitario)}`}
+                          </td>
+                          <td className="field-error">
+                            {item.ambiguous
+                              ? "Mais de uma adesão vigente; revise no perfil."
+                              : (rowErrors[String(link.id)] ?? "—")}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
               {type === "TRANSPORTE" && (
                 <p>
-                  Total mensal revisado:{" "}
+                  Estimativa mensal de transporte:{" "}
                   <strong>
                     {selectedTransportTotal.toLocaleString("pt-BR", {
                       style: "currency",
@@ -741,6 +860,21 @@ export function BenefitBatchPage({
           )}
         </RefreshingContent>
       )}
+      <ConfirmDialog
+        open={Boolean(pendingChange)}
+        onOpenChange={(open) => {
+          if (!open) setPendingChange(null);
+        }}
+        title="Descartar alterações do lote?"
+        description="A seleção e os valores preenchidos serão perdidos."
+        confirmLabel="Descartar e continuar"
+        onConfirm={() => {
+          setDirty(false);
+          setReview(false);
+          pendingChange?.();
+          setPendingChange(null);
+        }}
+      />
     </div>
   );
 }

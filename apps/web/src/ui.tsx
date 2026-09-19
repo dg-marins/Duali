@@ -159,6 +159,8 @@ type OverlayProps = {
   title: string;
   description?: string | undefined;
   children: ReactNode;
+  className?: string | undefined;
+  hideHeader?: boolean;
 };
 
 const FormDirtyContext = createContext<(dirty: boolean) => void>(
@@ -178,6 +180,8 @@ function Overlay({
   title,
   description,
   children,
+  className,
+  hideHeader = false,
   sheet = false,
 }: OverlayProps & { sheet?: boolean }) {
   const [dirty, setDirty] = useState(false),
@@ -197,9 +201,7 @@ function Overlay({
         <Dialog.Portal>
           <Dialog.Overlay className="dialog-overlay" />
           <Dialog.Content
-            className={
-              sheet ? "dialog-content sheet-content" : "dialog-content"
-            }
+            className={`${sheet ? "dialog-content sheet-content" : "dialog-content"}${className ? ` ${className}` : ""}`}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               opener.current?.focus();
@@ -212,16 +214,18 @@ function Overlay({
                 event.preventDefault();
             }}
           >
-            <header className="dialog-header">
+            <header className={hideHeader ? "sr-only" : "dialog-header"}>
               <div>
                 <Dialog.Title>{title}</Dialog.Title>
                 {description && (
                   <Dialog.Description>{description}</Dialog.Description>
                 )}
               </div>
-              <Dialog.Close className="icon-control" aria-label="Fechar">
-                <X size={18} />
-              </Dialog.Close>
+              {!hideHeader && (
+                <Dialog.Close className="icon-control" aria-label="Fechar">
+                  <X size={18} />
+                </Dialog.Close>
+              )}
             </header>
             <div className="dialog-body">{children}</div>
           </Dialog.Content>
@@ -422,9 +426,9 @@ export function FilterBar({
 }
 export function StatusBadge({ value }: { value: unknown }) {
   const label = String(value ?? "Não informado").replaceAll("_", " ");
-  const tone = /vencid|exced|inconsist|deslig|erro/i.test(label)
+  const tone = /vencid|exced|inconsist|deslig|erro|inativ/i.test(label)
     ? "critical"
-    : /pendente|próxim|revis|aguard/i.test(label)
+    : /pendente|próxim|revis|aguard|sem vínculo|sem vinculo/i.test(label)
       ? "warning"
       : /ativo|regular|vigente|conclu|importado/i.test(label)
         ? "success"

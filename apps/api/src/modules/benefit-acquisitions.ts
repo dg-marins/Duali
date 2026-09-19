@@ -35,7 +35,7 @@ function value(row: Row) {
   return new Prisma.Decimal(String(benefitCalculation(row).valorFinal ?? 0));
 }
 
-async function purchaseSummary(tx: Tx, competenceIds: string[]) {
+async function purchaseSummary(tx: Tx | PrismaClient, competenceIds: string[]) {
   const items = await tx.aquisicaoBeneficioItem.findMany({
     where: { competenciaId: { in: competenceIds } },
     include: { aquisicao: true, movimentacoes: true },
@@ -281,6 +281,48 @@ export function registerBenefitAcquisitions(
   app: FastifyInstance,
   db: PrismaClient,
 ) {
+  app.get("/api/beneficios/resumo", async (req) => {
+    const query = z
+      .object({
+        competencia: z.string().regex(/^\d{4}-\d{2}-01$/),
+        unidadeId: z.string().uuid().optional(),
+      })
+      .parse(req.query);
+    const rows = await db.beneficioCompetencia.findMany({
+      where: {
+        competencia: new Date(`${query.competencia}T00:00:00.000Z`),
+        status: { not: "CANCELADO" },
+        ...(query.unidadeId
+          ? { beneficioVinculo: { vinculo: { unidadeId: query.unidadeId } } }
+          : {}),
+      },
+      include: {
+        ajustes: { include: { distribuicoes: true } },
+        transporteItens: true,
+        beneficioVinculo: true,
+      },
+    });
+    const purchases = await purchaseSummary(
+      db,
+      rows.map((row) => row.id),
+    );
+    let previsto = new Prisma.Decimal(0);
+    let compradoLiquido = new Prisma.Decimal(0);
+    let emPedido = new Prisma.Decimal(0);
+    for (const row of rows) previsto = previsto.plus(value(row));
+    for (const item of purchases.values()) {
+      emPedido = emPedido.plus(item.reserved);
+      compradoLiquido = compradoLiquido.plus(item.gross.minus(item.reversed));
+    }
+    return {
+      competencia: query.competencia,
+      previsto: previsto.toFixed(2),
+      compradoLiquido: compradoLiquido.toFixed(2),
+      emPedido: emPedido.toFixed(2),
+      lancamentosPendentes: rows.filter((row) => row.status === "PENDENTE")
+        .length,
+    };
+  });
   app.get("/api/aquisicoes-beneficios/previa", async (req) => {
     const q = z
       .object({

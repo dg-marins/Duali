@@ -20,6 +20,7 @@ export const transportTypes = [
   "ONIBUS_INTER",
   "BARCA",
   "METRO",
+  "TREM",
 ] as const;
 const transporteItemBase = z
   .object({
