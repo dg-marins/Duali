@@ -2008,14 +2008,6 @@ export function PersonProfile({
                 Programar descanso
               </button>
             )}
-            {tab === "beneficios" && (
-              <button
-                disabled={!current || Boolean(profile.multiplosVinculosAtivos)}
-                onClick={() => setFormScreen("beneficios-vinculo")}
-              >
-                Adicionar benefício
-              </button>
-            )}
             {tab === "documentos" && (
               <>
                 <button onClick={() => setFormScreen("documentos")}>
@@ -2062,10 +2054,13 @@ export function PersonProfile({
                     : "—",
                 ],
                 [
-                  "Benefícios ativos",
+                  "Categorias solicitadas no mês",
                   String(
-                    (current?.beneficios as Row[] | undefined)?.filter(
-                      (b) => b.status === "ATIVO",
+                    (current?.beneficios as Row[] | undefined)?.filter((b) =>
+                      ((b.competencias as Row[] | undefined) ?? []).some(
+                        (c) =>
+                          String(c.competencia).slice(0, 7) === benefitMonth,
+                      ),
                     ).length ?? 0,
                   ),
                 ],
@@ -2221,21 +2216,25 @@ export function PersonProfile({
               )
               .flatMap((link) =>
                 [...((link.beneficios as Row[] | undefined) ?? [])]
+                  .filter((benefit) =>
+                    ((benefit.competencias as Row[] | undefined) ?? []).some(
+                      (item) =>
+                        String(item.competencia).slice(0, 7) === benefitMonth,
+                    ),
+                  )
                   .sort(
                     (a, b) =>
                       Number(b.status === "ATIVO") -
                       Number(a.status === "ATIVO"),
                   )
                   .map((benefit) => {
-                    const config = benefit.configuracaoRecorrente as
-                      | Row
-                      | undefined;
                     const competencies =
                       (benefit.competencias as Row[] | undefined) ?? [];
                     const competence = competencies.find(
                       (item) =>
                         String(item.competencia).slice(0, 7) === benefitMonth,
                     );
+                    const config = competence?.configuracao as Row | undefined;
                     return (
                       <details
                         className="panel benefit-profile-card"
@@ -2245,10 +2244,7 @@ export function PersonProfile({
                         }
                       >
                         <summary>
-                          {link.id === current?.id && benefit.status === "ATIVO"
-                            ? "Benefício atual"
-                            : "Histórico"}{" "}
-                          ·{" "}
+                          Competência mensal ·{" "}
                           {benefitLabels[String(benefit.tipo)] ??
                             String(benefit.tipo)}{" "}
                           · {display(link.unidade)}
@@ -2264,35 +2260,9 @@ export function PersonProfile({
                                 {benefit.tipo !== "TRANSPORTE" && (
                                   <>{display(config?.fornecedor)} · </>
                                 )}
-                                {benefitLabels[String(benefit.status)] ??
-                                  String(benefit.status)}
+                                {benefitMonth.split("-").reverse().join("/")}
                               </p>
                             </div>
-                            <button
-                              className="secondary"
-                              onClick={() => {
-                                setEditingBenefit(benefit);
-                                setFormScreen("beneficios-vinculo");
-                              }}
-                            >
-                              Editar benefício
-                            </button>
-                            {benefit.status === "ATIVO" && (
-                              <button
-                                className="secondary"
-                                onClick={() => {
-                                  setEndingBenefit(benefit);
-                                  setBenefitEndDate(
-                                    String(
-                                      benefit.fimVigencia ??
-                                        new Date().toISOString(),
-                                    ).slice(0, 10),
-                                  );
-                                }}
-                              >
-                                Encerrar benefício
-                              </button>
-                            )}
                           </div>
                           <dl className="benefit-compact-grid">
                             {benefit.tipo !== "TRANSPORTE" && (
@@ -2302,13 +2272,6 @@ export function PersonProfile({
                               </div>
                             )}
                             <div>
-                              <dt>Vigência</dt>
-                              <dd>
-                                {formatDate(benefit.inicioVigencia)} até{" "}
-                                {formatDate(benefit.fimVigencia)}
-                              </dd>
-                            </div>
-                            <div>
                               <dt>Competência</dt>
                               <dd>
                                 {benefitMonth.split("-").reverse().join("/")}
@@ -2317,12 +2280,7 @@ export function PersonProfile({
                             {benefit.tipo === "ALIMENTACAO" && (
                               <div>
                                 <dt>Valor diário</dt>
-                                <dd>
-                                  {money(
-                                    competence?.valorUnitario ??
-                                      benefit.valorDiario,
-                                  )}
-                                </dd>
+                                <dd>{money(competence?.valorUnitario)}</dd>
                               </div>
                             )}
                             <div>
@@ -2357,27 +2315,47 @@ export function PersonProfile({
                               String(benefit.tipo),
                             ) && (
                               <p>
-                                Quantidade recorrente:{" "}
-                                {display(benefit.quantidadeRecorrente)} · Valor
-                                unitário:{" "}
-                                {money(benefit.valorUnitarioRecorrente)}
+                                Quantidade: {display(competence?.quantidade)} ·
+                                Valor unitário:{" "}
+                                {money(competence?.valorUnitario)}
                               </p>
                             )}
                             {benefit.tipo === "TRANSPORTE" && (
                               <TransportSupplierSummary
                                 items={
-                                  (benefit.transporteItens as
+                                  (competence?.transporteItens as
                                     | Row[]
                                     | undefined) ?? []
                                 }
                               />
                             )}
+                            {(
+                              (competence?.aquisicaoItens as
+                                | Row[]
+                                | undefined) ?? []
+                            ).map((item) => (
+                              <p key={String(item.id)}>
+                                Pedido:{" "}
+                                {display(
+                                  (
+                                    (item.aquisicao as Row | undefined)
+                                      ?.fornecedor as Row | undefined
+                                  )?.nome,
+                                )}{" "}
+                                · Solicitado:{" "}
+                                {money(
+                                  item.valorSolicitado ?? item.valorReservado,
+                                )}{" "}
+                                ·
+                                <StatusBadge value={item.status} />
+                              </p>
+                            ))}
                           </div>
                           <button
                             className="link-button benefit-history-link"
                             onClick={() =>
                               navigate(
-                                `/app/beneficios?competencia=${benefitMonth}&q=${encodeURIComponent(String(person.nomeCompleto))}`,
+                                `/app/beneficios/competencias?competencia=${benefitMonth}-01&unidadeId=${link.unidadeId}&tipo=${benefit.tipo}`,
                               )
                             }
                           >
@@ -2388,12 +2366,17 @@ export function PersonProfile({
                     );
                   }),
               )}
-            {!links.some(
-              (link) => ((link.beneficios as Row[] | undefined) ?? []).length,
+            {!links.some((link) =>
+              ((link.beneficios as Row[] | undefined) ?? []).some((benefit) =>
+                ((benefit.competencias as Row[] | undefined) ?? []).some(
+                  (item) =>
+                    String(item.competencia).slice(0, 7) === benefitMonth,
+                ),
+              ),
             ) && (
               <EmptyState
-                title="Nenhum benefício cadastrado"
-                description="Adicione um benefício a este vínculo ou use o cadastro em lote."
+                title="Nenhuma competência de benefício"
+                description="Os pedidos mensais desta pessoa aparecerão aqui após a emissão."
               />
             )}
           </div>
@@ -3088,14 +3071,6 @@ function OperationalList({
                   Novo seguro
                 </button>
               </>
-            )}
-            {kind === "beneficios" && (
-              <button
-                className="secondary"
-                onClick={() => setFormScreen("beneficios-vinculo")}
-              >
-                Nova adesão
-              </button>
             )}
             {kind !== "beneficios" && (
               <button

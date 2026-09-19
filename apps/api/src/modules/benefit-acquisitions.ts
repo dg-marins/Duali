@@ -17,7 +17,12 @@ import {
   type Row,
   type Tx,
 } from "../core.js";
-import { benefitCalculation, idempotencyKey, idempotent } from "./benefits.js";
+import {
+  benefitCalculation,
+  idempotencyKey,
+  idempotent,
+  operationalBenefitCompetence,
+} from "./benefits.js";
 
 const monthEnd = (month: Date) =>
   new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0));
@@ -69,11 +74,18 @@ async function purchaseSummary(tx: Tx | PrismaClient, competenceIds: string[]) {
   return result;
 }
 
-async function preview(tx: Tx, unitId: string, month: Date) {
+async function preview(
+  tx: Tx,
+  unitId: string,
+  month: Date,
+  includeCancelledOnly = false,
+) {
   const rows = await tx.beneficioCompetencia.findMany({
     where: {
       competencia: month,
-      status: { not: "CANCELADO" },
+      ...(includeCancelledOnly
+        ? { status: { not: "CANCELADO" as const } }
+        : operationalBenefitCompetence),
       beneficioVinculo: { vinculo: { unidadeId: unitId } },
     },
     include: {
@@ -196,44 +208,79 @@ async function monthlyOrderDraft(
   const previousMonth = new Date(
     Date.UTC(month.getUTCFullYear(), month.getUTCMonth() - 1, 1),
   );
-  const benefits = await tx.beneficioVinculo.findMany({
+  const configurations = await tx.configuracaoBeneficio.findMany({
     where: {
+      unidadeId: unitId,
       tipo: type as never,
-      status: "ATIVO",
-      inicioVigencia: { lte: monthEnd(month) },
-      OR: [{ fimVigencia: null }, { fimVigencia: { gte: month } }],
-      vinculo: { unidadeId: unitId, pessoa: { ativa: true } },
+      ativa: true,
+      fornecedor: { ativo: true },
+    },
+    include: { fornecedor: true },
+    orderBy: { fornecedor: { nome: "asc" } },
+  });
+  const previousOrderExists = await tx.aquisicaoBeneficio.count({
+    where: {
+      unidadeId: unitId,
+      tipo: type as never,
+      competencia: previousMonth,
+    },
+  });
+  const links = await tx.vinculo.findMany({
+    where: {
+      unidadeId: unitId,
+      status: { in: ["ATIVO", "AFASTADO"] },
+      dataAdmissao: { lte: monthEnd(month) },
+      OR: [{ dataDesligamento: null }, { dataDesligamento: { gte: month } }],
+      pessoa: { ativa: true },
     },
     include: {
-      vinculo: { include: { pessoa: true, equipe: true } },
-      configuracaoRecorrente: { include: { fornecedor: true } },
-      transporteItens: {
-        where: {
-          ativo: true,
-          inicioVigencia: { lte: monthEnd(month) },
-          OR: [{ fimVigencia: null }, { fimVigencia: { gte: month } }],
-        },
-        include: { fornecedor: true },
-      },
-      competencias: {
-        where: { competencia: { in: [month, previousMonth] } },
+      pessoa: true,
+      equipe: true,
+      beneficios: {
+        where: { tipo: type as never },
         include: {
           transporteItens: { include: { fornecedor: true } },
-          aquisicaoItens: { include: { aquisicao: true } },
-          ajustes: true,
+          competencias: {
+            where: { competencia: { in: [month, previousMonth] } },
+            include: {
+              configuracao: { include: { fornecedor: true } },
+              transporteItens: { include: { fornecedor: true } },
+              aquisicaoItens: { include: { aquisicao: true } },
+              ajustes: true,
+            },
+          },
         },
+        orderBy: { inicioVigencia: "desc" },
       },
     },
-    orderBy: { vinculo: { pessoa: { nomeCompleto: "asc" } } },
+    orderBy: { pessoa: { nomeCompleto: "asc" } },
   });
-  return benefits.map((benefit) => {
-    const current = benefit.competencias.find(
+  return links.map((link) => {
+    const benefit =
+      link.beneficios.find((item) =>
+        item.competencias.some(
+          (row) => row.competencia.getTime() === month.getTime(),
+        ),
+      ) ??
+      link.beneficios.find((item) =>
+        item.competencias.some(
+          (row) => row.competencia.getTime() === previousMonth.getTime(),
+        ),
+      ) ??
+      link.beneficios[0];
+    const technicalOnly =
+      benefit?.observacoes === "Registro técnico criado pelo pedido mensal.";
+    const current = benefit?.competencias.find(
       (item) => item.competencia.getTime() === month.getTime(),
     );
-    const previous = benefit.competencias.find(
+    const previous = benefit?.competencias.find(
       (item) => item.competencia.getTime() === previousMonth.getTime(),
     );
-    const protectedCurrent = Boolean(current?.aquisicaoItens.length);
+    const protectedCurrent = Boolean(
+      current?.aquisicaoItens.some(
+        (item) => item.aquisicao.status !== "CANCELADA",
+      ),
+    );
     const previousRequested = previous
       ? previous.aquisicaoItens
           .filter((item) => item.aquisicao.status !== "CANCELADA")
@@ -246,41 +293,61 @@ async function monthlyOrderDraft(
     const transportItems = (
       current?.transporteItens.length
         ? current.transporteItens
-        : benefit.transporteItens
+        : previous?.transporteItens.length
+          ? previous.transporteItens
+          : (benefit?.transporteItens ?? [])
     ).map((item) => ({
       tipoConducao: item.tipoConducao,
       fornecedorId: item.fornecedorId,
       fornecedor: item.fornecedor,
       valorDiario: item.valorDiario.toFixed(2),
     }));
-    const days = current?.quantidadeDias ?? null;
-    const daily = current?.valorUnitario ?? benefit.valorDiario;
-    const monthly = current?.valorMensalBase ?? benefit.valorMensalRecorrente;
+    const days = current?.quantidadeDias ?? previous?.quantidadeDias ?? null;
+    const daily =
+      current?.valorUnitario ?? previous?.valorUnitario ?? benefit?.valorDiario;
+    const monthly =
+      current?.valorMensalBase ??
+      previous?.valorMensalBase ??
+      benefit?.valorMensalRecorrente;
     const transportTotal = transportItems
       .reduce((sum, item) => sum.plus(item.valorDiario), new Prisma.Decimal(0))
       .times(days ?? 0);
     const suggested =
-      benefit.tipo === "TRANSPORTE"
+      type === "TRANSPORTE"
         ? transportTotal
         : (monthly ??
           (days != null && daily != null
             ? new Prisma.Decimal(days).times(daily)
             : null));
     return {
-      beneficioVinculoId: benefit.id,
-      pessoa: benefit.vinculo.pessoa.nomeCompleto,
-      equipe: benefit.vinculo.equipe?.nome ?? null,
-      vinculoStatus: benefit.vinculo.status,
+      vinculoId: link.id,
+      pessoa: link.pessoa.nomeCompleto,
+      equipe: link.equipe?.nome ?? null,
+      vinculoStatus: link.status,
+      fornecedores: configurations.map((item) => ({
+        configuracaoId: item.id,
+        fornecedorId: item.fornecedorId,
+        fornecedor: item.fornecedor,
+      })),
+      configuracaoId:
+        current?.configuracaoId ??
+        previous?.configuracaoId ??
+        (configurations.length === 1 ? configurations[0]?.id : null),
       incluirAutomaticamente:
-        benefit.vinculo.status === "ATIVO" && !protectedCurrent,
+        link.status === "ATIVO" &&
+        !protectedCurrent &&
+        (previousOrderExists === 0 ||
+          Boolean(previousRequested && previousRequested.greaterThan(0)) ||
+          (!technicalOnly && !previous)),
       quantidadeDias: days?.toFixed(2) ?? null,
       quantidade:
         current?.quantidade?.toFixed(2) ??
-        benefit.quantidadeRecorrente?.toFixed(2) ??
-        null,
+        previous?.quantidade?.toFixed(2) ??
+        benefit?.quantidadeRecorrente?.toFixed(2) ??
+        (!["ALIMENTACAO", "TRANSPORTE"].includes(type) ? "1.00" : null),
       valorUnitario:
         daily?.toFixed(2) ??
-        benefit.valorUnitarioRecorrente?.toFixed(2) ??
+        benefit?.valorUnitarioRecorrente?.toFixed(2) ??
         null,
       valorMensalBase: monthly?.toFixed(2) ?? null,
       valorSugerido: suggested?.toDecimalPlaces(2).toFixed(2) ?? null,
@@ -290,14 +357,346 @@ async function monthlyOrderDraft(
         ? previousRequested?.isZero()
           ? "SEM_REFERENCIA"
           : "REFERENCIA_ANTERIOR"
-        : "NOVA_AQUISICAO",
+        : technicalOnly
+          ? "SEM_REFERENCIA"
+          : "NOVA_AQUISICAO",
       competenciaId: current?.id ?? null,
       transporteItens: transportItems,
       impedimento: protectedCurrent
         ? "Já existe pedido para este lançamento."
-        : null,
+        : configurations.length === 0
+          ? "Nenhum fornecedor ativo configurado para esta unidade e categoria."
+          : null,
     };
   });
+}
+
+type MonthlyOrderInput = z.infer<typeof pedidoMensalGerarSchema>;
+
+async function generateMonthlyOrder(
+  tx: Tx,
+  body: MonthlyOrderInput,
+  userId: string,
+) {
+  const month = new Date(body.competencia);
+  await ensureOpen(tx, body.unidadeId, month);
+  const selected = body.itens.filter((item) => item.incluir);
+  if (!selected.length)
+    throw new DomainError(422, "Selecione ao menos uma pessoa.");
+  const linkIds = [...new Set(body.itens.map((item) => item.vinculoId))];
+  if (linkIds.length !== body.itens.length)
+    throw new DomainError(422, "Cada vínculo deve aparecer uma única vez.");
+  const links = await tx.vinculo.findMany({
+    where: { id: { in: linkIds } },
+    include: { pessoa: true, equipe: true },
+  });
+  if (links.length !== body.itens.length)
+    throw new DomainError(422, "Selecione vínculos válidos para o pedido.");
+  const inputByLink = new Map(body.itens.map((item) => [item.vinculoId, item]));
+  const competenceIds: string[] = [];
+  for (const link of links) {
+    const input = inputByLink.get(link.id)!;
+    if (
+      link.unidadeId !== body.unidadeId ||
+      !link.pessoa.ativa ||
+      link.dataAdmissao > monthEnd(month) ||
+      (link.dataDesligamento && link.dataDesligamento < month) ||
+      (link.status !== "ATIVO" && link.status !== "AFASTADO")
+    )
+      throw new DomainError(
+        422,
+        "O vínculo não está elegível para esta competência.",
+      );
+    if (link.status === "AFASTADO" && input.incluir && !input.motivoAfastado)
+      throw new DomainError(
+        422,
+        "Informe o motivo para incluir vínculo afastado.",
+      );
+    const candidates = await tx.beneficioVinculo.findMany({
+      where: { vinculoId: link.id, tipo: body.tipo },
+      include: {
+        competencias: {
+          where: { competencia: month },
+          select: { id: true },
+        },
+      },
+      orderBy: { inicioVigencia: "desc" },
+    });
+    const currentCandidates = candidates.filter(
+      (item) => item.competencias.length > 0,
+    );
+    const activeCandidates = candidates.filter(
+      (item) =>
+        item.status === "ATIVO" &&
+        item.inicioVigencia <= monthEnd(month) &&
+        (!item.fimVigencia || item.fimVigencia >= month),
+    );
+    if (
+      currentCandidates.length > 1 ||
+      (!currentCandidates.length && activeCandidates.length > 1)
+    )
+      throw new DomainError(
+        409,
+        `Há benefícios sobrepostos para ${link.pessoa.nomeCompleto}; revise o histórico.`,
+      );
+    let benefit = currentCandidates[0] ?? activeCandidates[0];
+    if (!benefit) {
+      benefit = await tx.beneficioVinculo.create({
+        data: {
+          vinculoId: link.id,
+          tipo: body.tipo,
+          inicioVigencia: link.dataAdmissao,
+          status: "ATIVO",
+          observacoes: "Registro técnico criado pelo pedido mensal.",
+        },
+        include: { competencias: { select: { id: true } } },
+      });
+      await audit(
+        tx,
+        userId,
+        "CRIAR_BENEFICIO_TECNICO_PEDIDO",
+        "beneficioVinculo",
+        benefit.id,
+        undefined,
+        benefit,
+      );
+    }
+    if (!benefit)
+      throw new DomainError(500, "Não foi possível criar o benefício técnico.");
+    if (!input.incluir) continue;
+    const existing = await tx.beneficioCompetencia.findFirst({
+      where: { beneficioVinculoId: benefit.id, competencia: month },
+      include: {
+        aquisicaoItens: { include: { aquisicao: true, movimentacoes: true } },
+      },
+    });
+    if (existing?.status === "CANCELADO")
+      throw new DomainError(
+        409,
+        "A competência cancelada não pode ser substituída por um novo pedido.",
+      );
+    if (
+      existing?.aquisicaoItens.some(
+        (item) =>
+          item.aquisicao.status !== "CANCELADA" ||
+          item.movimentacoes.length > 0,
+      )
+    )
+      throw new DomainError(
+        409,
+        "Um pedido já protege este lançamento. Cancele ou complemente pelo fluxo próprio.",
+      );
+    const transportItems = input.transporteItens ?? [];
+    let config = input.configuracaoId
+      ? await tx.configuracaoBeneficio.findFirst({
+          where: {
+            id: input.configuracaoId,
+            unidadeId: body.unidadeId,
+            tipo: body.tipo,
+            ativa: true,
+            fornecedor: { ativo: true },
+          },
+        })
+      : null;
+    if (body.tipo === "TRANSPORTE") {
+      if (!transportItems.length)
+        throw new DomainError(
+          422,
+          "Adicione ao menos uma condução ao transporte.",
+        );
+      const supplierIds = [
+        ...new Set(transportItems.map((item) => item.fornecedorId)),
+      ];
+      const configs = await tx.configuracaoBeneficio.findMany({
+        where: {
+          unidadeId: body.unidadeId,
+          tipo: "TRANSPORTE",
+          ativa: true,
+          fornecedor: { ativo: true },
+          fornecedorId: { in: supplierIds },
+        },
+      });
+      if (configs.length !== supplierIds.length)
+        throw new DomainError(
+          422,
+          "Todo transporte precisa de fornecedor ativo configurado na unidade.",
+        );
+      config = configs[0]!;
+    }
+    if (!config)
+      throw new DomainError(
+        422,
+        "Selecione um fornecedor ativo configurado para a unidade.",
+      );
+    const competenceData = {
+      configuracaoId: config.id,
+      quantidadeDias: input.quantidadeDias ?? null,
+      quantidade: input.quantidade ?? null,
+      valorUnitario: input.valorUnitario ?? null,
+      valorMensalBase:
+        body.tipo === "ALIMENTACAO"
+          ? input.modoAlimentacao === "VALOR_MENSAL" ||
+            (input.modoAlimentacao === undefined &&
+              input.valorSolicitado != null)
+            ? (input.valorMensalBase ?? input.valorSolicitado ?? null)
+            : null
+          : null,
+      observacoes:
+        [input.observacoes, input.motivoAfastado].filter(Boolean).join(" · ") ||
+        null,
+    };
+    const competence = existing
+      ? await tx.beneficioCompetencia.update({
+          where: { id: existing.id },
+          data: competenceData,
+        })
+      : await tx.beneficioCompetencia.create({
+          data: {
+            beneficioVinculoId: benefit.id,
+            componente: "__PEDIDO_MENSAL__",
+            competencia: month,
+            ...competenceData,
+          },
+        });
+    if (body.tipo === "TRANSPORTE") {
+      await tx.beneficioTransporteCompetenciaItem.deleteMany({
+        where: { competenciaId: competence.id },
+      });
+      await tx.beneficioTransporteCompetenciaItem.createMany({
+        data: transportItems.map((item) => ({
+          competenciaId: competence.id,
+          tipoConducao: item.tipoConducao,
+          fornecedorId: item.fornecedorId,
+          valorDiario: item.valorDiario,
+        })),
+      });
+    }
+    const calculated = benefitCalculation({
+      ...competence,
+      beneficioVinculo: { tipo: body.tipo },
+      transporteItens: transportItems.map((item) => ({
+        valorDiario: item.valorDiario,
+        fornecedorId: item.fornecedorId,
+      })),
+      ajustes: [],
+    });
+    if (
+      calculated.valorFinal == null ||
+      new Prisma.Decimal(String(calculated.valorFinal)).lessThanOrEqualTo(0)
+    )
+      throw new DomainError(
+        422,
+        `Informe um valor positivo para ${link.pessoa.nomeCompleto}.`,
+      );
+    await audit(
+      tx,
+      userId,
+      existing ? "ATUALIZAR_COMPETENCIA_PEDIDO" : "CRIAR_COMPETENCIA_PEDIDO",
+      "beneficioCompetencia",
+      competence.id,
+      existing ?? undefined,
+      competence,
+    );
+    competenceIds.push(competence.id);
+  }
+  const rows = await preview(tx, body.unidadeId, month, true);
+  const orderRows = rows.filter(
+    (row) =>
+      competenceIds.includes(String(row.id)) &&
+      new Prisma.Decimal(String(row.disponivel)).greaterThan(0),
+  );
+  if (
+    new Set(orderRows.map((row) => String(row.id))).size !==
+    competenceIds.length
+  )
+    throw new DomainError(
+      422,
+      "Todos os lançamentos selecionados precisam de valor disponível positivo.",
+    );
+  if (!orderRows.length)
+    throw new DomainError(
+      422,
+      "Informe um valor solicitado maior que zero para gerar o pedido.",
+    );
+  const groups = new Map<string, Row[]>();
+  for (const row of orderRows) {
+    const supplier = row.fornecedor as Row;
+    const key = `${row.beneficio}:${supplier.id}`;
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  const orders: string[] = [];
+  for (const items of groups.values()) {
+    const first = items[0]!;
+    const supplier = first.fornecedor as Row;
+    const order = await tx.aquisicaoBeneficio.create({
+      data: {
+        unidadeId: body.unidadeId,
+        competencia: month,
+        tipo: first.beneficio as never,
+        fornecedorId: String(supplier.id),
+        criadoPorId: userId,
+      },
+    });
+    for (const row of items) {
+      const requested = new Prisma.Decimal(
+        String(row.disponivel),
+      ).toDecimalPlaces(2);
+      await tx.aquisicaoBeneficioItem.create({
+        data: {
+          aquisicaoId: order.id,
+          competenciaId: String(row.id),
+          vinculoId: String(row.vinculoId),
+          pessoaNome: String(row.pessoa),
+          equipeNome: row.equipe ? String(row.equipe) : null,
+          destino: String(supplier.nome),
+          valorPrevisto: String(row.previsto),
+          valorSolicitado: requested,
+          valorReservado: requested,
+          composicao: {
+            versao: 1,
+            categoria: String(row.beneficio),
+            fornecedorId: String(supplier.id),
+            dias: row.dias == null ? null : String(row.dias),
+            valorDiario:
+              row.valorDiario == null ? null : String(row.valorDiario),
+            valorBase: String(row.valorBase),
+            ajustes: String(row.ajustes),
+            transporte: row.beneficio === "TRANSPORTE",
+            conducoes:
+              row.beneficio === "TRANSPORTE"
+                ? (
+                    inputByLink.get(String(row.vinculoId))?.transporteItens ??
+                    []
+                  )
+                    .filter((item) => item.fornecedorId === supplier.id)
+                    .map((item) => ({
+                      tipoConducao: item.tipoConducao,
+                      fornecedorId: item.fornecedorId,
+                      valorDiario: new Prisma.Decimal(item.valorDiario).toFixed(
+                        2,
+                      ),
+                    }))
+                : [],
+          },
+        },
+      });
+    }
+    await audit(
+      tx,
+      userId,
+      "GERAR_PEDIDO_MENSAL_BENEFICIO",
+      "aquisicaoBeneficio",
+      order.id,
+      undefined,
+      order,
+    );
+    orders.push(order.id);
+  }
+  return {
+    pedidos: orders.length,
+    competencias: competenceIds.length,
+    ids: orders,
+  };
 }
 
 export async function monthlyReadiness(
@@ -323,7 +722,7 @@ export async function monthlyReadiness(
     include: {
       vinculo: true,
       competencias: {
-        where: { competencia: month, status: { not: "CANCELADO" } },
+        where: { competencia: month, ...operationalBenefitCompetence },
         include: {
           ajustes: { include: { distribuicoes: true } },
           transporteItens: true,
@@ -410,7 +809,7 @@ export function registerBenefitAcquisitions(
     const rows = await db.beneficioCompetencia.findMany({
       where: {
         competencia: new Date(`${query.competencia}T00:00:00.000Z`),
-        status: { not: "CANCELADO" },
+        ...operationalBenefitCompetence,
         ...(query.unidadeId
           ? { beneficioVinculo: { vinculo: { unidadeId: query.unidadeId } } }
           : {}),
@@ -466,239 +865,13 @@ export function registerBenefitAcquisitions(
   });
   app.post("/api/aquisicoes-beneficios/pedido/gerar", async (req, reply) => {
     const body = pedidoMensalGerarSchema.parse(req.body);
-    const month = new Date(body.competencia);
     const result = await transaction(db, async (tx) =>
       idempotent(
         tx,
         idempotencyKey(req),
         "GERAR_PEDIDO_MENSAL_BENEFICIO",
         body,
-        async () => {
-          await ensureOpen(tx, body.unidadeId, month);
-          const selected = body.itens.filter((item) => item.incluir);
-          const benefits = await tx.beneficioVinculo.findMany({
-            where: {
-              id: { in: selected.map((item) => item.beneficioVinculoId) },
-            },
-            include: {
-              vinculo: { include: { pessoa: true, equipe: true } },
-              configuracaoRecorrente: true,
-              transporteItens: { where: { ativo: true } },
-            },
-          });
-          if (benefits.length !== selected.length)
-            throw new DomainError(
-              422,
-              "Selecione benefícios válidos para o pedido.",
-            );
-          const inputByBenefit = new Map(
-            selected.map((item) => [item.beneficioVinculoId, item]),
-          );
-          const competenceIds: string[] = [];
-          for (const benefit of benefits) {
-            const input = inputByBenefit.get(benefit.id)!;
-            const active =
-              benefit.status === "ATIVO" &&
-              benefit.inicioVigencia <= monthEnd(month) &&
-              (!benefit.fimVigencia || benefit.fimVigencia >= month);
-            if (
-              !active ||
-              benefit.vinculo.unidadeId !== body.unidadeId ||
-              !benefit.vinculo.pessoa.ativa
-            )
-              throw new DomainError(
-                422,
-                "A adesão não está elegível para esta competência.",
-              );
-            if (benefit.vinculo.status === "AFASTADO" && !input.motivoAfastado)
-              throw new DomainError(
-                422,
-                "Informe o motivo para incluir vínculo afastado.",
-              );
-            if (
-              benefit.vinculo.status !== "ATIVO" &&
-              benefit.vinculo.status !== "AFASTADO"
-            )
-              throw new DomainError(
-                422,
-                "Somente vínculos ativos podem entrar no pedido.",
-              );
-            const existing = await tx.beneficioCompetencia.findFirst({
-              where: { beneficioVinculoId: benefit.id, competencia: month },
-              include: { aquisicaoItens: true },
-            });
-            if (existing?.aquisicaoItens.length)
-              throw new DomainError(
-                409,
-                "Um pedido já protege este lançamento. Cancele ou complemente pelo fluxo próprio.",
-              );
-            let config = benefit.configuracaoRecorrente;
-            const transportItems =
-              input.transporteItens ??
-              benefit.transporteItens.map((item) => ({
-                tipoConducao: item.tipoConducao,
-                fornecedorId: item.fornecedorId!,
-                valorDiario: item.valorDiario.toFixed(2),
-              }));
-            if (benefit.tipo === "TRANSPORTE") {
-              const supplierIds = [
-                ...new Set(transportItems.map((item) => item.fornecedorId)),
-              ];
-              const configs = await tx.configuracaoBeneficio.findMany({
-                where: {
-                  unidadeId: body.unidadeId,
-                  tipo: "TRANSPORTE",
-                  ativa: true,
-                  fornecedor: { ativo: true },
-                  fornecedorId: { in: supplierIds },
-                },
-              });
-              if (configs.length !== supplierIds.length)
-                throw new DomainError(
-                  422,
-                  "Todo transporte precisa de fornecedor ativo configurado na unidade.",
-                );
-              config = configs[0]!;
-            }
-            if (!config)
-              throw new DomainError(
-                422,
-                "Benefício sem fornecedor recorrente configurado.",
-              );
-            const competence = existing
-              ? await tx.beneficioCompetencia.update({
-                  where: { id: existing.id },
-                  data: {
-                    configuracaoId: config.id,
-                    quantidadeDias:
-                      input.quantidadeDias ?? existing.quantidadeDias,
-                    quantidade: input.quantidade ?? existing.quantidade,
-                    valorUnitario:
-                      input.valorUnitario ?? existing.valorUnitario,
-                    valorMensalBase:
-                      benefit.tipo === "ALIMENTACAO"
-                        ? (input.valorSolicitado ??
-                          input.valorMensalBase ??
-                          existing.valorMensalBase)
-                        : (input.valorMensalBase ?? existing.valorMensalBase),
-                    observacoes: input.observacoes ?? existing.observacoes,
-                  },
-                })
-              : await tx.beneficioCompetencia.create({
-                  data: {
-                    beneficioVinculoId: benefit.id,
-                    configuracaoId: config.id,
-                    componente: "__PEDIDO_MENSAL__",
-                    competencia: month,
-                    quantidadeDias: input.quantidadeDias ?? null,
-                    quantidade:
-                      input.quantidade ?? benefit.quantidadeRecorrente ?? null,
-                    valorUnitario:
-                      input.valorUnitario ??
-                      benefit.valorDiario ??
-                      benefit.valorUnitarioRecorrente ??
-                      null,
-                    valorMensalBase:
-                      benefit.tipo === "ALIMENTACAO"
-                        ? (input.valorSolicitado ??
-                          input.valorMensalBase ??
-                          benefit.valorMensalRecorrente ??
-                          null)
-                        : (input.valorMensalBase ??
-                          benefit.valorMensalRecorrente ??
-                          null),
-                    observacoes: input.observacoes ?? null,
-                  },
-                });
-            if (benefit.tipo === "TRANSPORTE") {
-              await tx.beneficioTransporteCompetenciaItem.deleteMany({
-                where: { competenciaId: competence.id },
-              });
-              for (const item of transportItems)
-                await tx.beneficioTransporteCompetenciaItem.create({
-                  data: {
-                    competenciaId: competence.id,
-                    tipoConducao: item.tipoConducao,
-                    fornecedorId: item.fornecedorId,
-                    valorDiario: item.valorDiario,
-                  },
-                });
-            }
-            competenceIds.push(competence.id);
-          }
-          const rows = await preview(tx, body.unidadeId, month);
-          const orderRows = rows.filter(
-            (row) =>
-              competenceIds.includes(String(row.id)) &&
-              new Prisma.Decimal(String(row.disponivel)).greaterThan(0),
-          );
-          if (!orderRows.length)
-            throw new DomainError(
-              422,
-              "Informe um valor solicitado maior que zero para gerar o pedido.",
-            );
-          const groups = new Map<string, Row[]>();
-          for (const row of orderRows) {
-            const supplier = row.fornecedor as Row;
-            const key = `${row.beneficio}:${supplier.id}`;
-            groups.set(key, [...(groups.get(key) ?? []), row]);
-          }
-          const orders = [];
-          for (const items of groups.values()) {
-            const first = items[0]!,
-              supplier = first.fornecedor as Row;
-            const order = await tx.aquisicaoBeneficio.create({
-              data: {
-                unidadeId: body.unidadeId,
-                competencia: month,
-                tipo: first.beneficio as never,
-                fornecedorId: String(supplier.id),
-                criadoPorId: req.userId!,
-              },
-            });
-            for (const row of items) {
-              const request = new Prisma.Decimal(
-                String(row.disponivel),
-              ).toDecimalPlaces(2);
-              await tx.aquisicaoBeneficioItem.create({
-                data: {
-                  aquisicaoId: order.id,
-                  competenciaId: String(row.id),
-                  vinculoId: String(row.vinculoId),
-                  pessoaNome: String(row.pessoa),
-                  equipeNome: row.equipe ? String(row.equipe) : null,
-                  destino: String(supplier.nome),
-                  valorPrevisto: String(row.previsto),
-                  valorSolicitado: request,
-                  valorReservado: request,
-                  composicao: {
-                    dias: row.dias == null ? null : String(row.dias),
-                    valorDiario:
-                      row.valorDiario == null ? null : String(row.valorDiario),
-                    valorBase: String(row.valorBase),
-                    ajustes: String(row.ajustes),
-                    transporte: row.beneficio === "TRANSPORTE",
-                  },
-                },
-              });
-            }
-            await audit(
-              tx,
-              req.userId,
-              "GERAR_PEDIDO_MENSAL_BENEFICIO",
-              "aquisicaoBeneficio",
-              order.id,
-              undefined,
-              order,
-            );
-            orders.push(order.id);
-          }
-          return {
-            pedidos: orders.length,
-            competencias: competenceIds.length,
-            ids: orders,
-          };
-        },
+        () => generateMonthlyOrder(tx, body, req.userId!),
         {
           userId: req.userId,
           scope: `${body.unidadeId}:${body.competencia}:${body.tipo}`,
@@ -1156,10 +1329,32 @@ export function registerBenefitAcquisitions(
               "Somente pedidos pendentes podem ser cancelados.",
             );
           await ensureOpen(tx, order.unidadeId, order.competencia);
-          await tx.aquisicaoBeneficioItem.updateMany({
-            where: { aquisicaoId: id, status: "PENDENTE" },
-            data: { status: "CANCELADO" },
+          const items = await tx.aquisicaoBeneficioItem.findMany({
+            where: { aquisicaoId: id },
+            include: { movimentacoes: true },
           });
+          if (items.some((item) => item.movimentacoes.length > 0))
+            throw new DomainError(
+              409,
+              "Este pedido possui compra registrada. Resolva o saldo e use a reversão para corrigir a compra.",
+            );
+          for (const item of items.filter(
+            (entry) => entry.status === "PENDENTE",
+          )) {
+            const updated = await tx.aquisicaoBeneficioItem.update({
+              where: { id: item.id },
+              data: { status: "CANCELADO" },
+            });
+            await audit(
+              tx,
+              req.userId,
+              "CANCELAR_ITEM_AQUISICAO_BENEFICIO",
+              "aquisicaoBeneficioItem",
+              item.id,
+              item,
+              updated,
+            );
+          }
           const current = await tx.aquisicaoBeneficio.update({
             where: { id },
             data: { status: "CANCELADA" },

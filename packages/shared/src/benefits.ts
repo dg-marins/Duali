@@ -161,8 +161,12 @@ export const pedidoMensalGerarSchema = pedidoMensalSimulacaoSchema.extend({
     .array(
       z
         .object({
-          beneficioVinculoId: id,
+          vinculoId: id,
+          configuracaoId: id.nullable().optional(),
           incluir: z.boolean().default(true),
+          modoAlimentacao: z
+            .enum(["DIAS_TRABALHADOS", "VALOR_MENSAL"])
+            .optional(),
           quantidadeDias: nonNegativeNumber(999).nullable().optional(),
           quantidade: nonNegativeNumber().nullable().optional(),
           valorUnitario: money.nullable().optional(),

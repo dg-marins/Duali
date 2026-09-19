@@ -4,7 +4,7 @@ import { api, display, type Row } from "../../api";
 import { Notice } from "../../components";
 import { Button } from "../../components/ui/button";
 import {
-  FormSheet,
+  FormDialog,
   CurrencyInput,
   LoadingSkeleton,
   PageHeader,
@@ -47,13 +47,8 @@ export function BenefitAcquisitionPage({
     [type, setType] = useState(
       () => new URLSearchParams(window.location.search).get("tipo") ?? "",
     ),
-    [daysTransport, setDaysTransport] = useState("22"),
-    [daysFood, setDaysFood] = useState("22"),
-    [transportLinks] = useState<Row[]>([]),
-    [transportDays, setTransportDays] = useState<Record<string, string>>({}),
     [rows, setRows] = useState<Row[]>([]),
     [orders, setOrders] = useState<Row[]>([]),
-    [selected] = useState<Set<string>>(() => new Set()),
     [loading, setLoading] = useState(true),
     [working, setWorking] = useState(false),
     [error, setError] = useState(""),
@@ -65,29 +60,55 @@ export function BenefitAcquisitionPage({
       >
     >({}),
     [reversing, setReversing] = useState<Row | null>(null),
-    [reversal, setReversal] = useState({ itemId: "", valor: "", motivo: "" });
+    [reversal, setReversal] = useState({ itemId: "", valor: "", motivo: "" }),
+    [detail, setDetail] = useState<{ unidadeId: string; tipo: string } | null>(
+      null,
+    );
   const competencia = `${month}-01`;
+  const monthLabel = new Intl.DateTimeFormat("pt-BR", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(`${month}-01T12:00:00`));
   const visibleRows = useMemo(
     () => rows.filter((row) => !type || row.beneficio === type),
     [rows, type],
   );
   const visibleOrders = useMemo(
-    () => orders.filter((order) => !type || order.tipo === type),
-    [orders, type],
+    () =>
+      orders.filter(
+        (order) =>
+          (!type || order.tipo === type) &&
+          (!unit || String(order.unidadeId) === unit),
+      ),
+    [orders, type, unit],
   );
   async function load() {
-    if (!unit) return;
+    const selectedUnits = unit
+      ? units.filter((item) => String(item.id) === unit)
+      : units;
+    if (!selectedUnits.length) return;
     setLoading(true);
     try {
-      const [next, acquired] = await Promise.all([
-        api<Row[]>(
-          `aquisicoes-beneficios/previa?unidadeId=${unit}&competencia=${competencia}`,
+      const [previews, acquired] = await Promise.all([
+        Promise.all(
+          selectedUnits.map(async (item) => ({
+            unidade: item,
+            itens: await api<Row[]>(
+              `aquisicoes-beneficios/previa?unidadeId=${item.id}&competencia=${competencia}`,
+            ),
+          })),
         ),
-        api<Row[]>(
-          `aquisicoes-beneficios?unidadeId=${unit}&competencia=${competencia}`,
-        ),
+        api<Row[]>(`aquisicoes-beneficios?competencia=${competencia}`),
       ]);
-      setRows(next);
+      setRows(
+        previews.flatMap(({ unidade, itens }) =>
+          itens.map((item) => ({
+            ...item,
+            unidadeId: String(unidade.id),
+            unidade,
+          })),
+        ),
+      );
       setOrders(acquired);
       setError("");
     } catch (reason) {
@@ -109,106 +130,98 @@ export function BenefitAcquisitionPage({
       );
       const all = [...first.items, ...rest.flatMap((page) => page.items)];
       setUnits(all);
-      setUnit((current) => current || String(all[0]?.id ?? ""));
     })().catch((e) => setError((e as Error).message));
   }, []);
   useEffect(() => {
-    const query = new URLSearchParams({ unidadeId: unit, competencia });
+    const query = new URLSearchParams({ competencia });
+    if (unit) query.set("unidadeId", unit);
     if (type) query.set("tipo", type);
     history.replaceState({}, "", `${location.pathname}?${query.toString()}`);
     void load();
-  }, [unit, month, type]);
-  async function prepare() {
-    if (!unit) return;
-    setWorking(true);
-    try {
-      const result = await api<{ criadas: number; pendencias: Row[] }>(
-        "aquisicoes-beneficios/preparar",
-        "POST",
-        {
-          unidadeId: unit,
-          competencia,
-          diasTransporte: daysTransport,
-          diasAlimentacao: daysFood,
-          excecoes: transportLinks.flatMap((link) => {
-            const benefit = ((link.beneficios as Row[] | undefined) ?? [])[0];
-            if (!benefit) return [];
-            const amount = transportDays[String(benefit.id)];
-            return amount === undefined || amount === ""
-              ? []
-              : [
-                  {
-                    beneficioVinculoId: benefit.id,
-                    quantidadeDias: amount,
-                  },
-                ];
-          }),
-        },
-        { idempotencyKey: crypto.randomUUID() },
-      );
-      toast.success(
-        result.criadas
-          ? `${result.criadas} competência(s) preparada(s).`
-          : "Nenhuma competência nova precisava ser criada.",
-      );
-      if (result.pendencias.length)
-        toast.warning(
-          `${result.pendencias.length} benefício(s) precisam de configuração.`,
-        );
-      await load();
-    } catch (reason) {
-      setError((reason as Error).message);
-    } finally {
-      setWorking(false);
-    }
-  }
-  const groups = useMemo(
-    () =>
-      Object.entries(
-        visibleRows
-          .filter(
-            (row) =>
-              selected.has(String(row.chave)) && Number(row.disponivel) > 0,
-          )
-          .reduce<Record<string, Row[]>>((acc, row) => {
-            const supplier = row.fornecedor as Row;
-            const key = [row.beneficio, supplier.id].join(":");
-            (acc[key] ??= []).push(row);
-            return acc;
-          }, {}),
-      ).map(([key, items]) => ({ items, key })),
-    [visibleRows, selected],
-  );
-  async function createOrders() {
-    setWorking(true);
-    try {
-      for (const group of groups) {
-        const first = group.items[0]!,
-          supplier = first.fornecedor as Row;
-        await api(
-          "aquisicoes-beneficios",
-          "POST",
-          {
-            unidadeId: unit,
-            competencia,
-            tipo: String(first.beneficio),
-            fornecedorId: supplier.id,
-            itens: group.items.map((row) => ({
-              competenciaId: row.id,
-              valor: row.disponivel,
-            })),
-          },
-          { idempotencyKey: crypto.randomUUID() },
-        );
+  }, [unit, month, type, units]);
+  const categoryCards = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        unidadeId: string;
+        unidade: Row;
+        tipo: string;
+        rows: Row[];
+        orders: Row[];
       }
-      toast.success(`${groups.length} pedido(s) criado(s).`);
-      await load();
-    } catch (reason) {
-      setError((reason as Error).message);
-    } finally {
-      setWorking(false);
+    >();
+    for (const row of visibleRows) {
+      const key = `${row.unidadeId}:${row.beneficio}`;
+      const group = groups.get(key) ?? {
+        unidadeId: String(row.unidadeId),
+        unidade: row.unidade as Row,
+        tipo: String(row.beneficio),
+        rows: [],
+        orders: [],
+      };
+      group.rows.push(row);
+      groups.set(key, group);
     }
-  }
+    for (const order of visibleOrders) {
+      const key = `${order.unidadeId}:${order.tipo}`;
+      const group = groups.get(key) ?? {
+        unidadeId: String(order.unidadeId),
+        unidade:
+          units.find((item) => String(item.id) === String(order.unidadeId)) ??
+          ({ nome: "Unidade não identificada" } as Row),
+        tipo: String(order.tipo),
+        rows: [],
+        orders: [],
+      };
+      group.orders.push(order);
+      groups.set(key, group);
+    }
+    return [...groups.values()].sort(
+      (a, b) =>
+        display(a.unidade).localeCompare(display(b.unidade), "pt-BR") ||
+        (labels[a.tipo] ?? a.tipo).localeCompare(
+          labels[b.tipo] ?? b.tipo,
+          "pt-BR",
+        ),
+    );
+  }, [visibleRows, visibleOrders, units]);
+  const detailRows = detail
+    ? visibleRows.filter(
+        (row) =>
+          String(row.unidadeId) === detail.unidadeId &&
+          row.beneficio === detail.tipo,
+      )
+    : [];
+  const detailOrders = detail
+    ? visibleOrders.filter(
+        (order) =>
+          String(order.unidadeId) === detail.unidadeId &&
+          order.tipo === detail.tipo,
+      )
+    : [];
+  const unitCards = useMemo(
+    () =>
+      categoryCards.reduce<
+        Array<{
+          unidadeId: string;
+          unidade: Row;
+          categorias: typeof categoryCards;
+        }>
+      >((all, category) => {
+        const current = all.find(
+          (item) => item.unidadeId === category.unidadeId,
+        );
+        if (current) current.categorias.push(category);
+        else
+          all.push({
+            unidadeId: category.unidadeId,
+            unidade: category.unidade,
+            categorias: [category],
+          });
+        return all;
+      }, []),
+    [categoryCards],
+  );
   function openConfirmation(order: Row) {
     const initial = Object.fromEntries(
       (order.itens as Row[])
@@ -310,7 +323,11 @@ export function BenefitAcquisitionPage({
         <div className="filter-grid">
           <label>
             <span>Unidade</span>
-            <select value={unit} onChange={(e) => setUnit(e.target.value)}>
+            <select
+              value={unit}
+              onChange={(event) => setUnit(event.target.value)}
+            >
+              <option value="">Todas as unidades</option>
               {units.map((item) => (
                 <option key={String(item.id)} value={String(item.id)}>
                   {display(item)}
@@ -323,7 +340,7 @@ export function BenefitAcquisitionPage({
             <input
               type="month"
               value={month}
-              onChange={(e) => setMonth(e.target.value)}
+              onChange={(event) => setMonth(event.target.value)}
             />
           </label>
           <label>
@@ -333,174 +350,200 @@ export function BenefitAcquisitionPage({
               onChange={(event) => setType(event.target.value)}
             >
               <option value="">Todas</option>
-              {Object.entries(labels)
-                .filter(([key]) =>
-                  [
-                    "TRANSPORTE",
-                    "ALIMENTACAO",
-                    "CESTA_BASICA",
-                    "PREMIACAO",
-                    "OUTRO",
-                  ].includes(key),
-                )
-                .map(([key, value]) => (
-                  <option key={key} value={key}>
-                    {value}
-                  </option>
-                ))}
+              {[
+                "ALIMENTACAO",
+                "TRANSPORTE",
+                "CESTA_BASICA",
+                "PREMIACAO",
+                "OUTRO",
+              ].map((value) => (
+                <option key={value} value={value}>
+                  {labels[value]}
+                </option>
+              ))}
             </select>
           </label>
-          <label>
-            <span>Dias padrão de transporte</span>
-            <input
-              type="number"
-              min="0"
-              value={daysTransport}
-              onChange={(e) => setDaysTransport(e.target.value)}
-            />
-          </label>
-          <label>
-            <span>Dias padrão de alimentação</span>
-            <input
-              type="number"
-              min="0"
-              value={daysFood}
-              onChange={(e) => setDaysFood(e.target.value)}
-            />
-          </label>
         </div>
-        {(type === "" || type === "TRANSPORTE") &&
-          transportLinks.some(
-            (link) => ((link.beneficios as Row[] | undefined) ?? []).length,
-          ) && (
-            <details className="preparation-overrides">
-              <summary>Ajustar dias de transporte por pessoa</summary>
-              <p className="muted">
-                O valor individual substitui os dias padrão somente nesta
-                competência e será aplicado a todas as conduções da pessoa.
-              </p>
-              <div className="compact-override-grid">
-                {transportLinks.flatMap((link) => {
-                  const benefit = ((link.beneficios as Row[] | undefined) ??
-                    [])[0];
-                  if (!benefit) return [];
-                  const benefitId = String(benefit.id);
-                  return [
-                    <label key={benefitId}>
-                      <span>{display(link.pessoa)}</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={transportDays[benefitId] ?? ""}
-                        placeholder={daysTransport}
-                        onChange={(event) =>
-                          setTransportDays((current) => ({
-                            ...current,
-                            [benefitId]: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>,
-                  ];
-                })}
-              </div>
-            </details>
-          )}
-        <div className="form-actions">
-          <Button disabled={working || !unit} onClick={() => void prepare()}>
-            Preparar competência
-          </Button>
-          <Button
-            variant="outline"
-            disabled={working || !groups.length}
-            onClick={() => void createOrders()}
-          >
-            Gerar {groups.length || ""} pedido(s)
-          </Button>
-        </div>
-      </section>
+      </section>{" "}
       {loading && !visibleRows.length ? (
-        <LoadingSkeleton variant="table" label="Carregando aquisições…" />
+        <LoadingSkeleton variant="table" label="Carregando competências…" />
       ) : (
         <RefreshingContent refreshing={loading}>
-          <section className="panel">
-            <h2>Lançamentos e saldos do mês</h2>
-            <p className="muted">
-              Consulte o previsto, o saldo reservado e as compras já
-              registradas.
-            </p>
+          <section
+            className="competency-unit-grid"
+            aria-label="Competências por unidade"
+          >
+            {unitCards.length ? (
+              unitCards.map((unitCard) => (
+                <article
+                  className="panel competency-unit-card"
+                  key={unitCard.unidadeId}
+                >
+                  <header className="competency-unit-card-header">
+                    <div>
+                      <h2>{display(unitCard.unidade)}</h2>
+                      <p className="muted">Competência: {monthLabel}</p>
+                    </div>
+                    <strong>
+                      {money(
+                        unitCard.categorias.reduce(
+                          (total, category) =>
+                            total +
+                            category.rows.reduce(
+                              (sum, row) => sum + Number(row.previsto ?? 0),
+                              0,
+                            ),
+                          0,
+                        ),
+                      )}
+                    </strong>
+                  </header>
+                  <div className="competency-category-grid">
+                    {unitCard.categorias.map((category) => {
+                      const previsto = category.rows.reduce(
+                        (sum, row) => sum + Number(row.previsto ?? 0),
+                        0,
+                      );
+                      const comprado = category.rows.reduce(
+                        (sum, row) => sum + Number(row.compradoLiquido ?? 0),
+                        0,
+                      );
+                      const emPedido = category.rows.reduce(
+                        (sum, row) => sum + Number(row.emPedido ?? 0),
+                        0,
+                      );
+                      const activeOrder = category.orders.find(
+                        (order) => order.status !== "CANCELADA",
+                      );
+                      const situacao = activeOrder
+                        ? (labels[String(activeOrder.status)] ??
+                          display(activeOrder.status))
+                        : category.orders.length
+                          ? "Cancelado"
+                          : "Não solicitado";
+                      return (
+                        <button
+                          className="competency-category-card"
+                          key={category.tipo}
+                          onClick={() =>
+                            setDetail({
+                              unidadeId: category.unidadeId,
+                              tipo: category.tipo,
+                            })
+                          }
+                        >
+                          <span>{labels[category.tipo] ?? category.tipo}</span>
+                          <strong>{money(previsto)}</strong>
+                          <small>
+                            {category.rows.length} lançamento(s) · {situacao}
+                          </small>
+                          <small>
+                            Comprado: {money(comprado)} · Em pedido:{" "}
+                            {money(emPedido)}
+                          </small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </article>
+              ))
+            ) : (
+              <section className="panel empty-state">
+                <h2>Sem competências nesta seleção</h2>
+                <p>Faça um pedido para criar os lançamentos da competência.</p>
+              </section>
+            )}
+          </section>
+        </RefreshingContent>
+      )}
+      <FormDialog
+        open={Boolean(detail)}
+        onOpenChange={(open) => !open && setDetail(null)}
+        title={
+          detail
+            ? `${labels[detail.tipo] ?? detail.tipo} — competência`
+            : "Competência"
+        }
+        description="Confira os lançamentos e os pedidos desta categoria antes de confirmar, cancelar ou reverter."
+      >
+        <div className="page-stack competency-detail-modal">
+          <section>
+            <h3>Lançamentos</h3>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>Pessoa</th>
                     <th>Equipe</th>
-                    <th>Benefício</th>
                     <th>Fornecedor</th>
                     <th>Dias</th>
                     <th>Previsto</th>
                     <th>Comprado</th>
                     <th>Em pedido</th>
-                    <th>Disponível</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleRows.map((row) => (
+                  {detailRows.map((row) => (
                     <tr key={String(row.chave)}>
-                      <td>
-                        {display(row.pessoa)}
-                        {Boolean(row.alerta) && (
-                          <small className="warning-text">
-                            {display(row.alerta)}
-                          </small>
-                        )}
-                      </td>
+                      <td>{display(row.pessoa)}</td>
                       <td>{display(row.equipe)}</td>
                       <td>
-                        {labels[String(row.beneficio)] ??
-                          display(row.beneficio)}
+                        {display((row.fornecedor as Row | undefined)?.nome)}
                       </td>
-                      <td>{display((row.fornecedor as Row).nome)}</td>
                       <td>{display(row.dias)}</td>
                       <td>{money(row.previsto)}</td>
                       <td>{money(row.compradoLiquido)}</td>
                       <td>{money(row.emPedido)}</td>
-                      <td>{money(row.disponivel)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </section>
-          <section className="panel">
-            <h2>Pedidos da competência</h2>
-            {visibleOrders.length ? (
+          <section>
+            <h3>Pedidos</h3>
+            {detailOrders.length ? (
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
                       <th>Fornecedor</th>
-                      <th>Benefício</th>
                       <th>Situação</th>
-                      <th>Itens</th>
+                      <th>Itens e valor original</th>
                       <th>Referência</th>
                       <th>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleOrders.map((order) => (
+                    {detailOrders.map((order) => (
                       <tr key={String(order.id)}>
                         <td>{display(order.fornecedor)}</td>
-                        <td>
-                          {labels[String(order.tipo)] ?? display(order.tipo)}
-                        </td>
                         <td>
                           {labels[String(order.status)] ??
                             display(order.status)}
                         </td>
                         <td>
-                          {Array.isArray(order.itens) ? order.itens.length : 0}
+                          <details>
+                            <summary>
+                              {Array.isArray(order.itens)
+                                ? order.itens.length
+                                : 0}{" "}
+                              item(ns)
+                            </summary>
+                            <ul>
+                              {((order.itens as Row[] | undefined) ?? []).map(
+                                (item) => (
+                                  <li key={String(item.id)}>
+                                    {display(item.pessoaNome)} ·{" "}
+                                    {money(
+                                      item.valorSolicitado ??
+                                        item.valorReservado,
+                                    )}
+                                  </li>
+                                ),
+                              )}
+                            </ul>
+                          </details>
                         </td>
                         <td>{display(order.referenciaExterna)}</td>
                         <td>
@@ -545,12 +588,14 @@ export function BenefitAcquisitionPage({
                 </table>
               </div>
             ) : (
-              <p>Nenhum pedido gerado para esta competência.</p>
+              <p className="muted">
+                Nenhum pedido emitido para esta categoria.
+              </p>
             )}
           </section>
-        </RefreshingContent>
-      )}
-      <FormSheet
+        </div>
+      </FormDialog>
+      <FormDialog
         open={Boolean(confirming)}
         onOpenChange={(open) => !open && setConfirming(null)}
         title="Confirmar aquisição"
@@ -645,8 +690,8 @@ export function BenefitAcquisitionPage({
             Confirmar aquisição
           </button>
         </div>
-      </FormSheet>
-      <FormSheet
+      </FormDialog>
+      <FormDialog
         open={Boolean(reversing)}
         onOpenChange={(open) => !open && setReversing(null)}
         title="Reverter crédito"
@@ -713,7 +758,7 @@ export function BenefitAcquisitionPage({
             Registrar reversão
           </button>
         </div>
-      </FormSheet>
+      </FormDialog>
     </div>
   );
 }

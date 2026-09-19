@@ -5,7 +5,10 @@ import { listSchema, z } from "@duali/shared";
 import { paramsId, transaction } from "../core.js";
 import { balance } from "./leave-domain.js";
 import { operationalAlerts } from "./reporting.js";
-import { benefitCalculation } from "./benefits.js";
+import {
+  benefitCalculation,
+  operationalBenefitCompetence,
+} from "./benefits.js";
 import { presentDocument, resolveDocumentCycle } from "./internship-cycle.js";
 
 const operationalListSchema = listSchema.extend({
@@ -290,7 +293,10 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
                     ajustes: { include: { distribuicoes: true } },
                     transporteItens: { include: { fornecedor: true } },
                     aquisicaoItens: {
-                      include: { aquisicao: true, movimentacoes: true },
+                      include: {
+                        aquisicao: { include: { fornecedor: true } },
+                        movimentacoes: true,
+                      },
                     },
                   },
                   orderBy: { competencia: "desc" },
@@ -501,6 +507,7 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
         .map(([id]) => id);
     }
     const where: Prisma.BeneficioCompetenciaWhereInput = {
+      ...(query.status === "CANCELADO" ? {} : operationalBenefitCompetence),
       ...(query.visao && !query.status
         ? {
             status:

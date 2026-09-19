@@ -124,16 +124,6 @@ export function BenefitSummaryPage({
         role="navigation"
         aria-label="Ações de benefícios"
       >
-        <button
-          onClick={() =>
-            navigate(`/app/beneficios/lancamentos?${context()}&novo=1`)
-          }
-        >
-          Nova adesão
-        </button>
-        <button onClick={() => go("/app/beneficios/lote")}>
-          Cadastrar benefícios em lote
-        </button>
         <button onClick={() => go("/app/beneficios/aquisicao")}>
           Fazer pedido
         </button>

@@ -46,8 +46,14 @@ O shell possui topbar utilitária e sidebar recolhível com a marca atual. O red
 
 Cadastros > Benefícios permite Benefício → Fornecedor → uma ou mais Unidades. Cada associação mantém seu registro existente; a criação multiunidade é transacional e não duplica, sobrescreve ou reativa associações. Edição e inativação permanecem explícitas por associação. Competências, cálculos e compras não são alterados.
 
-O cadastro em lote segue Unidade → Categoria → Fornecedor → Competência → Pessoas e valores → Revisão. Só oferece fornecedores ativos associados à unidade e categoria; em transporte, cada condução pode usar outro fornecedor configurado. Correspondências ambíguas de adesão exigem revisão antes do envio. Os formulários genéricos de criação de competência e de ajuste deixam de ser ações da interface. Ajustes de benefícios são registrados no lançamento da pessoa dentro de Fechamento de competência, com distribuição por condução quando se tratar de transporte. O atalho de ajuste de férias também deixa de ser exibido, sem alteração dos históricos ou APIs.
+Fazer pedido é o único ponto de entrada operacional de benefícios. A seleção segue Competência → Unidade → Categoria → Pessoas e valores e não exige adesão previamente cadastrada. No primeiro mês, os vínculos ativos são selecionados; nos meses seguintes, participantes, fornecedores e valores do mês anterior são sugeridos. Vínculos afastados exigem inclusão manual com motivo, enquanto pessoas inativas e desligadas não são elegíveis.
 
-O lote e o perfil registram somente a adesão recorrente: fornecedor, valores e vigência. Eles não criam competências nem pedidos. Em alimentação, a adesão pode ter valor diário ou valor mensal fixo; neste último caso, os dias e o valor diário, quando informados, são somente referência de cálculo. O pedido mensal cria o snapshot necessário e preserva o valor solicitado e sua composição.
+Ao gerar, o sistema cria na mesma transação o registro técnico interno, a competência, seus snapshots e os pedidos agrupados por fornecedor. Transporte mantém a distribuição explícita por condução e fornecedor, alimentação aceita cálculo diário ou total mensal e as demais categorias usam quantidade × valor unitário. O perfil apresenta somente competências e histórico mensal; a configuração de fornecedores continua em Cadastros > Benefícios.
 
-Em Fazer pedido, pessoas ativas com vínculo ativo e adesão aplicável entram selecionadas. Vínculos afastados exigem inclusão manual com motivo; pessoas inativas, desligadas ou com adesão encerrada não são elegíveis. A retirada de uma pessoa afeta somente aquela emissão. Transporte mantém a distribuição explícita por condução e fornecedor, enquanto alimentação pode ter total solicitado diferente da referência diária.
+## Benefícios: pedido e competências
+
+Em Alimentação, cada linha do pedido usa uma base exclusiva: **Dias trabalhados**, que calcula dias × valor diário, ou **Valor mensal**, que registra o total contratado. A troca de base não mistura os cálculos.
+
+Competências inicia com cards por unidade. Cada categoria resume lançamentos, previsto, comprado e valores em pedido; o detalhe da categoria abre em modal com os pedidos e as ações de confirmação, cancelamento e reversão.
+
+O cancelamento de um pedido pendente preserva o pedido e os valores originais no histórico. Quando só existem pedidos cancelados, o lançamento criado pelo pedido direto sai dos valores operacionais do mês e pode ser reutilizado em uma nova emissão. Pedidos com compra registrada exigem os fluxos próprios de saldo e reversão.

@@ -5,7 +5,11 @@ import { z, listSchema } from "@duali/shared";
 import { audit, DomainError, type Row } from "../core.js";
 import { balance } from "./leave-domain.js";
 import { internshipAlerts } from "./internship.js";
-import { benefitAlerts, benefitCalculation } from "./benefits.js";
+import {
+  benefitAlerts,
+  benefitCalculation,
+  operationalBenefitCompetence,
+} from "./benefits.js";
 import { monthlyReadiness } from "./benefit-acquisitions.js";
 import { leaveAlerts } from "./leave.js";
 import { allPendings } from "./pendings.js";
@@ -68,7 +72,11 @@ export async function report(
   let rows: Row[];
   if (kind === "beneficios") {
     const records = await db.beneficioCompetencia.findMany({
-      where: { beneficioVinculo: { vinculo: where }, competencia: range(q) },
+      where: {
+        beneficioVinculo: { vinculo: where },
+        competencia: range(q),
+        ...operationalBenefitCompetence,
+      },
       include: {
         ajustes: true,
         configuracao: { include: { fornecedor: true } },
@@ -319,7 +327,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
         : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const benefitWhere = {
       competencia: competence,
-      status: { not: "CANCELADO" as const },
+      ...operationalBenefitCompetence,
       beneficioVinculo: { vinculo: where },
     } satisfies Prisma.BeneficioCompetenciaWhereInput;
     const [

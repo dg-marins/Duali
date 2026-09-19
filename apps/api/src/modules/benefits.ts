@@ -136,6 +136,23 @@ export function benefitCalculation(row: Row): Row {
         : null,
   };
 }
+
+// A direct monthly order owns its competence. A cancelled-only order remains
+// historical, but its competence is no longer part of operational totals.
+export const operationalBenefitCompetence: Prisma.BeneficioCompetenciaWhereInput =
+  {
+    status: { not: "CANCELADO" },
+    OR: [
+      { componente: { not: "__PEDIDO_MENSAL__" } },
+      { aquisicaoItens: { none: {} } },
+      {
+        aquisicaoItens: {
+          some: { aquisicao: { status: { not: "CANCELADA" } } },
+        },
+      },
+      { aquisicaoItens: { some: { movimentacoes: { some: {} } } } },
+    ],
+  };
 async function ensureOpen(tx: Tx, unidadeId: string, competencia: Date) {
   const closing = await tx.fechamentoCompetenciaBeneficio.findUnique({
     where: { unidadeId_competencia: { unidadeId, competencia } },
@@ -1102,7 +1119,7 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
       where: {
         competencia: closing.competencia,
         beneficioVinculo: { vinculo: { unidadeId: closing.unidadeId } },
-        status: { not: "CANCELADO" },
+        ...operationalBenefitCompetence,
       },
       include: {
         ajustes: true,
@@ -1264,7 +1281,7 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
 }
 export async function benefitAlerts(db: PrismaClient) {
   const rows = await db.beneficioCompetencia.findMany({
-    where: { status: { not: "CANCELADO" } },
+    where: operationalBenefitCompetence,
     include: {
       ajustes: true,
       beneficioVinculo: { include: { vinculo: { include: { pessoa: true } } } },

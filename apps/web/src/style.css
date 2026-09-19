@@ -2295,20 +2295,89 @@ th {
 .monthly-order-heading h2 {
   margin: 0 0 4px;
 }
+.monthly-food-daily-fields {
+  display: grid;
+  grid-template-columns: minmax(68px, 0.55fr) minmax(112px, 1fr);
+  gap: 8px;
+  min-width: 220px;
+}
+.competency-unit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+.competency-unit-card {
+  display: grid;
+  gap: 16px;
+}
+.competency-unit-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.competency-unit-card-header h2,
+.competency-detail-modal h3 {
+  margin: 0;
+}
+.competency-category-grid {
+  display: grid;
+  gap: 10px;
+}
+.competency-category-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  color: inherit;
+  text-align: left;
+}
+.competency-category-card:hover,
+.competency-category-card:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.competency-category-card small {
+  color: var(--muted-foreground);
+}
+.competency-detail-modal {
+  gap: 20px;
+}
 .monthly-order-page table input:not([type="checkbox"]) {
   min-width: 92px;
 }
 .transport-composition {
   display: block;
-  max-width: 320px;
+  min-width: 620px;
   margin-top: 5px;
   color: var(--muted);
   white-space: normal;
+}
+.transport-composition-row {
+  display: grid;
+  grid-template-columns:
+    minmax(120px, 1fr) minmax(140px, 1fr) minmax(110px, 0.8fr)
+    auto;
+  gap: 8px;
+  margin: 8px 0;
+  align-items: center;
+}
+.transport-composition-row button {
+  padding-inline: 10px;
 }
 @media (max-width: 700px) {
   .monthly-order-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+  .transport-composition {
+    min-width: 280px;
+  }
+  .transport-composition-row {
+    grid-template-columns: 1fr;
   }
 }
 

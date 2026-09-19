@@ -23,7 +23,6 @@ import { PendingsPage } from "./features/pendings/PendingsPage";
 import { BenefitClosingPage } from "./features/benefits/BenefitClosingPage";
 import { BenefitAcquisitionPage } from "./features/benefits/BenefitAcquisitionPage";
 import { MonthlyOrderPage } from "./features/benefits/MonthlyOrderPage";
-import { BenefitBatchPage } from "./features/benefits/BenefitBatchPage";
 import { Toaster } from "sonner";
 import {
   BarChart3,
@@ -497,12 +496,15 @@ function RouteContent({
     return <BenefitLaunchesPage navigate={navigate} />;
   if (path === "/app/beneficios/fechamento")
     return <BenefitClosingPage navigate={navigate} />;
-  if (path === "/app/beneficios/aquisicao")
+  if (
+    path === "/app/beneficios/aquisicao" ||
+    path === "/app/beneficios/lote" ||
+    (path === "/app/beneficios/lancamentos" &&
+      new URLSearchParams(location.search).has("novo"))
+  )
     return <MonthlyOrderPage navigate={navigate} />;
   if (path === "/app/beneficios/competencias")
     return <BenefitAcquisitionPage navigate={navigate} />;
-  if (path === "/app/beneficios/lote")
-    return <BenefitBatchPage navigate={navigate} />;
   if (path === "/app/importacoes") return <Imports />;
   if (path === "/app/relatorios") return <Reporting />;
   if (path === "/app/admin/auditoria") return <Audit />;

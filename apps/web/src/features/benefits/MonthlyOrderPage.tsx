@@ -23,14 +23,22 @@ type TransportItem = {
   fornecedor?: Row;
   valorDiario: string;
 };
+type SupplierOption = {
+  configuracaoId: string;
+  fornecedorId: string;
+  fornecedor: Row;
+};
 type Draft = Row & {
-  beneficioVinculoId: string;
+  vinculoId: string;
+  configuracaoId: string;
+  fornecedores: SupplierOption[];
   incluir: boolean;
   quantidadeDias: string;
   quantidade: string;
   valorUnitario: string;
   valorMensalBase: string;
   valorSolicitado: string;
+  modoAlimentacao: "DIAS_TRABALHADOS" | "VALOR_MENSAL";
   motivoAfastado: string;
   transporteItens?: TransportItem[];
 };
@@ -59,34 +67,53 @@ export function MonthlyOrderPage({
   const competence = `${month}-01`;
 
   useEffect(() => {
-    void api<{ items: Row[] }>("unidades?page=1&pageSize=100")
-      .then((response) => {
-        setUnits(response.items);
-        setUnit((value) => value || String(response.items[0]?.id ?? ""));
-      })
-      .catch((reason) => setError((reason as Error).message));
+    void (async () => {
+      const all: Row[] = [];
+      for (let page = 1; ; page++) {
+        const response = await api<{ items: Row[]; total: number }>(
+          `unidades?page=${page}&pageSize=100`,
+        );
+        all.push(...response.items);
+        if (all.length >= response.total || !response.items.length) break;
+      }
+      setUnits(all);
+      setUnit((value) => value || String(all[0]?.id ?? ""));
+    })().catch((reason) => setError((reason as Error).message));
   }, []);
   useEffect(() => {
     if (!unit) return;
+    let current = true;
     const params = new URLSearchParams({
       unidadeId: unit,
       competencia: competence,
       tipo: type,
     });
-    history.replaceState({}, "", `${location.pathname}?${params}`);
+    history.replaceState(
+      {},
+      "",
+      `/app/beneficios/aquisicao?${params.toString()}`,
+    );
     setLoading(true);
     void api<Row[]>(`aquisicoes-beneficios/pedido/previa?${params}`)
       .then((response) => {
+        if (!current) return;
         setRows(
           response.map((row) => ({
             ...row,
-            beneficioVinculoId: String(row.beneficioVinculoId),
+            vinculoId: String(row.vinculoId),
+            configuracaoId: String(row.configuracaoId ?? ""),
+            fornecedores:
+              (row.fornecedores as SupplierOption[] | undefined) ?? [],
             incluir: Boolean(row.incluirAutomaticamente),
             quantidadeDias: String(row.quantidadeDias ?? ""),
             quantidade: String(row.quantidade ?? ""),
             valorUnitario: String(row.valorUnitario ?? ""),
             valorMensalBase: String(row.valorMensalBase ?? ""),
             valorSolicitado: String(row.valorSugerido ?? ""),
+            modoAlimentacao:
+              row.valorMensalBase !== null && row.valorMensalBase !== undefined
+                ? "VALOR_MENSAL"
+                : "DIAS_TRABALHADOS",
             motivoAfastado: "",
             transporteItens:
               (row.transporteItens as TransportItem[] | undefined) ?? [],
@@ -94,8 +121,15 @@ export function MonthlyOrderPage({
         );
         setError("");
       })
-      .catch((reason) => setError((reason as Error).message))
-      .finally(() => setLoading(false));
+      .catch((reason) => {
+        if (current) setError((reason as Error).message);
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
+    return () => {
+      current = false;
+    };
   }, [unit, month, type]);
 
   const teams = useMemo(
@@ -120,9 +154,7 @@ export function MonthlyOrderPage({
   const selected = rows.filter((row) => row.incluir);
   const update = (id: string, patch: Partial<Draft>) =>
     setRows((all) =>
-      all.map((row) =>
-        row.beneficioVinculoId === id ? { ...row, ...patch } : row,
-      ),
+      all.map((row) => (row.vinculoId === id ? { ...row, ...patch } : row)),
     );
   const updateTransportItem = (
     id: string,
@@ -131,7 +163,7 @@ export function MonthlyOrderPage({
   ) =>
     setRows((all) =>
       all.map((row) => {
-        if (row.beneficioVinculoId !== id) return row;
+        if (row.vinculoId !== id) return row;
         return {
           ...row,
           transporteItens: (row.transporteItens ?? []).map((item, itemIndex) =>
@@ -148,7 +180,15 @@ export function MonthlyOrderPage({
             0,
           ) * Number(row.quantidadeDias || 0)
         ).toFixed(2)
-      : row.valorSolicitado;
+      : type === "ALIMENTACAO"
+        ? row.modoAlimentacao === "VALOR_MENSAL"
+          ? row.valorMensalBase
+          : (
+              Number(row.quantidadeDias || 0) * Number(row.valorUnitario || 0)
+            ).toFixed(2)
+        : (
+            Number(row.quantidade || 0) * Number(row.valorUnitario || 0)
+          ).toFixed(2);
 
   async function generate() {
     if (
@@ -158,6 +198,22 @@ export function MonthlyOrderPage({
     ) {
       setError(
         "Informe o motivo para cada vínculo afastado incluído no pedido.",
+      );
+      return;
+    }
+    if (
+      selected.some(
+        (row) =>
+          (type === "TRANSPORTE"
+            ? !(row.transporteItens ?? []).length ||
+              row.transporteItens?.some(
+                (item) => !item.fornecedorId || !item.valorDiario,
+              )
+            : !row.configuracaoId) || Number(requestedTotal(row) || 0) <= 0,
+      )
+    ) {
+      setError(
+        "Complete fornecedor, valores e quantidades das pessoas selecionadas.",
       );
       return;
     }
@@ -171,13 +227,17 @@ export function MonthlyOrderPage({
           competencia: competence,
           tipo: type,
           itens: rows.map((row) => ({
-            beneficioVinculoId: row.beneficioVinculoId,
+            vinculoId: row.vinculoId,
+            configuracaoId: row.configuracaoId || null,
             incluir: row.incluir,
             quantidadeDias: row.quantidadeDias || null,
             quantidade: row.quantidade || null,
             valorUnitario: row.valorUnitario || null,
             valorMensalBase: row.valorMensalBase || null,
             valorSolicitado: requestedTotal(row) || null,
+            ...(type === "ALIMENTACAO"
+              ? { modoAlimentacao: row.modoAlimentacao }
+              : {}),
             motivoAfastado: row.motivoAfastado || undefined,
             transporteItens:
               type === "TRANSPORTE"
@@ -323,9 +383,22 @@ export function MonthlyOrderPage({
                     <th>Incluir</th>
                     <th>Pessoa</th>
                     <th>Equipe</th>
+                    <th>Fornecedor</th>
                     <th>Referência anterior</th>
-                    <th>Dias</th>
-                    <th>Valor/dia</th>
+                    <th>
+                      {type === "ALIMENTACAO"
+                        ? "Cálculo"
+                        : type === "TRANSPORTE"
+                          ? "Dias"
+                          : "Quantidade"}
+                    </th>
+                    <th>
+                      {type === "ALIMENTACAO"
+                        ? "Dias / valor diário"
+                        : type === "TRANSPORTE"
+                          ? "Valor/dia"
+                          : "Valor unitário"}
+                    </th>
                     <th>Valor mensal</th>
                     <th>Total solicitado</th>
                     <th>Situação</th>
@@ -333,7 +406,7 @@ export function MonthlyOrderPage({
                 </thead>
                 <tbody>
                   {visible.map((row) => (
-                    <tr key={row.beneficioVinculoId}>
+                    <tr key={row.vinculoId}>
                       <td>
                         <input
                           aria-label={`Incluir ${row.pessoa}`}
@@ -341,7 +414,7 @@ export function MonthlyOrderPage({
                           disabled={Boolean(row.impedimento)}
                           checked={row.incluir}
                           onChange={(event) =>
-                            update(row.beneficioVinculoId, {
+                            update(row.vinculoId, {
                               incluir: event.target.checked,
                             })
                           }
@@ -353,31 +426,120 @@ export function MonthlyOrderPage({
                           <details className="transport-composition">
                             <summary>Conduções e fornecedores</summary>
                             {row.transporteItens?.map((item, index) => (
-                              <label
+                              <div
+                                className="transport-composition-row"
                                 key={`${item.fornecedorId}-${item.tipoConducao}-${index}`}
                               >
-                                <span>
-                                  {labels[item.tipoConducao] ??
-                                    item.tipoConducao}{" "}
-                                  · {display(item.fornecedor)}
-                                </span>
+                                <select
+                                  aria-label={`Condução de ${row.pessoa}`}
+                                  value={item.tipoConducao}
+                                  onChange={(event) =>
+                                    updateTransportItem(row.vinculoId, index, {
+                                      tipoConducao: event.target.value,
+                                    })
+                                  }
+                                >
+                                  {[
+                                    "ONIBUS",
+                                    "ONIBUS_INTER",
+                                    "BARCA",
+                                    "METRO",
+                                    "TREM",
+                                  ].map((value) => (
+                                    <option key={value} value={value}>
+                                      {labels[value]}
+                                    </option>
+                                  ))}
+                                </select>
+                                <select
+                                  aria-label={`Fornecedor de ${row.pessoa}`}
+                                  value={item.fornecedorId}
+                                  onChange={(event) =>
+                                    updateTransportItem(row.vinculoId, index, {
+                                      fornecedorId: event.target.value,
+                                    })
+                                  }
+                                >
+                                  <option value="">Selecione</option>
+                                  {row.fornecedores.map((option) => (
+                                    <option
+                                      key={option.fornecedorId}
+                                      value={option.fornecedorId}
+                                    >
+                                      {display(option.fornecedor)}
+                                    </option>
+                                  ))}
+                                </select>
                                 <CurrencyInput
                                   value={item.valorDiario}
                                   onValueChange={(value) =>
-                                    updateTransportItem(
-                                      row.beneficioVinculoId,
-                                      index,
-                                      { valorDiario: value },
-                                    )
+                                    updateTransportItem(row.vinculoId, index, {
+                                      valorDiario: value,
+                                    })
                                   }
                                   ariaLabel={`Valor diário de ${item.tipoConducao} para ${row.pessoa}`}
                                 />
-                              </label>
+                                <Button
+                                  variant="outline"
+                                  onClick={() =>
+                                    update(row.vinculoId, {
+                                      transporteItens:
+                                        row.transporteItens?.filter(
+                                          (_, itemIndex) => itemIndex !== index,
+                                        ) ?? [],
+                                    })
+                                  }
+                                >
+                                  Remover
+                                </Button>
+                              </div>
                             ))}
+                            <Button
+                              variant="outline"
+                              onClick={() =>
+                                update(row.vinculoId, {
+                                  transporteItens: [
+                                    ...(row.transporteItens ?? []),
+                                    {
+                                      tipoConducao: "ONIBUS",
+                                      fornecedorId: "",
+                                      valorDiario: "",
+                                    },
+                                  ],
+                                })
+                              }
+                            >
+                              Adicionar condução
+                            </Button>
                           </details>
                         )}
                       </td>
                       <td>{display(row.equipe)}</td>
+                      <td>
+                        {type === "TRANSPORTE" ? (
+                          "Por condução"
+                        ) : (
+                          <select
+                            aria-label={`Fornecedor de ${row.pessoa}`}
+                            value={row.configuracaoId}
+                            onChange={(event) =>
+                              update(row.vinculoId, {
+                                configuracaoId: event.target.value,
+                              })
+                            }
+                          >
+                            <option value="">Selecione</option>
+                            {row.fornecedores.map((option) => (
+                              <option
+                                key={option.configuracaoId}
+                                value={option.configuracaoId}
+                              >
+                                {display(option.fornecedor)}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
                       <td>
                         {row.referenciaStatus === "NOVA_AQUISICAO"
                           ? "Nova aquisição"
@@ -386,26 +548,84 @@ export function MonthlyOrderPage({
                             : money(row.referenciaAnterior)}
                       </td>
                       <td>
-                        <input
-                          aria-label={`Dias de ${row.pessoa}`}
-                          type="number"
-                          min="0"
-                          value={row.quantidadeDias}
-                          onChange={(event) =>
-                            update(row.beneficioVinculoId, {
-                              quantidadeDias: event.target.value,
-                            })
-                          }
-                        />
+                        {type === "ALIMENTACAO" ? (
+                          <select
+                            aria-label={`Cálculo de alimentação de ${row.pessoa}`}
+                            value={row.modoAlimentacao}
+                            onChange={(event) =>
+                              update(row.vinculoId, {
+                                modoAlimentacao: event.target.value as
+                                  | "DIAS_TRABALHADOS"
+                                  | "VALOR_MENSAL",
+                              })
+                            }
+                          >
+                            <option value="DIAS_TRABALHADOS">
+                              Dias trabalhados
+                            </option>
+                            <option value="VALOR_MENSAL">Valor mensal</option>
+                          </select>
+                        ) : type === "TRANSPORTE" ? (
+                          <input
+                            aria-label={`Dias de ${row.pessoa}`}
+                            type="number"
+                            min="0"
+                            value={row.quantidadeDias}
+                            onChange={(event) =>
+                              update(row.vinculoId, {
+                                quantidadeDias: event.target.value,
+                              })
+                            }
+                          />
+                        ) : (
+                          <input
+                            aria-label={`Quantidade de ${row.pessoa}`}
+                            type="number"
+                            min="0"
+                            value={row.quantidade}
+                            onChange={(event) =>
+                              update(row.vinculoId, {
+                                quantidade: event.target.value,
+                              })
+                            }
+                          />
+                        )}
                       </td>
                       <td>
-                        {type === "TRANSPORTE" ? (
+                        {type === "ALIMENTACAO" ? (
+                          row.modoAlimentacao === "DIAS_TRABALHADOS" ? (
+                            <div className="monthly-food-daily-fields">
+                              <input
+                                aria-label={`Dias de ${row.pessoa}`}
+                                type="number"
+                                min="0"
+                                value={row.quantidadeDias}
+                                onChange={(event) =>
+                                  update(row.vinculoId, {
+                                    quantidadeDias: event.target.value,
+                                  })
+                                }
+                              />
+                              <CurrencyInput
+                                value={row.valorUnitario}
+                                onValueChange={(value) =>
+                                  update(row.vinculoId, {
+                                    valorUnitario: value,
+                                  })
+                                }
+                                ariaLabel={`Valor diário de ${row.pessoa}`}
+                              />
+                            </div>
+                          ) : (
+                            "—"
+                          )
+                        ) : type === "TRANSPORTE" ? (
                           "Por condução"
                         ) : (
                           <CurrencyInput
                             value={row.valorUnitario}
                             onValueChange={(value) =>
-                              update(row.beneficioVinculoId, {
+                              update(row.vinculoId, {
                                 valorUnitario: value,
                               })
                             }
@@ -415,33 +635,32 @@ export function MonthlyOrderPage({
                       </td>
                       <td>
                         {type === "ALIMENTACAO" ? (
-                          <CurrencyInput
-                            value={row.valorMensalBase}
-                            onValueChange={(value) =>
-                              update(row.beneficioVinculoId, {
-                                valorMensalBase: value,
-                                valorSolicitado: value,
-                              })
-                            }
-                            ariaLabel={`Valor mensal de ${row.pessoa}`}
-                          />
+                          row.modoAlimentacao === "VALOR_MENSAL" ? (
+                            <CurrencyInput
+                              value={row.valorMensalBase}
+                              onValueChange={(value) =>
+                                update(row.vinculoId, {
+                                  valorMensalBase: value,
+                                })
+                              }
+                              ariaLabel={`Valor mensal de ${row.pessoa}`}
+                            />
+                          ) : (
+                            "—"
+                          )
                         ) : (
                           "—"
                         )}
                       </td>
                       <td>
-                        {type === "TRANSPORTE" ? (
-                          money(requestedTotal(row))
+                        {type === "ALIMENTACAO" || type === "TRANSPORTE" ? (
+                          <strong>{money(requestedTotal(row))}</strong>
                         ) : (
                           <CurrencyInput
                             value={row.valorSolicitado}
                             onValueChange={(value) =>
-                              update(row.beneficioVinculoId, {
+                              update(row.vinculoId, {
                                 valorSolicitado: value,
-                                valorMensalBase:
-                                  type === "ALIMENTACAO"
-                                    ? value
-                                    : row.valorMensalBase,
                               })
                             }
                             ariaLabel={`Total solicitado de ${row.pessoa}`}
@@ -458,7 +677,7 @@ export function MonthlyOrderPage({
                               placeholder="Motivo da inclusão"
                               value={row.motivoAfastado}
                               onChange={(event) =>
-                                update(row.beneficioVinculoId, {
+                                update(row.vinculoId, {
                                   motivoAfastado: event.target.value,
                                 })
                               }
