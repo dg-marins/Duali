@@ -57,6 +57,7 @@ const conductionLabels: Record<string, string> = {
   BARCA: "Barca",
   METRO: "Metrô",
   TREM: "Trem",
+  OUTROS: "Outros",
 };
 const decimalInputValue = (value: string) => {
   const cleaned = value.replace(/[^\d,.-]/g, "").trim();
@@ -1394,6 +1395,7 @@ function ProfileBenefitForm({
                       <option value="BARCA">Barca</option>
                       <option value="METRO">Metrô</option>
                       <option value="TREM">Trem</option>
+                      <option value="OUTROS">Outros</option>
                     </select>
                   </label>
                   <label>

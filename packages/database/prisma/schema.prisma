@@ -416,6 +416,7 @@ enum TipoConducao {
  BARCA
  METRO
  TREM
+ OUTROS
 }
 model ConfiguracaoBeneficio {
  id String @id @default(uuid()) @db.Uuid

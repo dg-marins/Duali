@@ -16,6 +16,7 @@ const conductionLabels: Record<string, string> = {
   BARCA: "Barca",
   METRO: "Metrô",
   TREM: "Trem",
+  OUTROS: "Outros",
 };
 const benefitLabels: Record<string, string> = {
   ALIMENTACAO: "Alimentação",

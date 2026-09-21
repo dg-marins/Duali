@@ -43,18 +43,21 @@ export function CurrencyInput({
   required,
   disabled,
   ariaLabel,
+  placeholder,
 }: {
   value: string;
   onValueChange: (value: string) => void;
   required?: boolean;
   disabled?: boolean;
   ariaLabel?: string;
+  placeholder?: string;
 }) {
   const [text, setText] = useState(() => formatCurrencyInput(value));
   useEffect(() => setText(formatCurrencyInput(value)), [value]);
   return (
     <input
       aria-label={ariaLabel}
+      placeholder={placeholder}
       required={required}
       disabled={disabled}
       inputMode="decimal"

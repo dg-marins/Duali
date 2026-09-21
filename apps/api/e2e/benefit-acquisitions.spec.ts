@@ -176,6 +176,7 @@ test("faz pedido de alimentação sem adesão prévia e o apresenta no perfil", 
       .getByRole("combobox", { name: "Benefício" })
       .selectOption("ALIMENTACAO");
     await expect(page.getByText(personName, { exact: true })).toBeVisible();
+    await expect(page.getByText("Equipe", { exact: true })).toHaveCount(0);
     const supplierSelect = page.getByRole("combobox", {
       name: `Fornecedor de ${personName}`,
     });
@@ -451,6 +452,7 @@ test("pede transporte com várias conduções e fornecedores sem adesão prévia
       `/app/beneficios/aquisicao?unidadeId=${unit.id}&competencia=2026-09-01&tipo=TRANSPORTE`,
     );
     await expect(page.getByText(personName, { exact: true })).toBeVisible();
+    await expect(page.getByText("Equipe", { exact: true })).toHaveCount(0);
     await page.getByLabel(`Incluir ${personName}`).check();
     await page.getByLabel(`Dias de ${personName}`).fill("22");
     await page.getByText("Conduções e fornecedores").click();
@@ -458,9 +460,27 @@ test("pede transporte com várias conduções e fornecedores sem adesão prévia
       [0, "ONIBUS", suppliers[0]!.id, "11,20"],
       [1, "BARCA", suppliers[0]!.id, "9,40"],
       [2, "METRO", suppliers[1]!.id, "15,80"],
+      [3, "OUTROS", suppliers[1]!.id, "1,00"],
     ] as const) {
       await page.getByRole("button", { name: "Adicionar condução" }).click();
       const row = page.locator(".transport-composition-row").nth(index);
+      await expect(row.getByRole("combobox").first()).toHaveValue("");
+      await expect(row.getByRole("combobox").first()).toContainText(
+        "Selecione a condução",
+      );
+      await expect(row.getByRole("combobox").nth(1)).toContainText(
+        "Selecione o fornecedor",
+      );
+      await expect(row.getByRole("textbox")).toHaveAttribute(
+        "placeholder",
+        "Informe o valor diário",
+      );
+      if (index === 0) {
+        await page.getByRole("button", { name: "Gerar pedido" }).click();
+        await expect(
+          page.getByText(/Complete condução, fornecedor, valores/),
+        ).toBeVisible();
+      }
       await row
         .getByRole("combobox", { name: `Condução de ${personName}` })
         .selectOption(conduction);
@@ -469,7 +489,7 @@ test("pede transporte com várias conduções e fornecedores sem adesão prévia
         .selectOption(supplier);
       await row.getByRole("textbox").fill(amount);
     }
-    await expect(page.locator(".transport-composition-row")).toHaveCount(3);
+    await expect(page.locator(".transport-composition-row")).toHaveCount(4);
     await page.getByRole("button", { name: "Gerar pedido" }).click();
     await expect(page).toHaveURL(/\/app\/beneficios\/competencias/);
     const generatedOrders = await db.aquisicaoBeneficio.findMany({
@@ -485,7 +505,35 @@ test("pede transporte com várias conduções e fornecedores sem adesão prévia
       generatedOrders
         .flatMap((order) => order.itens)
         .reduce((sum, item) => sum + Number(item.valorSolicitado), 0),
-    ).toBe(800.8);
+    ).toBe(822.8);
+    expect(
+      await db.beneficioTransporteCompetenciaItem.count({
+        where: {
+          tipoConducao: "OUTROS",
+          competencia: {
+            beneficioVinculo: { vinculo: { pessoaId: person.id } },
+          },
+        },
+      }),
+    ).toBe(1);
+    await page.goto(
+      `/app/beneficios/aquisicao?unidadeId=${unit.id}&competencia=2026-09-01&tipo=TRANSPORTE`,
+    );
+    await page.getByText("Conduções e fornecedores").click();
+    await expect(
+      page
+        .locator('.transport-composition-row select[aria-label^="Condução"]')
+        .last(),
+    ).toHaveValue("OUTROS");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(
+      page.getByRole("heading", { name: "Fazer pedido" }),
+    ).toBeVisible();
+    await expect(
+      page
+        .locator('.transport-composition-row select[aria-label^="Condução"]')
+        .last(),
+    ).toHaveValue("OUTROS");
   } finally {
     await db.$disconnect();
   }

@@ -16,6 +16,7 @@ const labels: Record<string, string> = {
   BARCA: "Barca",
   METRO: "Metrô",
   TREM: "Trem",
+  OUTROS: "Outros",
 };
 type TransportItem = {
   tipoConducao: string;
@@ -60,7 +61,6 @@ export function MonthlyOrderPage({
   const [type, setType] = useState(initial.get("tipo") ?? "ALIMENTACAO");
   const [rows, setRows] = useState<Draft[]>([]);
   const [query, setQuery] = useState("");
-  const [team, setTeam] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -132,24 +132,16 @@ export function MonthlyOrderPage({
     };
   }, [unit, month, type]);
 
-  const teams = useMemo(
-    () =>
-      [
-        ...new Set(rows.map((row) => String(row.equipe ?? "")).filter(Boolean)),
-      ].sort(),
-    [rows],
-  );
   const visible = useMemo(
     () =>
       rows.filter(
         (row) =>
-          (!query ||
-            String(row.pessoa)
-              .toLocaleLowerCase("pt-BR")
-              .includes(query.toLocaleLowerCase("pt-BR"))) &&
-          (!team || row.equipe === team),
+          !query ||
+          String(row.pessoa)
+            .toLocaleLowerCase("pt-BR")
+            .includes(query.toLocaleLowerCase("pt-BR")),
       ),
-    [rows, query, team],
+    [rows, query],
   );
   const selected = rows.filter((row) => row.incluir);
   const update = (id: string, patch: Partial<Draft>) =>
@@ -207,13 +199,14 @@ export function MonthlyOrderPage({
           (type === "TRANSPORTE"
             ? !(row.transporteItens ?? []).length ||
               row.transporteItens?.some(
-                (item) => !item.fornecedorId || !item.valorDiario,
+                (item) =>
+                  !item.tipoConducao || !item.fornecedorId || !item.valorDiario,
               )
             : !row.configuracaoId) || Number(requestedTotal(row) || 0) <= 0,
       )
     ) {
       setError(
-        "Complete fornecedor, valores e quantidades das pessoas selecionadas.",
+        "Complete condução, fornecedor, valores e quantidades das pessoas selecionadas.",
       );
       return;
     }
@@ -344,18 +337,6 @@ export function MonthlyOrderPage({
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </label>
-              <label>
-                <span>Equipe</span>
-                <select
-                  value={team}
-                  onChange={(event) => setTeam(event.target.value)}
-                >
-                  <option value="">Todas</option>
-                  {teams.map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
             </div>
           </section>
           <section className="panel">
@@ -382,7 +363,6 @@ export function MonthlyOrderPage({
                   <tr>
                     <th>Incluir</th>
                     <th>Pessoa</th>
-                    <th>Equipe</th>
                     <th>Fornecedor</th>
                     <th>Referência anterior</th>
                     <th>
@@ -439,12 +419,14 @@ export function MonthlyOrderPage({
                                     })
                                   }
                                 >
+                                  <option value="">Selecione a condução</option>
                                   {[
                                     "ONIBUS",
                                     "ONIBUS_INTER",
                                     "BARCA",
                                     "METRO",
                                     "TREM",
+                                    "OUTROS",
                                   ].map((value) => (
                                     <option key={value} value={value}>
                                       {labels[value]}
@@ -460,7 +442,9 @@ export function MonthlyOrderPage({
                                     })
                                   }
                                 >
-                                  <option value="">Selecione</option>
+                                  <option value="">
+                                    Selecione o fornecedor
+                                  </option>
                                   {row.fornecedores.map((option) => (
                                     <option
                                       key={option.fornecedorId}
@@ -478,6 +462,7 @@ export function MonthlyOrderPage({
                                     })
                                   }
                                   ariaLabel={`Valor diário de ${item.tipoConducao} para ${row.pessoa}`}
+                                  placeholder="Informe o valor diário"
                                 />
                                 <Button
                                   variant="outline"
@@ -501,7 +486,7 @@ export function MonthlyOrderPage({
                                   transporteItens: [
                                     ...(row.transporteItens ?? []),
                                     {
-                                      tipoConducao: "ONIBUS",
+                                      tipoConducao: "",
                                       fornecedorId: "",
                                       valorDiario: "",
                                     },
@@ -514,7 +499,6 @@ export function MonthlyOrderPage({
                           </details>
                         )}
                       </td>
-                      <td>{display(row.equipe)}</td>
                       <td>
                         {type === "TRANSPORTE" ? (
                           "Por condução"

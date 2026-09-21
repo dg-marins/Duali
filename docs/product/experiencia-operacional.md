@@ -54,6 +54,8 @@ Ao gerar, o sistema cria na mesma transação o registro técnico interno, a com
 
 Em Alimentação, cada linha do pedido usa uma base exclusiva: **Dias trabalhados**, que calcula dias × valor diário, ou **Valor mensal**, que registra o total contratado. A troca de base não mistura os cálculos.
 
+Em Fazer pedido, a equipe não é exibida como filtro ou coluna. Ao adicionar transporte, o RH escolhe condução (incluindo **Outros**), fornecedor e valor diário; os três campos começam sem preenchimento e são obrigatórios para emitir o pedido.
+
 Competências inicia com cards por unidade. Cada categoria resume lançamentos, previsto, comprado e valores em pedido; o detalhe da categoria abre em modal com os pedidos e as ações de confirmação, cancelamento e reversão.
 
 O cancelamento de um pedido pendente preserva o pedido e os valores originais no histórico. Quando só existem pedidos cancelados, o lançamento criado pelo pedido direto sai dos valores operacionais do mês e pode ser reutilizado em uma nova emissão. Pedidos com compra registrada exigem os fluxos próprios de saldo e reversão.
