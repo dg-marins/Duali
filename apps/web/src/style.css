@@ -121,7 +121,14 @@ p {
   padding: 30px 20px;
   display: flex;
   flex-direction: column;
-  gap: 35px;
+  gap: 0;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: visible;
 }
 .brand {
   font-size: 38px;
@@ -142,6 +149,8 @@ p {
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+  flex: 0 0 auto;
+  margin-bottom: 22px;
 }
 .icon-button {
   padding: 7px 10px;
@@ -179,28 +188,53 @@ p {
 .sidebar-collapsed .nav-group-toggle {
   justify-content: center;
 }
-.sidebar-collapsed .nav-items {
+.sidebar-collapsed .nav-items-region {
   position: absolute;
   z-index: 50;
   left: calc(100% + 12px);
   top: 0;
   width: 250px;
-  padding: 8px;
   background: var(--brand-dark);
   border: 1px solid #ffffff26;
   border-radius: 10px;
   box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  transform: translateX(-6px);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 140ms ease,
+    transform 180ms ease,
+    visibility 0s linear 180ms;
 }
-.sidebar-collapsed .nav-items .nav-label {
+.sidebar-collapsed .nav-items-region.is-open {
+  transform: translateX(0);
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    opacity 140ms ease,
+    transform 180ms ease,
+    visibility 0s linear 0s;
+}
+.sidebar-collapsed .nav-items {
+  padding: 8px;
+  border: 0;
+}
+.sidebar-collapsed .nav-items-region .nav-label {
   display: inline;
 }
-.sidebar-collapsed .nav-items button {
+.sidebar-collapsed .nav-items-region button {
   display: flex;
   align-items: center;
   text-align: left;
 }
-.sidebar-collapsed .nav-items .nav-icon {
+.sidebar-collapsed .nav-items-region .nav-icon {
   margin-right: 9px;
+}
+.sidebar-collapsed .nav-group-chevron {
+  display: none;
 }
 .sidebar-collapsed .account button {
   padding-inline: 6px;
@@ -210,6 +244,24 @@ nav {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #ffffff44 transparent;
+}
+nav::-webkit-scrollbar {
+  width: 6px;
+}
+nav::-webkit-scrollbar-thumb {
+  background: #ffffff44;
+  border-radius: 999px;
+}
+.sidebar-collapsed nav {
+  overflow: visible;
+  padding-right: 0;
 }
 nav button {
   text-align: left;
@@ -234,11 +286,42 @@ nav button {
   flex: 1;
   text-align: left;
 }
+.nav-group-chevron {
+  flex: 0 0 auto;
+  transition: transform 180ms ease;
+}
+.nav-group-toggle[aria-expanded="true"] .nav-group-chevron {
+  transform: rotate(180deg);
+}
 .drawer-close {
   display: none;
 }
-.nav-items {
+.nav-items-region {
   display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-4px);
+  visibility: hidden;
+  transition:
+    grid-template-rows 180ms ease,
+    opacity 140ms ease,
+    transform 180ms ease,
+    visibility 0s linear 180ms;
+}
+.nav-items-region.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+  transition:
+    grid-template-rows 180ms ease,
+    opacity 140ms ease,
+    transform 180ms ease,
+    visibility 0s linear 0s;
+}
+.nav-items {
+  min-height: 0;
+  overflow: hidden;
   gap: 3px;
   padding-left: 8px;
   border-left: 1px solid rgba(255, 255, 255, 0.18);
@@ -251,7 +334,10 @@ nav button.active {
   color: white;
 }
 .account {
-  margin-top: auto;
+  flex: 0 0 auto;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #ffffff26;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1565,7 +1651,7 @@ th {
     transform: translateX(-105%);
     transition: transform 0.2s ease;
     padding: 20px;
-    gap: 20px;
+    gap: 0;
   }
   .shell aside.drawer-open {
     transform: translateX(0);
@@ -1834,9 +1920,8 @@ th {
   .activity {
     flex-direction: column;
   }
-  .shell aside {
-    max-height: none;
-    overflow: auto;
+  .shell aside nav {
+    overflow-y: auto;
   }
 }
 
@@ -1874,11 +1959,14 @@ th {
   background: #142c28;
   background-image: linear-gradient(160deg, #20483cd9, #101e24f2);
   border-right: 1px solid #ffffff14;
-  gap: 22px;
+  gap: 0;
 }
 @media (min-width: 851px) {
   .golden-shell > aside {
-    position: relative;
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    max-height: 100dvh;
     z-index: 10;
   }
 }
@@ -2090,7 +2178,10 @@ th {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .golden-shell {
+  .golden-shell,
+  .nav-group-chevron,
+  .nav-items-region,
+  .sidebar-collapsed .nav-items-region {
     transition: none;
   }
 }
@@ -2266,13 +2357,25 @@ th {
   .golden-shell.sidebar-collapsed aside.drawer-open .nav-group-toggle {
     justify-content: space-between;
   }
-  .golden-shell.sidebar-collapsed aside.drawer-open .nav-items {
+  .golden-shell.sidebar-collapsed aside.drawer-open nav {
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .golden-shell.sidebar-collapsed aside.drawer-open .nav-items-region {
     position: static;
     width: auto;
-    padding: 0;
     background: none;
     border: 0;
     box-shadow: none;
+    transform: translateY(-4px);
+  }
+  .golden-shell.sidebar-collapsed aside.drawer-open .nav-items-region.is-open {
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .golden-shell.sidebar-collapsed aside.drawer-open .nav-items {
+    padding-left: 8px;
+    border-left: 1px solid rgba(255, 255, 255, 0.18);
   }
 }
 .benefit-summary-actions {

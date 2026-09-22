@@ -29,6 +29,7 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -369,16 +370,21 @@ function App() {
             </button>
           ))}
           <div className="nav-divider" />
-          {grouped.map((group) => {
+          {grouped.map((group, groupIndex) => {
             const open = collapsed
               ? flyoutGroup === group.title
               : openGroups.has(group.title);
+            const itemsId = `nav-group-${groupIndex}-items`;
             return (
-              <section className="nav-group" key={group.title}>
+              <section
+                className={`nav-group ${open ? "is-open" : ""}`}
+                key={group.title}
+              >
                 <button
                   className="nav-group-toggle"
                   title={group.title}
                   aria-expanded={open}
+                  aria-controls={itemsId}
                   onClick={(event) => {
                     event.stopPropagation();
                     if (collapsed)
@@ -400,15 +406,24 @@ function App() {
                   <span className="nav-label nav-group-title">
                     {group.title}
                   </span>
-                  <span className="nav-label">{open ? "−" : "+"}</span>
+                  <ChevronDown
+                    className="nav-group-chevron"
+                    size={16}
+                    aria-hidden="true"
+                  />
                 </button>
-                {open && (
+                <div
+                  className={`nav-items-region ${open ? "is-open" : ""}`}
+                  id={itemsId}
+                  aria-hidden={!open}
+                >
                   <div className="nav-items">
                     {group.items.map(([route, label, Icon]) => (
                       <button
                         key={route}
                         title={label}
                         className={path === route ? "active" : ""}
+                        tabIndex={open ? 0 : -1}
                         onClick={() => go(route)}
                       >
                         <span className="nav-icon" aria-hidden="true">
@@ -418,7 +433,7 @@ function App() {
                       </button>
                     ))}
                   </div>
-                )}
+                </div>
               </section>
             );
           })}

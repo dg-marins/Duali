@@ -109,6 +109,66 @@ test("Golden Reference: exclusive segments, profile, registry and responsive she
     await expect(
       page.getByRole("heading", { name: "Visão geral", exact: true }),
     ).toBeVisible();
+    await page.setViewportSize({ width: 1440, height: 480 });
+    const sidebar = page.locator(".golden-shell > aside");
+    const navigation = sidebar.locator("nav");
+    const account = sidebar.locator(".account");
+    const operation = page.getByRole("button", {
+      name: "Operação",
+      exact: true,
+    });
+    await operation.focus();
+    await page.keyboard.press("Enter");
+    await expect(operation).toHaveAttribute("aria-expanded", "true");
+    await expect(operation.locator(".nav-group-chevron")).toHaveClass(
+      /nav-group-chevron/,
+    );
+    await page.keyboard.press("Space");
+    await expect(operation).toHaveAttribute("aria-expanded", "false");
+    for (const title of ["Operação", "Dados", "Cadastros", "Administração"])
+      await page.getByRole("button", { name: title, exact: true }).click();
+    expect(
+      await navigation.evaluate(
+        (element) => element.scrollHeight > element.clientHeight,
+      ),
+    ).toBe(true);
+    await navigation.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const sidebarBox = await sidebar.boundingBox();
+    const accountBox = await account.boundingBox();
+    expect(sidebarBox?.y).toBe(0);
+    expect(Math.round(sidebarBox?.height ?? 0)).toBe(480);
+    expect(
+      (accountBox?.y ?? 0) + (accountBox?.height ?? 0),
+    ).toBeLessThanOrEqual(480);
+    await page.evaluate(() => {
+      const main = document.querySelector(
+        ".golden-shell > main",
+      ) as HTMLElement;
+      main.style.minHeight = "2000px";
+      window.scrollTo({ top: 600 });
+    });
+    expect((await sidebar.boundingBox())?.y).toBe(0);
+    await page.evaluate(() => {
+      const main = document.querySelector(
+        ".golden-shell > main",
+      ) as HTMLElement;
+      main.style.minHeight = "";
+      window.scrollTo({ top: 0 });
+    });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(operation.locator(".nav-group-chevron")).toHaveCSS(
+      "transition-duration",
+      "0s",
+    );
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    for (const title of ["Operação", "Dados", "Cadastros", "Administração"])
+      await page.getByRole("button", { name: title, exact: true }).click();
+    await navigation.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/app/pessoas?q=" + suffix);
     const segments = page.locator(".people-segment");
     await expect(page.getByText("5 pessoas encontradas")).toBeVisible();
