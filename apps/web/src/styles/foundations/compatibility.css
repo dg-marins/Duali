@@ -1,0 +1,13 @@
+:root {
+  /*
+   * Deprecated compatibility aliases. They keep legacy consumers working
+   * until each component is migrated to the official Design System tokens.
+   * New code must not reference these names.
+   */
+  --brand-soft: var(--border);
+  --muted-foreground: var(--muted);
+  --primary-soft: var(--surface-strong);
+  --radius: var(--radius-md);
+  --surface-muted: var(--surface-subtle);
+  --text: #19302d;
+}

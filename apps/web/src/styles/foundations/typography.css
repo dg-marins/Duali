@@ -1,0 +1,43 @@
+.ds-page-title {
+  margin: 0;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-page-title);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-page-title);
+}
+
+.ds-section-title {
+  margin: 0;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-section-title);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-section-title);
+}
+
+.ds-body {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-body);
+}
+
+.ds-secondary {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-secondary);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-secondary);
+}
+
+.ds-auxiliary {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-auxiliary);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-auxiliary);
+}
+
+.ds-kpi {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-kpi);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-kpi);
+}

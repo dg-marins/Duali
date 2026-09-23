@@ -1,0 +1,123 @@
+:root {
+  /* Brand and navigation */
+  --color-sidebar: #063d32;
+  --color-sidebar-hover: #0b5948;
+  --color-sidebar-active: #f3f8f6;
+  --color-sidebar-active-text: #064e3b;
+
+  /* Primary action */
+  --color-primary: #0f9d58;
+  --color-primary-hover: #0b874a;
+  --color-primary-active: #08743f;
+  --color-primary-soft: #eaf8f0;
+  --color-on-primary: #ffffff;
+
+  /* Surfaces and borders */
+  --color-background: #f7f9fc;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f8fafc;
+  --color-border: #e5e7eb;
+  --color-border-strong: #cbd5e1;
+
+  /* Text */
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+
+  /* Semantic colors */
+  --color-success: #15803d;
+  --color-success-text: #166534;
+  --color-success-soft: #dcfce7;
+  --color-success-border: #bbf7d0;
+  --color-warning: #b45309;
+  --color-warning-text: #92400e;
+  --color-warning-soft: #fef3c7;
+  --color-warning-border: #fde68a;
+  --color-danger: #b91c1c;
+  --color-danger-text: #991b1b;
+  --color-danger-soft: #fee2e2;
+  --color-danger-border: #fecaca;
+  --color-info: #2563eb;
+  --color-info-text: #1d4ed8;
+  --color-info-soft: #dbeafe;
+  --color-info-border: #bfdbfe;
+  --color-review: #7c3aed;
+  --color-review-text: #6d28d9;
+  --color-review-soft: #ede9fe;
+  --color-review-border: #ddd6fe;
+  --color-neutral: #64748b;
+  --color-neutral-text: #475569;
+  --color-neutral-soft: #f1f5f9;
+  --color-neutral-border: #e2e8f0;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+
+  /* Reference dimensions. Components adopt these in later phases. */
+  --size-control: 40px;
+  --size-table-row-min: 44px;
+  --size-table-row-comfortable: 48px;
+  --size-sidebar-expanded: 248px;
+  --size-sidebar-collapsed: 72px;
+  --size-topbar: 60px;
+
+  /* Radius */
+  --duali-radius-sm: 6px;
+  --duali-radius-md: 8px;
+  --duali-radius-lg: 12px;
+
+  /* Elevation */
+  --duali-shadow-sm: 0 4px 12px rgb(15 23 42 / 8%);
+  --duali-shadow-md: 0 16px 40px rgb(15 23 42 / 14%);
+
+  /* Motion */
+  --motion-duration-fast: 120ms;
+  --motion-duration-normal: 180ms;
+  --motion-duration-slow: 240ms;
+  --motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1.2);
+
+  /* Layers */
+  --layer-base: 0;
+  --layer-sticky: 10;
+  --layer-dropdown: 100;
+  --layer-overlay: 200;
+  --layer-modal: 300;
+  --layer-toast: 400;
+  --layer-tooltip: 500;
+
+  /* Typography */
+  --font-family-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-size-page-title: 26px;
+  --line-height-page-title: 32px;
+  --font-size-section-title: 18px;
+  --line-height-section-title: 24px;
+  --font-size-body: 14px;
+  --line-height-body: 21px;
+  --font-size-secondary: 13px;
+  --line-height-secondary: 18px;
+  --font-size-auxiliary: 12px;
+  --line-height-auxiliary: 16px;
+  --font-size-kpi: 28px;
+  --line-height-kpi: 34px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Focus */
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: color-mix(in srgb, #3c9f82 68%, white);
+  --focus-ring-color-on-dark: #a7f3d0;
+}

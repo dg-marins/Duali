@@ -1,0 +1,19 @@
+.ds-motion-standard {
+  transition-duration: var(--motion-duration-normal);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.ds-motion-emphasized {
+  transition-duration: var(--motion-duration-slow);
+  transition-timing-function: var(--motion-easing-emphasized);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-motion-standard,
+  .ds-motion-emphasized {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+  }
+}

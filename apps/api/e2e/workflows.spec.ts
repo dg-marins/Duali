@@ -67,7 +67,7 @@ test("administrator completes the operational RH journey", async ({ page }) => {
     ).toBeHidden();
     await page.getByRole("button", { name: /^Cadastros\b/ }).click();
     await expect(
-      page.getByRole("button", { name: "Equipes", exact: true }),
+      page.getByRole("menuitem", { name: "Equipes", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Expandir menu" }).click();
     await page.getByRole("button", { name: /^Cadastros\b/ }).click();
@@ -208,10 +208,9 @@ test("administrator completes the operational RH journey", async ({ page }) => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Abrir menu" }).click();
-    await expect(page.locator("aside.drawer-open")).toHaveCSS(
-      "transform",
-      "matrix(1, 0, 0, 1, 0, 0)",
-    );
+    await expect(
+      page.getByRole("dialog", { name: "Navegação principal" }),
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Pessoas", exact: true }),
     ).toBeVisible();

@@ -2,7 +2,6 @@ import { BenefitRegistryPage } from "./features/benefits/BenefitRegistryPage";
 import { BenefitSummaryPage } from "./features/benefits/BenefitSummaryPage";
 import React, { useEffect, useRef, useState, type FormEvent } from "react";
 import dualiBrand from "./assets/duali-brand.png";
-import dualiMark from "./assets/duali-mark.png";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
 import { ApiError, api, onUnauthorized, setCsrf, type Row } from "./api";
@@ -24,72 +23,10 @@ import { BenefitClosingPage } from "./features/benefits/BenefitClosingPage";
 import { BenefitAcquisitionPage } from "./features/benefits/BenefitAcquisitionPage";
 import { MonthlyOrderPage } from "./features/benefits/MonthlyOrderPage";
 import { Toaster } from "sonner";
-import {
-  BarChart3,
-  BriefcaseBusiness,
-  Building2,
-  CalendarDays,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleAlert,
-  ClipboardList,
-  Database,
-  FileChartColumn,
-  GraduationCap,
-  LayoutDashboard,
-  Menu,
-  Settings2,
-  ShieldCheck,
-  Users,
-  UserRoundCog,
-  WalletCards,
-  X,
-} from "lucide-react";
+import { AppShell } from "./AppShell";
 import "./style.css";
-
-const primary = [
-  ["/app", "Visão geral", LayoutDashboard],
-  ["/app/pendencias", "Pendências", CircleAlert],
-  ["/app/pessoas", "Pessoas", Users],
-] as const;
-const grouped = [
-  {
-    title: "Operação",
-    icon: BriefcaseBusiness,
-    items: [
-      ["/app/ferias", "Férias", CalendarDays],
-      ["/app/beneficios", "Benefícios", WalletCards],
-    ],
-  },
-  {
-    title: "Dados",
-    icon: Database,
-    items: [
-      ["/app/importacoes", "Importações", ClipboardList],
-      ["/app/relatorios", "Relatórios", FileChartColumn],
-    ],
-  },
-  {
-    title: "Cadastros",
-    icon: Building2,
-    items: [
-      ["/app/cadastros/unidades", "Unidades", Building2],
-      ["/app/cadastros/equipes", "Equipes", Users],
-      ["/app/cadastros/instituicoes", "Instituições", GraduationCap],
-      ["/app/cadastros/fornecedores", "Fornecedores", WalletCards],
-      ["/app/cadastros/configuracoes-beneficios", "Benefícios", Settings2],
-    ],
-  },
-  {
-    title: "Administração",
-    icon: ShieldCheck,
-    items: [
-      ["/app/admin/usuarios", "Usuários", UserRoundCog],
-      ["/app/admin/auditoria", "Auditoria", BarChart3],
-    ],
-  },
-] as const;
+import "./styles/foundations/index.css";
+import "./styles/shell/index.css";
 const auxiliary: Record<string, string> = {
   "/app/cadastros/unidades": "unidades",
   "/app/cadastros/equipes": "equipes",
@@ -127,11 +64,7 @@ function App() {
   const [auth, setAuth] = useState<AuthState>({ status: "loading" }),
     [message, setMessage] = useState(""),
     [email, setEmail] = useState(""),
-    [senha, setSenha] = useState(""),
-    [collapsed, setCollapsed] = useState(false),
-    [drawer, setDrawer] = useState(false),
-    [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set()),
-    [flyoutGroup, setFlyoutGroup] = useState<string | null>(null);
+    [senha, setSenha] = useState("");
   const returnRoute = useRef<string | null>(null);
   const retryButton = useRef<HTMLButtonElement | null>(null);
   useEffect(
@@ -176,7 +109,6 @@ function App() {
 
   useEffect(loadSession, []);
   useEffect(() => {
-    setFlyoutGroup(null);
     if (path === "/app/estagiarios" && !window.location.search) {
       const query = new URLSearchParams(window.location.search);
       query.set("tipo", "ESTAGIO");
@@ -187,30 +119,6 @@ function App() {
   useEffect(() => {
     if (auth.status === "unavailable") retryButton.current?.focus();
   }, [auth.status]);
-  useEffect(() => {
-    if (!drawer) return;
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDrawer(false);
-    };
-    document.addEventListener("keydown", close);
-    return () => document.removeEventListener("keydown", close);
-  }, [drawer]);
-  useEffect(() => {
-    const close = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest(".nav-group"))
-        return;
-      setFlyoutGroup(null);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, []);
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setFlyoutGroup(null);
-    };
-    document.addEventListener("keydown", close);
-    return () => document.removeEventListener("keydown", close);
-  }, []);
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -277,10 +185,7 @@ function App() {
       <div className="login">
         <section className="panel">
           <div className="brand">
-            <img
-              src={collapsed ? dualiMark : dualiBrand}
-              alt="Duali Gestão de Pessoas"
-            />
+            <img src={dualiBrand} alt="Duali Gestão de Pessoas" />
           </div>
           <h1>Bem-vindo de volta</h1>
           <p>Entre para acompanhar sua operação.</p>
@@ -312,164 +217,17 @@ function App() {
       </div>
     );
   const user = auth.user;
-  const go = (next: string) => {
-    navigate(next);
-    setDrawer(false);
-    setFlyoutGroup(null);
-  };
   return (
-    <div
-      className={`shell golden-shell ${collapsed ? "sidebar-collapsed" : ""}`}
+    <AppShell
+      path={path}
+      userName={String(user.nome)}
+      navigate={navigate}
+      logout={() => void logout()}
     >
-      {drawer && (
-        <button
-          className="drawer-backdrop"
-          aria-label="Fechar menu"
-          onClick={() => setDrawer(false)}
-        />
-      )}
-      <aside className={drawer ? "drawer-open" : ""}>
-        <div className="sidebar-head">
-          <div className="brand">
-            <img
-              src={collapsed ? dualiMark : dualiBrand}
-              alt="Duali Gestão de Pessoas"
-            />
-          </div>
-          <button
-            className="icon-button collapse-button"
-            aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
-            onClick={() => setCollapsed(!collapsed)}
-          >
-            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-          </button>
-          <button
-            className="icon-button drawer-close"
-            aria-label="Fechar menu"
-            onClick={() => setDrawer(false)}
-          >
-            <X size={19} />
-          </button>
-        </div>
-        <nav>
-          {primary.map(([route, label, Icon]) => (
-            <button
-              key={route}
-              title={label}
-              className={
-                path === route || (route !== "/app" && path.startsWith(route))
-                  ? "active"
-                  : ""
-              }
-              onClick={() => go(route)}
-            >
-              <span className="nav-icon" aria-hidden="true">
-                <Icon size={19} />
-              </span>
-              <span className="nav-label">{label}</span>
-            </button>
-          ))}
-          <div className="nav-divider" />
-          {grouped.map((group, groupIndex) => {
-            const open = collapsed
-              ? flyoutGroup === group.title
-              : openGroups.has(group.title);
-            const itemsId = `nav-group-${groupIndex}-items`;
-            return (
-              <section
-                className={`nav-group ${open ? "is-open" : ""}`}
-                key={group.title}
-              >
-                <button
-                  className="nav-group-toggle"
-                  title={group.title}
-                  aria-expanded={open}
-                  aria-controls={itemsId}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (collapsed)
-                      setFlyoutGroup(
-                        flyoutGroup === group.title ? null : group.title,
-                      );
-                    else
-                      setOpenGroups((current) => {
-                        const next = new Set(current);
-                        if (next.has(group.title)) next.delete(group.title);
-                        else next.add(group.title);
-                        return next;
-                      });
-                  }}
-                >
-                  <span className="nav-icon" aria-hidden="true">
-                    <group.icon size={19} />
-                  </span>
-                  <span className="nav-label nav-group-title">
-                    {group.title}
-                  </span>
-                  <ChevronDown
-                    className="nav-group-chevron"
-                    size={16}
-                    aria-hidden="true"
-                  />
-                </button>
-                <div
-                  className={`nav-items-region ${open ? "is-open" : ""}`}
-                  id={itemsId}
-                  aria-hidden={!open}
-                >
-                  <div className="nav-items">
-                    {group.items.map(([route, label, Icon]) => (
-                      <button
-                        key={route}
-                        title={label}
-                        className={path === route ? "active" : ""}
-                        tabIndex={open ? 0 : -1}
-                        onClick={() => go(route)}
-                      >
-                        <span className="nav-icon" aria-hidden="true">
-                          <Icon size={17} />
-                        </span>
-                        <span className="nav-label">{label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </section>
-            );
-          })}
-        </nav>
-        <div className="account">
-          <div>
-            <strong>{String(user.nome)}</strong>
-            <span>Administrador</span>
-          </div>
-          <button className="secondary" onClick={() => void logout()}>
-            Sair
-          </button>
-        </div>
-      </aside>
-      <main>
-        <header className="topbar">
-          <button
-            className="icon-button mobile-menu"
-            aria-label="Abrir menu"
-            onClick={() => setDrawer(true)}
-          >
-            <Menu size={20} />
-          </button>
-          <span className="topbar-context">
-            Duali <span>Gestão de Pessoas</span>
-          </span>
-          <div className="top-account">
-            <span>{String(user.nome)}</span>
-            <span className="online-dot" title="Sessão ativa" />
-          </div>
-        </header>
-        <Notice text={message} error />
-        <RouteContent path={path} navigate={navigate} />
-        <Toaster richColors position="top-right" />
-      </main>
-    </div>
+      <Notice text={message} error />
+      <RouteContent path={path} navigate={navigate} />
+      <Toaster richColors position="top-right" />
+    </AppShell>
   );
 }
 function RouteContent({

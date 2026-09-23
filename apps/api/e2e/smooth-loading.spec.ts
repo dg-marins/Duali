@@ -22,7 +22,9 @@ async function login(page: Page, email: string, password: string) {
   await page.getByLabel("Senha", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(
-    page.getByText("Carregamento E2E", { exact: true }).first(),
+    page
+      .locator(".app-topbar-account")
+      .getByText("Carregamento E2E", { exact: true }),
   ).toBeVisible();
 }
 

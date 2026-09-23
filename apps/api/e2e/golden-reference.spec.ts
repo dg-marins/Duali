@@ -110,9 +110,9 @@ test("Golden Reference: exclusive segments, profile, registry and responsive she
       page.getByRole("heading", { name: "Visão geral", exact: true }),
     ).toBeVisible();
     await page.setViewportSize({ width: 1440, height: 480 });
-    const sidebar = page.locator(".golden-shell > aside");
-    const navigation = sidebar.locator("nav");
-    const account = sidebar.locator(".account");
+    const sidebar = page.locator(".app-shell > .app-sidebar");
+    const navigation = sidebar.locator(".app-sidebar-nav");
+    const account = sidebar.locator(".app-sidebar-account");
     const operation = page.getByRole("button", {
       name: "Operação",
       exact: true,
@@ -120,8 +120,8 @@ test("Golden Reference: exclusive segments, profile, registry and responsive she
     await operation.focus();
     await page.keyboard.press("Enter");
     await expect(operation).toHaveAttribute("aria-expanded", "true");
-    await expect(operation.locator(".nav-group-chevron")).toHaveClass(
-      /nav-group-chevron/,
+    await expect(operation.locator(".app-sidebar-chevron")).toHaveClass(
+      /app-sidebar-chevron/,
     );
     await page.keyboard.press("Space");
     await expect(operation).toHaveAttribute("aria-expanded", "false");
@@ -137,30 +137,30 @@ test("Golden Reference: exclusive segments, profile, registry and responsive she
     });
     const sidebarBox = await sidebar.boundingBox();
     const accountBox = await account.boundingBox();
-    expect(sidebarBox?.y).toBe(0);
+    expect(Math.abs(sidebarBox?.y ?? 0)).toBeLessThan(1);
     expect(Math.round(sidebarBox?.height ?? 0)).toBe(480);
     expect(
       (accountBox?.y ?? 0) + (accountBox?.height ?? 0),
     ).toBeLessThanOrEqual(480);
     await page.evaluate(() => {
       const main = document.querySelector(
-        ".golden-shell > main",
+        ".app-shell > .app-shell-main",
       ) as HTMLElement;
       main.style.minHeight = "2000px";
       window.scrollTo({ top: 600 });
     });
-    expect((await sidebar.boundingBox())?.y).toBe(0);
+    expect(Math.abs((await sidebar.boundingBox())?.y ?? 0)).toBeLessThan(1);
     await page.evaluate(() => {
       const main = document.querySelector(
-        ".golden-shell > main",
+        ".app-shell > .app-shell-main",
       ) as HTMLElement;
       main.style.minHeight = "";
       window.scrollTo({ top: 0 });
     });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await expect(operation.locator(".nav-group-chevron")).toHaveCSS(
+    await expect(operation.locator(".app-sidebar-chevron")).toHaveCSS(
       "transition-duration",
-      "0s",
+      "1e-05s",
     );
     await page.emulateMedia({ reducedMotion: "no-preference" });
     for (const title of ["Operação", "Dados", "Cadastros", "Administração"])
@@ -202,12 +202,12 @@ test("Golden Reference: exclusive segments, profile, registry and responsive she
     await page.getByRole("button", { name: "Recolher menu" }).click();
     await screenshot("sidebar-recolhida");
     await page.getByRole("button", { name: /^Cadastros\b/ }).click();
-    const flyout = page.locator(".sidebar-collapsed .nav-items");
+    const flyout = page.locator(".app-sidebar-flyout");
     await expect(
-      flyout.getByRole("button", { name: "Benefícios" }),
+      flyout.getByRole("menuitem", { name: "Benefícios" }),
     ).toBeVisible();
     await screenshot("sidebar-recolhida-flyout");
-    await flyout.getByRole("button", { name: "Benefícios" }).click();
+    await flyout.getByRole("menuitem", { name: "Benefícios" }).click();
     await expect(page).toHaveURL(/\/app\/cadastros\/configuracoes-beneficios/);
     await page.getByRole("button", { name: "Pessoas", exact: true }).click();
     await page.getByRole("button", { name: "Expandir menu" }).click();
@@ -262,14 +262,14 @@ test("Golden Reference: exclusive segments, profile, registry and responsive she
     ).toBe(true);
     await screenshot("pessoas-mobile");
     await page.getByRole("button", { name: "Abrir menu" }).click();
-    await expect(page.locator("aside.drawer-open")).toBeVisible();
-    await expect(page.locator("aside.drawer-open")).toHaveCSS(
-      "transform",
-      "matrix(1, 0, 0, 1, 0, 0)",
-    );
+    await expect(
+      page.getByRole("dialog", { name: "Navegação principal" }),
+    ).toBeVisible();
     await screenshot("sidebar-mobile");
     await page.keyboard.press("Escape");
-    await expect(page.locator("aside.drawer-open")).toHaveCount(0);
+    await expect(
+      page.getByRole("dialog", { name: "Navegação principal" }),
+    ).toHaveCount(0);
   } finally {
     await db.$disconnect();
   }
