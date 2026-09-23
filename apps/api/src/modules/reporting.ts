@@ -11,6 +11,7 @@ import {
   operationalBenefitCompetence,
 } from "./benefits.js";
 import { monthlyReadiness } from "./benefit-acquisitions.js";
+import { benefitCycleSummary } from "./benefit-cycle.js";
 import { leaveAlerts } from "./leave.js";
 import { allPendings } from "./pendings.js";
 export const reportKinds = [
@@ -373,6 +374,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       }),
       monthlyReadiness(db, competence, q.unidadeId),
     ]);
+    const cycle = await benefitCycleSummary(db, competence, q.unidadeId);
     const selected = (
         await db.vinculo.findMany({ where, select: { id: true } })
       ).map((v) => v.id),
@@ -513,7 +515,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
           item.valor.toDecimalPlaces(2),
         );
     }
-    const monthlyPreparation = [...preparationGroups.values()]
+    const legacyMonthlyPreparation = [...preparationGroups.values()]
       .filter((item) => !item.valorPrevisto.isZero())
       .sort(
         (left, right) =>
@@ -524,7 +526,22 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       .map((item) => ({
         ...item,
         valorPrevisto: item.valorPrevisto.toDecimalPlaces(2).toFixed(2),
+        valorSolicitado: "0.00",
+        valorConcluido: "0.00",
+        saldoPendente: "0.00",
+        valorCancelado: "0.00",
+        ocorrencias: [],
+        impedimentos: [],
       }));
+    const monthlyPreparation =
+      cycle.possuiPrevisao || cycle.itens.length
+        ? cycle.itens
+        : legacyMonthlyPreparation;
+    const cycleCost = cycle.possuiPrevisao
+      ? cycle.totais.previsto
+      : new Prisma.Decimal(cycle.totais.solicitado).greaterThan(0)
+        ? cycle.totais.solicitado
+        : benefitTotals.total.toFixed(2);
     return {
       competencia: competence.toISOString().slice(0, 10),
       pessoasAtivas: pessoas,
@@ -556,7 +573,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       ).length,
       tcesAguardandoAssinatura: signaturePendings.length,
       feriasAtencao: filtered.filter((a) => a.tipo === "DESCANSO").length,
-      custoBeneficios: benefitTotals.total.toFixed(2),
+      custoBeneficios: cycleCost,
       divergenciasBeneficios: benefitTotals.divergences,
       distribuicaoVinculos: {
         CLT: clt,
@@ -572,6 +589,7 @@ export function registerReporting(app: FastifyInstance, db: PrismaClient) {
       ),
       prontidaoMensal: readiness,
       preparacaoMensalPorFornecedor: monthlyPreparation,
+      cicloMensalBeneficios: cycle,
       pendenciasPrioritarias: filteredPendings.slice(0, 20),
       kpiDetalhes: {
         pendenciasCriticas: filteredPendings.filter(

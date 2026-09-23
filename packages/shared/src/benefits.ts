@@ -157,6 +157,53 @@ export const pedidoMensalSimulacaoSchema = z
     tipo: z.enum(benefitTypes),
   })
   .strict();
+export const beneficioCicloQuerySchema = z
+  .object({
+    competencia: date.refine(
+      (value) => value.endsWith("-01"),
+      "Informe o primeiro dia do mês.",
+    ),
+    unidadeId: id.optional(),
+  })
+  .strict();
+const decimalString = z.string().regex(/^-?\d+\.\d{2}$/);
+export const beneficioCicloItemSchema = z
+  .object({
+    unidadeId: id,
+    unidade: z.string(),
+    tipo: z.enum(benefitTypes),
+    fornecedorId: id,
+    fornecedor: z.string(),
+    valorPrevisto: decimalString,
+    valorSolicitado: decimalString,
+    valorConcluido: decimalString,
+    saldoPendente: decimalString,
+    valorCancelado: decimalString,
+    pessoasPrevistas: z.number().int().nonnegative(),
+    pessoasSolicitadas: z.number().int().nonnegative(),
+    vinculosPrevistos: z.array(id),
+    vinculosSolicitados: z.array(id),
+    estado: z.enum(["PREVISTO", "SOLICITADO", "CONCLUIDO", "CANCELADO"]),
+    ocorrencias: z.array(z.string()),
+    impedimentos: z.array(z.string()),
+  })
+  .strict();
+export const beneficioCicloResponseSchema = z
+  .object({
+    competencia: date,
+    possuiPrevisao: z.boolean(),
+    totais: z
+      .object({
+        previsto: decimalString,
+        solicitado: decimalString,
+        concluido: decimalString,
+        pendente: decimalString,
+        cancelado: decimalString,
+      })
+      .strict(),
+    itens: z.array(beneficioCicloItemSchema),
+  })
+  .strict();
 export const pedidoMensalGerarSchema = pedidoMensalSimulacaoSchema.extend({
   itens: z
     .array(

@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { type Row } from "./api";
 import { EmptyState, StatusBadge, money } from "./ui";
 
@@ -25,8 +26,54 @@ type PreparationChartItem = {
   label: string;
   detail?: string;
   value: number;
+  values: Record<ChartMetric, number>;
   status?: string;
+  occurrences: string[];
+  impediments: string[];
 };
+
+type ChartMetric = "valorPrevisto" | "valorSolicitado" | "valorConcluido";
+
+const metricLabels: Record<ChartMetric, string> = {
+  valorPrevisto: "Previsto",
+  valorSolicitado: "Solicitado",
+  valorConcluido: "Concluído",
+};
+
+const occurrenceLabels: Record<string, string> = {
+  PEDIDO_CANCELADO: "Pedido cancelado",
+  CONFIRMACAO_PARCIAL: "Parcialmente confirmado",
+  REJEICAO: "Com rejeição",
+  REVERSAO: "Com reversão",
+  FORNECEDOR_INATIVO: "Fornecedor inativo",
+  COMPOSICAO_INCOMPLETA: "Composição incompleta",
+  BASE_REABERTA: "Base reaberta",
+  VINCULO_AFASTADO: "Vínculo afastado",
+  VINCULO_DESLIGADO: "Vínculo desligado",
+  VINCULO_NAO_ENCONTRADO: "Vínculo não encontrado",
+  PESSOA_INATIVA: "Pessoa inativa",
+  ADMISSAO_POSTERIOR: "Admissão posterior",
+  DESLIGAMENTO_ANTERIOR: "Desligamento anterior",
+};
+const stateLabels: Record<string, string> = {
+  PREVISTO: "Previsto",
+  SOLICITADO: "Solicitado",
+  CONCLUIDO: "Concluído",
+  CANCELADO: "Cancelado",
+};
+
+const metricValue = (row: Row, metric: ChartMetric) => Number(row[metric] ?? 0);
+
+const rowValues = (row: Row): Record<ChartMetric, number> => ({
+  valorPrevisto: metricValue(row, "valorPrevisto"),
+  valorSolicitado: metricValue(row, "valorSolicitado"),
+  valorConcluido: metricValue(row, "valorConcluido"),
+});
+
+function mergeText(current: string[], value: unknown) {
+  for (const item of Array.isArray(value) ? value : [])
+    if (typeof item === "string" && !current.includes(item)) current.push(item);
+}
 
 function piePoint(angle: number) {
   const radians = ((angle - 90) * Math.PI) / 180;
@@ -57,6 +104,10 @@ function pieLabelPoint(startAngle: number, endAngle: number) {
 
 function preparationSlices(items: PreparationChartItem[]) {
   const total = items.reduce((sum, item) => sum + Math.abs(item.value), 0);
+  let lastNonZeroIndex = -1;
+  items.forEach((item, index) => {
+    if (Math.abs(item.value) > 0) lastNonZeroIndex = index;
+  });
   return items.reduce<
     Array<PreparationChartItem & { start: number; end: number; color: string }>
   >((result, item, index) => {
@@ -65,7 +116,7 @@ function preparationSlices(items: PreparationChartItem[]) {
       ...item,
       start,
       end:
-        index === items.length - 1
+        index === lastNonZeroIndex
           ? 360
           : start + (Math.abs(item.value) / total) * 360,
       color: preparationChartColors[index % preparationChartColors.length]!,
@@ -98,6 +149,19 @@ export function MonthlyBenefitChart({
   setUnit: (value: string) => void;
   setCategory: (value: string) => void;
 }) {
+  const defaultMetric = useMemo<ChartMetric>(
+    () =>
+      monthlyPreparation.some((row) => metricValue(row, "valorPrevisto") !== 0)
+        ? "valorPrevisto"
+        : monthlyPreparation.some(
+              (row) => metricValue(row, "valorSolicitado") !== 0,
+            )
+          ? "valorSolicitado"
+          : "valorConcluido",
+    [monthlyPreparation],
+  );
+  const [metric, setMetric] = useState<ChartMetric>(defaultMetric);
+  useEffect(() => setMetric(defaultMetric), [competence, defaultMetric]);
   const selectedUnitName = unit
       ? String(
           monthlyPreparation.find((item) => String(item.unidadeId) === unit)
@@ -113,13 +177,25 @@ export function MonthlyBenefitChart({
         for (const row of monthlyPreparation) {
           const id = String(row.unidadeId),
             current = totals.get(id),
-            value = Number(row.valorPrevisto ?? 0);
-          if (current) current.value += value;
-          else
+            values = rowValues(row);
+          if (current) {
+            for (const key of Object.keys(values) as ChartMetric[])
+              current.values[key] += values[key];
+            current.value = current.values[metric];
+            mergeText(current.occurrences, row.ocorrencias);
+            mergeText(current.impediments, row.impedimentos);
+          } else
             totals.set(id, {
               id,
               label: String(row.unidade),
-              value,
+              value: values[metric],
+              values,
+              occurrences: Array.isArray(row.ocorrencias)
+                ? (row.ocorrencias as string[])
+                : [],
+              impediments: Array.isArray(row.impedimentos)
+                ? (row.impedimentos as string[])
+                : [],
             });
         }
         return [...totals.values()].sort(
@@ -131,14 +207,25 @@ export function MonthlyBenefitChart({
         for (const row of rowsForUnit) {
           const id = String(row.tipo),
             current = totals.get(id),
-            value = Number(row.valorPrevisto ?? 0);
-          if (current) current.value += value;
-          else
+            values = rowValues(row);
+          if (current) {
+            for (const key of Object.keys(values) as ChartMetric[])
+              current.values[key] += values[key];
+            current.value = current.values[metric];
+            mergeText(current.occurrences, row.ocorrencias);
+            mergeText(current.impediments, row.impedimentos);
+          } else
             totals.set(id, {
               id,
               label: benefitCategoryLabels[id] ?? id.replaceAll("_", " "),
-              value,
-              status: String(row.estado),
+              value: values[metric],
+              values,
+              occurrences: Array.isArray(row.ocorrencias)
+                ? (row.ocorrencias as string[])
+                : [],
+              impediments: Array.isArray(row.impedimentos)
+                ? (row.impedimentos as string[])
+                : [],
             });
         }
         return [...totals.values()].sort(
@@ -147,24 +234,49 @@ export function MonthlyBenefitChart({
       }
       return rowsForUnit
         .filter((row) => String(row.tipo) === category)
-        .map((row) => ({
-          id: String(row.fornecedorId),
-          label: String(row.fornecedor),
-          detail:
-            benefitCategoryLabels[category] ?? category.replaceAll("_", " "),
-          value: Number(row.valorPrevisto ?? 0),
-          status: String(row.estado),
-        }))
+        .map((row) => {
+          const values = rowValues(row);
+          return {
+            id: String(row.fornecedorId),
+            label: String(row.fornecedor),
+            detail:
+              benefitCategoryLabels[category] ?? category.replaceAll("_", " "),
+            value: values[metric],
+            values,
+            ...(row.estado ? { status: String(row.estado) } : {}),
+            occurrences: Array.isArray(row.ocorrencias)
+              ? (row.ocorrencias as string[])
+              : [],
+            impediments: Array.isArray(row.impedimentos)
+              ? (row.impedimentos as string[])
+              : [],
+          };
+        })
         .sort((left, right) => right.value - left.value);
     })(),
     chartTotal = chartItems.reduce(
       (sum, item) => sum + Math.abs(item.value),
       0,
     ),
-    chartSlices = chartTotal ? preparationSlices(chartItems) : [];
+    chartSlices = chartTotal
+      ? preparationSlices(chartItems)
+      : chartItems.map((item, index) => ({
+          ...item,
+          start: 0,
+          end: 0,
+          color: preparationChartColors[index % preparationChartColors.length]!,
+        }));
+  const levelTotals = chartItems.reduce(
+    (totals, item) => {
+      for (const key of Object.keys(totals) as ChartMetric[])
+        totals[key] += item.values[key];
+      return totals;
+    },
+    { valorPrevisto: 0, valorSolicitado: 0, valorConcluido: 0 },
+  );
   return (
     <>
-      {chartSlices.length ? (
+      {chartItems.length ? (
         <div
           className="monthly-preparation-chart"
           aria-label="Valores previstos por unidade, categoria e fornecedor"
@@ -208,64 +320,93 @@ export function MonthlyBenefitChart({
           <div className="monthly-preparation-unit-heading">
             <span>Competência: {formatCompetenceMonth(competence)}</span>
           </div>
+          <div
+            className="monthly-benefit-metric-selector"
+            aria-label="Valor exibido no gráfico"
+          >
+            {(Object.keys(metricLabels) as ChartMetric[]).map((key) => (
+              <button
+                type="button"
+                key={key}
+                className={metric === key ? "active" : "secondary"}
+                aria-pressed={metric === key}
+                onClick={() => setMetric(key)}
+              >
+                <span>{metricLabels[key]}</span>
+                <strong>{money(levelTotals[key])}</strong>
+              </button>
+            ))}
+          </div>
           <div className="monthly-preparation-pie-layout">
             <div className="monthly-preparation-pie-summary">
-              <svg
-                className="monthly-preparation-pie"
-                viewBox="0 0 100 100"
-                role="img"
-                aria-label={`Distribuição de ${money(chartTotal)} na competência ${competence}.`}
-              >
-                {chartSlices.map((slice) => {
-                  const percentage = (Math.abs(slice.value) / chartTotal) * 100,
-                    label = `${slice.label}${slice.detail ? `, ${slice.detail}` : ""}: ${money(slice.value)} (${percentage.toFixed(1)}%)`,
-                    select = !unit
-                      ? () => {
-                          setUnit(slice.id);
-                          setCategory("");
-                        }
-                      : !category
-                        ? () => setCategory(slice.id)
-                        : undefined;
-                  const showPercentage = percentage >= 5,
-                    labelPoint = pieLabelPoint(slice.start, slice.end);
-                  return (
-                    <g key={slice.id}>
-                      <path
-                        d={pieSlicePath(slice.start, slice.end)}
-                        fill={slice.color}
-                        className="monthly-preparation-slice"
-                        role={select ? "button" : undefined}
-                        tabIndex={select ? 0 : undefined}
-                        aria-label={label}
-                        onClick={select}
-                        onKeyDown={(event) => {
-                          if (!select || !["Enter", " "].includes(event.key))
-                            return;
-                          event.preventDefault();
-                          select();
-                        }}
-                      >
-                        <title>{label}</title>
-                      </path>
-                      {showPercentage && (
-                        <text
-                          className="monthly-preparation-slice-percentage"
-                          x={labelPoint.x}
-                          y={labelPoint.y}
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          aria-hidden="true"
-                        >
-                          {percentage.toFixed(1)}%
-                        </text>
-                      )}
-                    </g>
-                  );
-                })}
-              </svg>
+              {chartTotal ? (
+                <svg
+                  className="monthly-preparation-pie"
+                  viewBox="0 0 100 100"
+                  role="img"
+                  aria-label={`Distribuição do valor ${metricLabels[metric].toLowerCase()} de ${money(chartTotal)} na competência ${competence}.`}
+                >
+                  {chartSlices
+                    .filter((slice) => Math.abs(slice.value) > 0)
+                    .map((slice) => {
+                      const percentage =
+                          (Math.abs(slice.value) / chartTotal) * 100,
+                        label = `${slice.label}${slice.detail ? `, ${slice.detail}` : ""}: ${money(slice.value)} (${percentage.toFixed(1)}%)`,
+                        select = !unit
+                          ? () => {
+                              setUnit(slice.id);
+                              setCategory("");
+                            }
+                          : !category
+                            ? () => setCategory(slice.id)
+                            : undefined;
+                      const showPercentage = percentage >= 5,
+                        labelPoint = pieLabelPoint(slice.start, slice.end);
+                      return (
+                        <g key={slice.id}>
+                          <path
+                            d={pieSlicePath(slice.start, slice.end)}
+                            fill={slice.color}
+                            className="monthly-preparation-slice"
+                            role={select ? "button" : undefined}
+                            tabIndex={select ? 0 : undefined}
+                            aria-label={label}
+                            onClick={select}
+                            onKeyDown={(event) => {
+                              if (
+                                !select ||
+                                !["Enter", " "].includes(event.key)
+                              )
+                                return;
+                              event.preventDefault();
+                              select();
+                            }}
+                          >
+                            <title>{label}</title>
+                          </path>
+                          {showPercentage && (
+                            <text
+                              className="monthly-preparation-slice-percentage"
+                              x={labelPoint.x}
+                              y={labelPoint.y}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              aria-hidden="true"
+                            >
+                              {percentage.toFixed(1)}%
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })}
+                </svg>
+              ) : (
+                <div className="monthly-preparation-pie-empty">
+                  Sem valor {metricLabels[metric].toLowerCase()}
+                </div>
+              )}
               <strong className="monthly-preparation-total">
-                Total previsto: {money(chartTotal)}
+                Total {metricLabels[metric].toLowerCase()}: {money(chartTotal)}
               </strong>
             </div>
             <div className="monthly-preparation-legend">
@@ -294,13 +435,30 @@ export function MonthlyBenefitChart({
                     />
                     <span className="monthly-preparation-legend-label">
                       <strong>{slice.label}</strong>
+                      {slice.detail && <span>{slice.detail}</span>}
+                      <span>Previsto: {money(slice.values.valorPrevisto)}</span>
                       <span>
-                        {slice.detail ? `${slice.detail} · ` : ""}
-                        {money(slice.value)}
+                        Solicitado: {money(slice.values.valorSolicitado)}
                       </span>
+                      <span>
+                        Concluído: {money(slice.values.valorConcluido)}
+                      </span>
+                      {[...slice.occurrences, ...slice.impediments].map(
+                        (item) => (
+                          <small key={item}>
+                            {occurrenceLabels[item] ??
+                              item.replaceAll("_", " ")}
+                          </small>
+                        ),
+                      )}
                     </span>
                     {slice.status && (
-                      <StatusBadge value={slice.status.replaceAll("_", " ")} />
+                      <StatusBadge
+                        value={
+                          stateLabels[slice.status] ??
+                          slice.status.replaceAll("_", " ")
+                        }
+                      />
                     )}
                   </button>
                 );
@@ -310,8 +468,8 @@ export function MonthlyBenefitChart({
         </div>
       ) : (
         <EmptyState
-          title="Sem valores previstos"
-          description="Não há valores de benefício maiores ou menores que zero para a unidade e competência selecionadas."
+          title="Sem valores no ciclo"
+          description="Não há previsão, solicitação, conclusão ou histórico cancelado para a unidade e competência selecionadas."
         />
       )}
     </>

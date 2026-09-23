@@ -49,6 +49,7 @@ export function BenefitAcquisitionPage({
     ),
     [rows, setRows] = useState<Row[]>([]),
     [orders, setOrders] = useState<Row[]>([]),
+    [cycleRows, setCycleRows] = useState<Row[]>([]),
     [loading, setLoading] = useState(true),
     [working, setWorking] = useState(false),
     [error, setError] = useState(""),
@@ -89,7 +90,9 @@ export function BenefitAcquisitionPage({
     if (!selectedUnits.length) return;
     setLoading(true);
     try {
-      const [previews, acquired] = await Promise.all([
+      const cycleParams = new URLSearchParams({ competencia });
+      if (unit) cycleParams.set("unidadeId", unit);
+      const [previews, acquired, cycle] = await Promise.all([
         Promise.all(
           selectedUnits.map(async (item) => ({
             unidade: item,
@@ -99,6 +102,7 @@ export function BenefitAcquisitionPage({
           })),
         ),
         api<Row[]>(`aquisicoes-beneficios?competencia=${competencia}`),
+        api<{ itens: Row[] }>(`beneficios/ciclo-mensal?${cycleParams}`),
       ]);
       setRows(
         previews.flatMap(({ unidade, itens }) =>
@@ -110,6 +114,7 @@ export function BenefitAcquisitionPage({
         ),
       );
       setOrders(acquired);
+      setCycleRows(cycle.itens);
       setError("");
     } catch (reason) {
       setError((reason as Error).message);
@@ -148,6 +153,7 @@ export function BenefitAcquisitionPage({
         tipo: string;
         rows: Row[];
         orders: Row[];
+        cycles: Row[];
       }
     >();
     for (const row of visibleRows) {
@@ -158,6 +164,7 @@ export function BenefitAcquisitionPage({
         tipo: String(row.beneficio),
         rows: [],
         orders: [],
+        cycles: [],
       };
       group.rows.push(row);
       groups.set(key, group);
@@ -172,8 +179,24 @@ export function BenefitAcquisitionPage({
         tipo: String(order.tipo),
         rows: [],
         orders: [],
+        cycles: [],
       };
       group.orders.push(order);
+      groups.set(key, group);
+    }
+    for (const cycle of cycleRows.filter((row) => !type || row.tipo === type)) {
+      const key = `${cycle.unidadeId}:${cycle.tipo}`;
+      const group = groups.get(key) ?? {
+        unidadeId: String(cycle.unidadeId),
+        unidade:
+          units.find((item) => String(item.id) === String(cycle.unidadeId)) ??
+          ({ nome: String(cycle.unidade) } as Row),
+        tipo: String(cycle.tipo),
+        rows: [],
+        orders: [],
+        cycles: [],
+      };
+      group.cycles.push(cycle);
       groups.set(key, group);
     }
     return [...groups.values()].sort(
@@ -184,7 +207,7 @@ export function BenefitAcquisitionPage({
           "pt-BR",
         ),
     );
-  }, [visibleRows, visibleOrders, units]);
+  }, [visibleRows, visibleOrders, cycleRows, type, units]);
   const detailRows = detail
     ? visibleRows.filter(
         (row) =>
@@ -197,6 +220,13 @@ export function BenefitAcquisitionPage({
         (order) =>
           String(order.unidadeId) === detail.unidadeId &&
           order.tipo === detail.tipo,
+      )
+    : [];
+  const detailCycles = detail
+    ? cycleRows.filter(
+        (row) =>
+          String(row.unidadeId) === detail.unidadeId &&
+          row.tipo === detail.tipo,
       )
     : [];
   const unitCards = useMemo(
@@ -389,8 +419,9 @@ export function BenefitAcquisitionPage({
                         unitCard.categorias.reduce(
                           (total, category) =>
                             total +
-                            category.rows.reduce(
-                              (sum, row) => sum + Number(row.previsto ?? 0),
+                            category.cycles.reduce(
+                              (sum, row) =>
+                                sum + Number(row.valorPrevisto ?? 0),
                               0,
                             ),
                           0,
@@ -400,27 +431,51 @@ export function BenefitAcquisitionPage({
                   </header>
                   <div className="competency-category-grid">
                     {unitCard.categorias.map((category) => {
-                      const previsto = category.rows.reduce(
-                        (sum, row) => sum + Number(row.previsto ?? 0),
+                      const previsto = category.cycles.reduce(
+                        (sum, row) => sum + Number(row.valorPrevisto ?? 0),
                         0,
                       );
-                      const comprado = category.rows.reduce(
-                        (sum, row) => sum + Number(row.compradoLiquido ?? 0),
+                      const solicitado = category.cycles.reduce(
+                        (sum, row) => sum + Number(row.valorSolicitado ?? 0),
                         0,
                       );
-                      const emPedido = category.rows.reduce(
-                        (sum, row) => sum + Number(row.emPedido ?? 0),
+                      const concluido = category.cycles.reduce(
+                        (sum, row) => sum + Number(row.valorConcluido ?? 0),
                         0,
+                      );
+                      const emPedido = category.cycles.reduce(
+                        (sum, row) => sum + Number(row.saldoPendente ?? 0),
+                        0,
+                      );
+                      const personIds = new Set(
+                        category.cycles.flatMap((row) => {
+                          const requested = Array.isArray(
+                            row.vinculosSolicitados,
+                          )
+                            ? (row.vinculosSolicitados as string[])
+                            : [];
+                          const predicted = Array.isArray(row.vinculosPrevistos)
+                            ? (row.vinculosPrevistos as string[])
+                            : [];
+                          return solicitado > 0 ? requested : predicted;
+                        }),
                       );
                       const activeOrder = category.orders.find(
                         (order) => order.status !== "CANCELADA",
                       );
-                      const situacao = activeOrder
-                        ? (labels[String(activeOrder.status)] ??
-                          display(activeOrder.status))
-                        : category.orders.length
-                          ? "Cancelado"
-                          : "Não solicitado";
+                      const situacao =
+                        emPedido > 0
+                          ? "Solicitado"
+                          : solicitado > 0
+                            ? "Concluído"
+                            : previsto > 0
+                              ? "Previsto"
+                              : activeOrder
+                                ? (labels[String(activeOrder.status)] ??
+                                  display(activeOrder.status))
+                                : category.orders.length
+                                  ? "Cancelado"
+                                  : "Não solicitado";
                       return (
                         <button
                           className="competency-category-card"
@@ -435,11 +490,11 @@ export function BenefitAcquisitionPage({
                           <span>{labels[category.tipo] ?? category.tipo}</span>
                           <strong>{money(previsto)}</strong>
                           <small>
-                            {category.rows.length} lançamento(s) · {situacao}
+                            {personIds.size} pessoa(s) · {situacao}
                           </small>
                           <small>
-                            Comprado: {money(comprado)} · Em pedido:{" "}
-                            {money(emPedido)}
+                            Solicitado: {money(solicitado)} · Concluído:{" "}
+                            {money(concluido)} · Pendente: {money(emPedido)}
                           </small>
                         </button>
                       );
@@ -467,6 +522,46 @@ export function BenefitAcquisitionPage({
         description="Confira os lançamentos e os pedidos desta categoria antes de confirmar, cancelar ou reverter."
       >
         <div className="page-stack competency-detail-modal">
+          {detailCycles.length > 0 && (
+            <section className="competency-cycle-summary">
+              <h3>Resumo do ciclo</h3>
+              <div className="benefit-summary-metrics">
+                <div className="metric-card">
+                  <span>Previsto</span>
+                  <strong>
+                    {money(
+                      detailCycles.reduce(
+                        (sum, row) => sum + Number(row.valorPrevisto ?? 0),
+                        0,
+                      ),
+                    )}
+                  </strong>
+                </div>
+                <div className="metric-card">
+                  <span>Solicitado</span>
+                  <strong>
+                    {money(
+                      detailCycles.reduce(
+                        (sum, row) => sum + Number(row.valorSolicitado ?? 0),
+                        0,
+                      ),
+                    )}
+                  </strong>
+                </div>
+                <div className="metric-card">
+                  <span>Concluído</span>
+                  <strong>
+                    {money(
+                      detailCycles.reduce(
+                        (sum, row) => sum + Number(row.valorConcluido ?? 0),
+                        0,
+                      ),
+                    )}
+                  </strong>
+                </div>
+              </div>
+            </section>
+          )}
           <section>
             <h3>Lançamentos</h3>
             <div className="table-wrap">

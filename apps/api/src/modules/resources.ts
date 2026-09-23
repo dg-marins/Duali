@@ -12,6 +12,7 @@ import {
 } from "@duali/shared";
 import argon2 from "argon2";
 import { acquire } from "./leave-domain.js";
+import { refreshForecastsForLink } from "./benefit-cycle.js";
 import {
   audit,
   dateData,
@@ -57,6 +58,15 @@ export const resources: Resource[] = [
     schema: pessoaSchema,
     dates: ["dataNascimento"],
     search: "nomeCompleto",
+    after: async (tx, current, previous, userId) => {
+      if (!previous || current.ativa === previous.ativa) return;
+      const links = await tx.vinculo.findMany({
+        where: { pessoaId: String(current.id) },
+        select: { id: true },
+      });
+      for (const link of links)
+        await refreshForecastsForLink(tx, link.id, userId);
+    },
   },
   { path: "unidades", model: "unidade", schema: unidadeSchema, search: "nome" },
   { path: "equipes", model: "equipe", schema: equipeSchema, search: "nome" },
@@ -120,7 +130,7 @@ export const resources: Resource[] = [
           throw new DomainError(422, "Selecione uma equipe ativa.");
       }
     },
-    after: async (tx, current, previous) => {
+    after: async (tx, current, previous, userId) => {
       if (current.equipeId !== previous?.equipeId) {
         const now = new Date();
         await tx.vinculoEquipeHistorico.updateMany({
@@ -136,6 +146,13 @@ export const resources: Resource[] = [
             },
           });
       }
+      if (
+        previous &&
+        (current.status !== previous.status ||
+          String(current.dataDesligamento ?? "") !==
+            String(previous.dataDesligamento ?? ""))
+      )
+        await refreshForecastsForLink(tx, String(current.id), userId);
     },
   },
   {

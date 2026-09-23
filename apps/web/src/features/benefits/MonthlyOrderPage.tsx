@@ -525,11 +525,21 @@ export function MonthlyOrderPage({
                         )}
                       </td>
                       <td>
-                        {row.referenciaStatus === "NOVA_AQUISICAO"
-                          ? "Nova aquisição"
-                          : row.referenciaStatus === "SEM_REFERENCIA"
-                            ? "Sem referência no mês anterior"
-                            : money(row.referenciaAnterior)}
+                        <span className="monthly-order-reference">
+                          {row.valorPrevisto !== null &&
+                            row.valorPrevisto !== undefined && (
+                              <strong>
+                                Previsto: {money(row.valorPrevisto)}
+                              </strong>
+                            )}
+                          <span>
+                            {row.referenciaStatus === "NOVA_AQUISICAO"
+                              ? "Nova aquisição"
+                              : row.referenciaStatus === "SEM_REFERENCIA"
+                                ? "Sem referência no mês anterior"
+                                : `Mês anterior: ${money(row.referenciaAnterior)}`}
+                          </span>
+                        </span>
                       </td>
                       <td>
                         {type === "ALIMENTACAO" ? (

@@ -5,6 +5,7 @@ import {
   aquisicaoPedidoSchema,
   aquisicaoPrepararSchema,
   aquisicaoReverterSchema,
+  beneficioCicloQuerySchema,
   pedidoMensalGerarSchema,
   pedidoMensalSimulacaoSchema,
   z,
@@ -23,6 +24,10 @@ import {
   idempotent,
   operationalBenefitCompetence,
 } from "./benefits.js";
+import {
+  benefitCycleSummary,
+  refreshExistingNextMonthForecasts,
+} from "./benefit-cycle.js";
 
 const monthEnd = (month: Date) =>
   new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0));
@@ -218,6 +223,15 @@ async function monthlyOrderDraft(
     include: { fornecedor: true },
     orderBy: { fornecedor: { nome: "asc" } },
   });
+  const forecast = await tx.previsaoBeneficioVersao.findFirst({
+    where: {
+      unidadeId: unitId,
+      tipo: type as never,
+      competencia: month,
+      vigente: true,
+    },
+    include: { itens: true },
+  });
   const previousOrderExists = await tx.aquisicaoBeneficio.count({
     where: {
       unidadeId: unitId,
@@ -256,6 +270,17 @@ async function monthlyOrderDraft(
     orderBy: { pessoa: { nomeCompleto: "asc" } },
   });
   return links.map((link) => {
+    const forecastItems =
+      forecast?.itens.filter((item) => item.vinculoId === link.id) ?? [];
+    const forecastValue = forecastItems
+      .filter((item) => item.incluido)
+      .reduce(
+        (total, item) => total.plus(item.valorPrevisto),
+        new Prisma.Decimal(0),
+      );
+    const forecastImpediments = [
+      ...new Set(forecastItems.flatMap((item) => item.impedimentos)),
+    ];
     const benefit =
       link.beneficios.find((item) =>
         item.competencias.some(
@@ -318,7 +343,9 @@ async function monthlyOrderDraft(
         : (monthly ??
           (days != null && daily != null
             ? new Prisma.Decimal(days).times(daily)
-            : null));
+            : forecastValue.greaterThan(0)
+              ? forecastValue
+              : null));
     return {
       vinculoId: link.id,
       pessoa: link.pessoa.nomeCompleto,
@@ -351,6 +378,10 @@ async function monthlyOrderDraft(
         null,
       valorMensalBase: monthly?.toFixed(2) ?? null,
       valorSugerido: suggested?.toDecimalPlaces(2).toFixed(2) ?? null,
+      valorPrevisto:
+        forecastItems.length > 0
+          ? forecastValue.toDecimalPlaces(2).toFixed(2)
+          : null,
       referenciaAnterior:
         previousRequested?.toDecimalPlaces(2).toFixed(2) ?? null,
       referenciaStatus: previous
@@ -366,7 +397,11 @@ async function monthlyOrderDraft(
         ? "Já existe pedido para este lançamento."
         : configurations.length === 0
           ? "Nenhum fornecedor ativo configurado para esta unidade e categoria."
-          : null,
+          : forecastImpediments.includes("COMPOSICAO_INCOMPLETA")
+            ? "A previsão possui composição histórica incompleta e precisa ser revisada."
+            : forecastImpediments.includes("FORNECEDOR_INATIVO")
+              ? "A previsão usa um fornecedor inativo; selecione uma configuração válida."
+              : null,
     };
   });
 }
@@ -380,6 +415,14 @@ async function generateMonthlyOrder(
 ) {
   const month = new Date(body.competencia);
   await ensureOpen(tx, body.unidadeId, month);
+  const forecast = await tx.previsaoBeneficioVersao.findFirst({
+    where: {
+      unidadeId: body.unidadeId,
+      tipo: body.tipo,
+      competencia: month,
+      vigente: true,
+    },
+  });
   const selected = body.itens.filter((item) => item.incluir);
   if (!selected.length)
     throw new DomainError(422, "Selecione ao menos uma pessoa.");
@@ -634,6 +677,7 @@ async function generateMonthlyOrder(
         competencia: month,
         tipo: first.beneficio as never,
         fornecedorId: String(supplier.id),
+        ...(forecast ? { previsaoVersaoId: forecast.id } : {}),
         criadoPorId: userId,
       },
     });
@@ -692,6 +736,18 @@ async function generateMonthlyOrder(
     );
     orders.push(order.id);
   }
+  if (forecast && !forecast.congeladaEm)
+    await tx.previsaoBeneficioVersao.update({
+      where: { id: forecast.id },
+      data: { congeladaEm: new Date() },
+    });
+  await refreshExistingNextMonthForecasts(
+    tx,
+    body.unidadeId,
+    month,
+    "CORRECAO_PEDIDO_BASE",
+    userId,
+  );
   return {
     pedidos: orders.length,
     competencias: competenceIds.length,
@@ -799,6 +855,14 @@ export function registerBenefitAcquisitions(
   app: FastifyInstance,
   db: PrismaClient,
 ) {
+  app.get("/api/beneficios/ciclo-mensal", async (req) => {
+    const query = beneficioCicloQuerySchema.parse(req.query);
+    return benefitCycleSummary(
+      db,
+      new Date(`${query.competencia}T00:00:00.000Z`),
+      query.unidadeId,
+    );
+  });
   app.get("/api/beneficios/resumo", async (req) => {
     const query = z
       .object({
@@ -832,13 +896,34 @@ export function registerBenefitAcquisitions(
       emPedido = emPedido.plus(item.reserved);
       compradoLiquido = compradoLiquido.plus(item.gross.minus(item.reversed));
     }
+    const cycle = await benefitCycleSummary(
+      db,
+      new Date(`${query.competencia}T00:00:00.000Z`),
+      query.unidadeId,
+    );
+    const hasCycle = cycle.itens.length > 0;
+    const hasPersistedForecast = cycle.possuiPrevisao;
     return {
       competencia: query.competencia,
-      previsto: previsto.toFixed(2),
-      compradoLiquido: compradoLiquido.toFixed(2),
-      emPedido: emPedido.toFixed(2),
+      previsto: hasPersistedForecast
+        ? cycle.totais.previsto
+        : previsto.toFixed(2),
+      previsaoPersistida: hasPersistedForecast,
+      solicitado: cycle.totais.solicitado,
+      concluido: cycle.totais.concluido,
+      compradoLiquido: hasCycle
+        ? cycle.totais.concluido
+        : compradoLiquido.toFixed(2),
+      emPedido: hasCycle ? cycle.totais.pendente : emPedido.toFixed(2),
+      cancelado: cycle.totais.cancelado,
       lancamentosPendentes: rows.filter((row) => row.status === "PENDENTE")
         .length,
+      cicloMensal: cycle.itens,
+      legado: {
+        previsto: previsto.toFixed(2),
+        compradoLiquido: compradoLiquido.toFixed(2),
+        emPedido: emPedido.toFixed(2),
+      },
     };
   });
   app.get("/api/aquisicoes-beneficios/previa", async (req) => {
@@ -1183,6 +1268,7 @@ export function registerBenefitAcquisitions(
                 equipeNome: item.row!.equipe ? String(item.row!.equipe) : null,
                 destino: String((item.row!.fornecedor as Row).nome),
                 valorPrevisto: String(item.row!.previsto),
+                valorSolicitado: item.input.valor,
                 valorReservado: item.input.valor,
               },
             });
@@ -1303,6 +1389,13 @@ export function registerBenefitAcquisitions(
             order,
             current,
           );
+          await refreshExistingNextMonthForecasts(
+            tx,
+            order.unidadeId,
+            order.competencia,
+            "CONFIRMACAO_PEDIDO_BASE",
+            req.userId,
+          );
           return current;
         },
         { userId: req.userId, scope: id },
@@ -1368,6 +1461,13 @@ export function registerBenefitAcquisitions(
             order,
             current,
           );
+          await refreshExistingNextMonthForecasts(
+            tx,
+            order.unidadeId,
+            order.competencia,
+            "CANCELAMENTO_PEDIDO_BASE",
+            req.userId,
+          );
           return current;
         },
         { userId: req.userId, scope: id },
@@ -1428,6 +1528,13 @@ export function registerBenefitAcquisitions(
             movement.id,
             undefined,
             movement,
+          );
+          await refreshExistingNextMonthForecasts(
+            tx,
+            item.aquisicao.unidadeId,
+            item.aquisicao.competencia,
+            "REVERSAO_PEDIDO_BASE",
+            req.userId,
           );
           return movement;
         },

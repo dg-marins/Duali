@@ -58,4 +58,8 @@ Em Fazer pedido, a equipe não é exibida como filtro ou coluna. Ao adicionar tr
 
 Competências inicia com cards por unidade. Cada categoria resume lançamentos, previsto, comprado e valores em pedido; o detalhe da categoria abre em modal com os pedidos e as ações de confirmação, cancelamento e reversão.
 
+Dashboard e Benefícios usam a mesma consulta do ciclo mensal e o mesmo gráfico hierárquico Unidade → Categoria → Fornecedor. O gráfico permite alternar entre **Previsto**, **Solicitado** e **Concluído**; o tamanho das fatias acompanha a métrica selecionada, enquanto a legenda mantém os três valores visíveis. Saldo pendente, cancelamento, parcial, rejeição, reversão e impedimentos aparecem em texto, sem depender apenas da cor.
+
+Uma competência futura pode mostrar a previsão criada no fechamento do mês anterior mesmo sem pedido. Em Fazer pedido, a previsão é apresentada como referência; o RH continua revisando participantes, fornecedores e valores. O pedido congela a previsão usada e preserva a comparação histórica entre previsto, solicitado e concluído.
+
 O cancelamento de um pedido pendente preserva o pedido e os valores originais no histórico. Quando só existem pedidos cancelados, o lançamento criado pelo pedido direto sai dos valores operacionais do mês e pode ser reutilizado em uma nova emissão. Pedidos com compra registrada exigem os fluxos próprios de saldo e reversão.

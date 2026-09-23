@@ -1,4 +1,5 @@
 import { assertCurrentEmployment } from "./current-employment.js";
+import { refreshForecastsForLink } from "./benefit-cycle.js";
 import type { FastifyInstance } from "fastify";
 import type { PrismaClient } from "@duali/database";
 import {
@@ -431,6 +432,12 @@ export function registerPeopleComposite(
         data: linkData as never,
         include: { pessoa: true, unidade: true, equipe: true },
       });
+      if (
+        current.status !== previous.status ||
+        String(current.dataDesligamento ?? "") !==
+          String(previous.dataDesligamento ?? "")
+      )
+        await refreshForecastsForLink(tx, id, req.userId);
       if (current.equipeId !== previous.equipeId) {
         const now = new Date();
         await tx.vinculoEquipeHistorico.updateMany({

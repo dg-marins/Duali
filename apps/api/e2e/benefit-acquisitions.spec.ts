@@ -3,6 +3,153 @@ import { randomUUID } from "node:crypto";
 import argon2 from "argon2";
 import { PrismaClient } from "@duali/database";
 import { testDatabaseUrl } from "../src/test-helper.js";
+import { transaction } from "../src/core.js";
+import { generateNextMonthForecasts } from "../src/modules/benefit-cycle.js";
+
+test("exibe previsão futura no mesmo ciclo do Dashboard e de Benefícios", async ({
+  page,
+}) => {
+  const db = new PrismaClient({ datasourceUrl: testDatabaseUrl() });
+  const suffix = randomUUID(),
+    password = `${suffix}Aa!`;
+  try {
+    const user = await db.usuario.create({
+      data: {
+        nome: "Previsão E2E",
+        email: `${suffix}@example.test`,
+        senhaHash: await argon2.hash(password),
+      },
+    });
+    const unit = await db.unidade.create({
+      data: {
+        nome: `Unidade previsão ${suffix.slice(0, 8)}`,
+        sigla: suffix.slice(0, 8),
+        uf: "RJ",
+      },
+    });
+    const supplier = await db.fornecedor.create({
+      data: { nome: `Fornecedor previsão ${suffix.slice(0, 8)}` },
+    });
+    const configuration = await db.configuracaoBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        fornecedorId: supplier.id,
+        tipo: "ALIMENTACAO",
+      },
+    });
+    const person = await db.pessoa.create({
+      data: { nomeCompleto: `Pessoa previsão ${suffix.slice(0, 8)}` },
+    });
+    const link = await db.vinculo.create({
+      data: {
+        pessoaId: person.id,
+        unidadeId: unit.id,
+        tipo: "CLT",
+        dataAdmissao: new Date("2025-01-01"),
+      },
+    });
+    const benefit = await db.beneficioVinculo.create({
+      data: {
+        vinculoId: link.id,
+        tipo: "ALIMENTACAO",
+        inicioVigencia: new Date("2025-01-01"),
+      },
+    });
+    const competence = await db.beneficioCompetencia.create({
+      data: {
+        beneficioVinculoId: benefit.id,
+        configuracaoId: configuration.id,
+        competencia: new Date("2026-09-01"),
+        valorMensalBase: "200.00",
+      },
+    });
+    const order = await db.aquisicaoBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        competencia: new Date("2026-09-01"),
+        tipo: "ALIMENTACAO",
+        fornecedorId: supplier.id,
+        status: "CONFIRMADA",
+        criadoPorId: user.id,
+      },
+    });
+    await db.aquisicaoBeneficioItem.create({
+      data: {
+        aquisicaoId: order.id,
+        competenciaId: competence.id,
+        vinculoId: link.id,
+        pessoaNome: person.nomeCompleto,
+        destino: supplier.nome,
+        valorPrevisto: "200.00",
+        valorSolicitado: "200.00",
+        valorReservado: "0.00",
+        composicao: { versao: 1, categoria: "ALIMENTACAO" },
+        status: "CONFIRMADO",
+      },
+    });
+    await db.fechamentoCompetenciaBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        competencia: new Date("2026-09-01"),
+        status: "FECHADA",
+        fechadoEm: new Date(),
+        fechadoPor: user.id,
+      },
+    });
+    await transaction(db, (tx) =>
+      generateNextMonthForecasts(
+        tx,
+        unit.id,
+        new Date("2026-09-01"),
+        "FECHAMENTO_COMPETENCIA",
+        user.id,
+      ),
+    );
+
+    await page.goto("/");
+    await page.getByLabel("E-mail", { exact: true }).fill(user.email);
+    await page.getByLabel("Senha", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
+    await expect(
+      page.getByText("Previsão E2E", { exact: true }).first(),
+    ).toBeVisible();
+    await page.goto(
+      `/app/beneficios?competencia=2026-10-01&unidadeId=${unit.id}`,
+    );
+    await expect(
+      page.getByRole("button", { name: /Valor previsto/ }),
+    ).toContainText(/R\$\s*200,00/);
+    await expect(
+      page.getByRole("button", { name: /Previsto R\$\s*200,00/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    const category = page
+      .locator(".monthly-preparation-legend-row")
+      .filter({ hasText: "Alimentação" });
+    await category.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      page
+        .locator(".monthly-preparation-legend-row")
+        .filter({ hasText: supplier.nome }),
+    ).toContainText(/Previsto:\s*R\$\s*200,00/);
+    await page.getByRole("button", { name: /Solicitado R\$\s*0,00/ }).click();
+    await expect(page.getByText("Sem valor solicitado")).toBeVisible();
+    await page.screenshot({
+      path: "artifacts/beneficios-previsao-futura.png",
+      fullPage: true,
+    });
+
+    await page.goto(`/app?competencia=2026-10-01&unidadeId=${unit.id}`);
+    await expect(
+      page.getByRole("heading", { name: "Benefício Mensal" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Previsto R\$\s*200,00/ }),
+    ).toBeVisible();
+  } finally {
+    await db.$disconnect();
+  }
+});
 
 test("administra pedido e confirmação de aquisição mensal", async ({
   page,

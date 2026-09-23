@@ -12,7 +12,8 @@
     "admin:reset": "tsx src/admin.ts reset",
     "verify:intern-import": "tsx src/verify-intern-import.ts",
     "verify:audited-import": "tsx src/verify-audited-import.ts",
-    "verify:document-validity": "tsx src/verify-document-validity.ts"
+    "verify:document-validity": "tsx src/verify-document-validity.ts",
+    "verify:benefit-forecasts": "tsx src/verify-benefit-forecasts.ts"
   },
   "dependencies": {
     "@duali/database": "workspace:*",

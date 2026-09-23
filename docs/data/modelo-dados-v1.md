@@ -251,6 +251,29 @@ Para categorias calculadas por quantidade, a adesão recorrente pode registrar `
 
 O valor calculado pode ser derivado quando existirem os componentes necessários.
 
+`previsao_beneficio_serie`
+
+- identifica de forma única unidade, categoria e competência de destino;
+- reúne todas as versões da mesma previsão mensal;
+- impede a criação concorrente de séries duplicadas.
+
+`previsao_beneficio_versao`
+
+- pertence à série de unidade, categoria e competência de destino;
+- referencia a competência-base imediatamente anterior;
+- mantém número da versão, versão vigente, causa, fingerprint e instante de congelamento;
+- sinaliza base reaberta e composição incompleta;
+- permite apenas uma versão vigente por unidade, categoria e competência.
+
+`previsao_beneficio_item`
+
+- referencia a versão, o vínculo, o fornecedor e, quando disponível, o item de pedido de origem;
+- preserva nomes de pessoa e fornecedor, valor previsto e composição no momento da projeção;
+- registra inclusão ou exclusão, motivo, impedimentos e origem do valor;
+- mantém itens excluídos para auditoria sem somá-los ao total previsto.
+
+`aquisicao_beneficio.previsao_versao_id` liga opcionalmente o pedido à previsão usada. `valor_solicitado` permanece o original imutável do item; `valor_reservado` é somente o saldo pendente; o concluído líquido é derivado das confirmações menos reversões. Registros legados podem continuar sem vínculo de previsão ou composição completa.
+
 ## 14. Usuário
 
 `usuario`
@@ -343,7 +366,6 @@ Persistidos:
 `pessoa` possui os campos opcionais `cep`, `logradouro`, `numero_endereco`, `complemento`, `bairro`, `cidade_endereco` e `uf_endereco`. O campo `endereco` permanece como texto legado para preservar importações anteriores sem inferir uma divisão potencialmente incorreta.
 
 A migration `202609070002_structured_person_address` adiciona esses campos sem alterar os valores já armazenados.
-
 
 ## Unicidade do vínculo atual
 

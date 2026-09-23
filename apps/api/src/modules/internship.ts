@@ -20,6 +20,7 @@ import {
 } from "../core.js";
 import { registerResource, type Resource } from "./resources.js";
 import { documentState } from "./internship-cycle.js";
+import { refreshForecastsForLink } from "./benefit-cycle.js";
 async function requireInternship(tx: Tx, data: Row, previous: Row | null) {
   if (previous && previous.vinculoId !== data.vinculoId)
     throw new DomainError(
@@ -185,6 +186,7 @@ async function syncDistrato(
     link,
     current,
   );
+  await refreshForecastsForLink(tx, link.id, userId);
 }
 export const internshipResources: Resource[] = [
   {
@@ -326,6 +328,7 @@ export function registerInternship(app: FastifyInstance, db: PrismaClient) {
         link,
         restored,
       );
+      await refreshForecastsForLink(tx, link.id, req.userId);
       return { documento: cancelled, vinculo: restored };
     });
   });

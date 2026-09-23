@@ -1099,9 +1099,20 @@ test("monthly order creates the technical benefit and fixed food snapshot idempo
       headers: f.headers,
     });
     expect(
-      cancelledDashboard.json<{ preparacaoMensalPorFornecedor: unknown[] }>()
-        .preparacaoMensalPorFornecedor,
-    ).toHaveLength(0);
+      cancelledDashboard.json<{
+        preparacaoMensalPorFornecedor: Array<{
+          estado: string;
+          valorSolicitado: string;
+          valorCancelado: string;
+        }>;
+      }>().preparacaoMensalPorFornecedor,
+    ).toEqual([
+      expect.objectContaining({
+        estado: "CANCELADO",
+        valorSolicitado: "0.00",
+        valorCancelado: "700.00",
+      }),
+    ]);
     const readyAgain = await f.app.inject({
       method: "GET",
       url: `/api/aquisicoes-beneficios/pedido/previa?unidadeId=${unit.id}&competencia=2026-09-01&tipo=ALIMENTACAO`,
@@ -1166,9 +1177,14 @@ test("monthly order creates the technical benefit and fixed food snapshot idempo
       headers: f.headers,
     });
     expect(
-      activeSummary.json<{ previsto: string; emPedido: string }>(),
+      activeSummary.json<{
+        previsto: string;
+        solicitado: string;
+        emPedido: string;
+      }>(),
     ).toMatchObject({
       previsto: "720.00",
+      solicitado: "720.00",
       emPedido: "720.00",
     });
     const activeDashboard = await f.app.inject({
@@ -1177,12 +1193,21 @@ test("monthly order creates the technical benefit and fixed food snapshot idempo
       headers: f.headers,
     });
     expect(
-      activeDashboard
-        .json<{
-          preparacaoMensalPorFornecedor: Array<{ valorPrevisto: string }>;
-        }>()
-        .preparacaoMensalPorFornecedor.map((item) => item.valorPrevisto),
-    ).toEqual(["720.00"]);
+      activeDashboard.json<{
+        preparacaoMensalPorFornecedor: Array<{
+          estado: string;
+          valorSolicitado: string;
+        }>;
+      }>().preparacaoMensalPorFornecedor,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          estado: "SOLICITADO",
+          valorSolicitado: "720.00",
+        }),
+        expect.objectContaining({ estado: "CANCELADO" }),
+      ]),
+    );
     const secondOrderId = reissued.json<{ ids: string[] }>().ids[0]!;
     const closing = await f.db.fechamentoCompetenciaBeneficio.create({
       data: {
@@ -1230,6 +1255,311 @@ test("monthly order creates the technical benefit and fixed food snapshot idempo
       payload: {},
     });
     expect(confirmedCancellation.statusCode).toBe(409);
+  } finally {
+    await f.app.close();
+  }
+});
+
+test("closing forecasts the next month, freezes the baseline and derives requested and concluded values", async () => {
+  const f = await fixture();
+  try {
+    const unit = await f.db.unidade.create({
+      data: {
+        nome: `Unidade previsão ${f.suffix}`,
+        sigla: f.suffix.slice(0, 8),
+        uf: "RJ",
+      },
+    });
+    const supplier = await f.db.fornecedor.create({
+      data: { nome: `Fornecedor previsão ${f.suffix}` },
+    });
+    const configuration = await f.db.configuracaoBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        fornecedorId: supplier.id,
+        tipo: "ALIMENTACAO",
+      },
+    });
+    const makeCompetence = async (
+      name: string,
+      status: "ATIVO" | "AFASTADO" | "DESLIGADO",
+      amount: string,
+      dismissal?: string,
+    ) => {
+      const person = await f.db.pessoa.create({ data: { nomeCompleto: name } });
+      const link = await f.db.vinculo.create({
+        data: {
+          pessoaId: person.id,
+          unidadeId: unit.id,
+          tipo: "CLT",
+          status,
+          dataAdmissao: new Date("2025-01-01"),
+          ...(dismissal ? { dataDesligamento: new Date(dismissal) } : {}),
+        },
+      });
+      const benefit = await f.db.beneficioVinculo.create({
+        data: {
+          vinculoId: link.id,
+          tipo: "ALIMENTACAO",
+          inicioVigencia: new Date("2025-01-01"),
+        },
+      });
+      const competence = await f.db.beneficioCompetencia.create({
+        data: {
+          beneficioVinculoId: benefit.id,
+          configuracaoId: configuration.id,
+          competencia: new Date("2026-09-01"),
+          valorMensalBase: amount,
+        },
+      });
+      return { link, competence };
+    };
+    const active = await makeCompetence("Pessoa prevista", "ATIVO", "200.00");
+    const departed = await makeCompetence(
+      "Pessoa desligada",
+      "DESLIGADO",
+      "250.00",
+      "2026-09-30",
+    );
+    const away = await makeCompetence("Pessoa afastada", "AFASTADO", "180.00");
+    const sourceOrder = await f.db.aquisicaoBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        competencia: new Date("2026-09-01"),
+        tipo: "ALIMENTACAO",
+        fornecedorId: supplier.id,
+        status: "CONFIRMADA",
+        criadoPorId: f.user.id,
+      },
+    });
+    await f.db.aquisicaoBeneficioItem.createMany({
+      data: [
+        [active, "Pessoa prevista", "200.00"],
+        [departed, "Pessoa desligada", "250.00"],
+        [away, "Pessoa afastada", "180.00"],
+      ].map(([entry, name, amount]) => ({
+        aquisicaoId: sourceOrder.id,
+        competenciaId: (entry as typeof active).competence.id,
+        vinculoId: (entry as typeof active).link.id,
+        pessoaNome: String(name),
+        destino: supplier.nome,
+        valorPrevisto: String(amount),
+        valorSolicitado: String(amount),
+        valorReservado: String(amount),
+        composicao: { versao: 1, categoria: "ALIMENTACAO" },
+        status: "CONFIRMADO",
+      })),
+    });
+    const closing = await f.db.fechamentoCompetenciaBeneficio.create({
+      data: {
+        unidadeId: unit.id,
+        competencia: new Date("2026-09-01"),
+        status: "EM_REVISAO",
+      },
+    });
+    const closed = await f.app.inject({
+      method: "POST",
+      url: `/api/beneficios/fechamentos/${closing.id}/fechar`,
+      headers: f.headers,
+      payload: {},
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+    let forecast = await f.db.previsaoBeneficioVersao.findFirstOrThrow({
+      where: {
+        unidadeId: unit.id,
+        competencia: new Date("2026-10-01"),
+        vigente: true,
+      },
+      include: { itens: true },
+    });
+    expect(forecast.itens.filter((item) => item.incluido)).toHaveLength(1);
+    expect(
+      forecast.itens.find((item) => item.vinculoId === departed.link.id),
+    ).toMatchObject({ incluido: false, motivoExclusao: "VINCULO_DESLIGADO" });
+    expect(
+      forecast.itens.find((item) => item.vinculoId === away.link.id),
+    ).toMatchObject({ incluido: false, motivoExclusao: "VINCULO_AFASTADO" });
+    const updateActiveLink = (status: "ATIVO" | "AFASTADO") =>
+      f.app.inject({
+        method: "PUT",
+        url: `/api/vinculos/${active.link.id}`,
+        headers: f.headers,
+        payload: {
+          pessoaId: active.link.pessoaId,
+          unidadeId: unit.id,
+          equipeId: null,
+          tipo: "CLT",
+          status,
+          matricula: null,
+          dataAdmissao: "2025-01-01",
+          dataDesligamento: null,
+          cargoFuncao: null,
+          gestor: null,
+          escala: null,
+          escalaEstruturada: null,
+          observacoes: null,
+        },
+      });
+    const awayUpdate = await updateActiveLink("AFASTADO");
+    expect(awayUpdate.statusCode, awayUpdate.body).toBe(200);
+    const awayForecast = await f.db.previsaoBeneficioVersao.findFirstOrThrow({
+      where: {
+        unidadeId: unit.id,
+        competencia: new Date("2026-10-01"),
+        vigente: true,
+      },
+      include: { itens: true },
+    });
+    expect(awayForecast.numero).toBe(forecast.numero + 1);
+    expect(
+      awayForecast.itens.find((item) => item.vinculoId === active.link.id),
+    ).toMatchObject({ incluido: false, motivoExclusao: "VINCULO_AFASTADO" });
+    const emptyForecastSummary = await f.app.inject({
+      method: "GET",
+      url: `/api/beneficios/resumo?unidadeId=${unit.id}&competencia=2026-10-01`,
+      headers: f.headers,
+    });
+    expect(
+      emptyForecastSummary.json<{
+        previsaoPersistida: boolean;
+        previsto: string;
+      }>(),
+    ).toMatchObject({ previsaoPersistida: true, previsto: "0.00" });
+    const activeUpdate = await updateActiveLink("ATIVO");
+    expect(activeUpdate.statusCode, activeUpdate.body).toBe(200);
+    forecast = await f.db.previsaoBeneficioVersao.findFirstOrThrow({
+      where: {
+        unidadeId: unit.id,
+        competencia: new Date("2026-10-01"),
+        vigente: true,
+      },
+      include: { itens: true },
+    });
+    expect(forecast.numero).toBe(awayForecast.numero + 1);
+    const forecastSummary = await f.app.inject({
+      method: "GET",
+      url: `/api/beneficios/ciclo-mensal?unidadeId=${unit.id}&competencia=2026-10-01`,
+      headers: f.headers,
+    });
+    expect(
+      forecastSummary.json<{ totais: { previsto: string } }>().totais,
+    ).toMatchObject({ previsto: "200.00" });
+
+    const generated = await f.app.inject({
+      method: "POST",
+      url: "/api/aquisicoes-beneficios/pedido/gerar",
+      headers: {
+        ...f.headers,
+        "idempotency-key": `previsao-${f.suffix}`,
+      },
+      payload: {
+        unidadeId: unit.id,
+        competencia: "2026-10-01",
+        tipo: "ALIMENTACAO",
+        itens: [
+          {
+            vinculoId: active.link.id,
+            configuracaoId: configuration.id,
+            incluir: true,
+            modoAlimentacao: "VALOR_MENSAL",
+            valorSolicitado: "190.00",
+          },
+        ],
+      },
+    });
+    expect(generated.statusCode, generated.body).toBe(201);
+    const orderId = generated.json<{ ids: string[] }>().ids[0]!;
+    const generatedOrder = await f.db.aquisicaoBeneficio.findUniqueOrThrow({
+      where: { id: orderId },
+      include: { itens: true },
+    });
+    expect(generatedOrder.previsaoVersaoId).toBe(forecast.id);
+    expect(
+      await f.db.previsaoBeneficioVersao.findUniqueOrThrow({
+        where: { id: forecast.id },
+      }),
+    ).toMatchObject({ congeladaEm: expect.any(Date) });
+    const frozenVersions = await f.db.previsaoBeneficioVersao.count({
+      where: {
+        unidadeId: unit.id,
+        competencia: new Date("2026-10-01"),
+      },
+    });
+    const frozenUpdate = await updateActiveLink("AFASTADO");
+    expect(frozenUpdate.statusCode, frozenUpdate.body).toBe(200);
+    expect(
+      await f.db.previsaoBeneficioVersao.count({
+        where: {
+          unidadeId: unit.id,
+          competencia: new Date("2026-10-01"),
+        },
+      }),
+    ).toBe(frozenVersions);
+    const targetItem = generatedOrder.itens[0]!;
+    const partial = await f.app.inject({
+      method: "POST",
+      url: `/api/aquisicoes-beneficios/${orderId}/confirmar`,
+      headers: {
+        ...f.headers,
+        "idempotency-key": `parcial-${f.suffix}`,
+      },
+      payload: {
+        dataCompra: "2026-10-20",
+        itens: [
+          {
+            itemId: targetItem.id,
+            valor: "180.00",
+            status: "CONFIRMADO",
+            motivo: "Compra parcial",
+          },
+        ],
+      },
+    });
+    expect(partial.statusCode, partial.body).toBe(200);
+    const rejected = await f.app.inject({
+      method: "POST",
+      url: `/api/aquisicoes-beneficios/${orderId}/confirmar`,
+      headers: {
+        ...f.headers,
+        "idempotency-key": `rejeicao-${f.suffix}`,
+      },
+      payload: {
+        dataCompra: "2026-10-21",
+        itens: [
+          {
+            itemId: targetItem.id,
+            valor: "0.00",
+            status: "REJEITADO",
+            motivo: "Saldo não atendido",
+          },
+        ],
+      },
+    });
+    expect(rejected.statusCode, rejected.body).toBe(200);
+    const completed = await f.app.inject({
+      method: "GET",
+      url: `/api/beneficios/ciclo-mensal?unidadeId=${unit.id}&competencia=2026-10-01`,
+      headers: f.headers,
+    });
+    expect(
+      completed.json<{
+        totais: Record<string, string>;
+        itens: Array<{ estado: string; ocorrencias: string[] }>;
+      }>(),
+    ).toMatchObject({
+      totais: {
+        previsto: "200.00",
+        solicitado: "190.00",
+        concluido: "180.00",
+        pendente: "0.00",
+      },
+      itens: [
+        expect.objectContaining({
+          estado: "CONCLUIDO",
+          ocorrencias: expect.arrayContaining(["REJEICAO"]),
+        }),
+      ],
+    });
   } finally {
     await f.app.close();
   }

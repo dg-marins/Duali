@@ -100,6 +100,16 @@ Uma competência é preparada quando as categorias aplicáveis estão sem impedi
 
 Dias de alimentação são definidos na competência e podem ser ajustados manualmente com auditoria. A escala do vínculo pode registrar dias específicos da semana ou uma quantidade semanal. Dias específicos geram uma sugestão para o transporte no mês; quantidade semanal exige confirmação mensal. A escala não altera automaticamente competências já preparadas. Férias, faltas, feriados, admissões e afastamentos não aplicam descontos automáticos: a correção mensal é explícita e auditada.
 
+### RN-011.2 — Previsão futura e ciclo financeiro
+
+O fechamento de uma competência gera, de forma idempotente, a previsão da competência imediatamente seguinte para cada unidade e categoria com pedido não cancelado. A previsão é composta por pessoa e fornecedor e usa o valor originalmente solicitado, nunca o saldo reservado mutável. Pedidos cancelados não servem de base.
+
+A projeção não inclui pessoas novas. Pessoas inativas, vínculos desligados antes do mês e vínculos afastados permanecem rastreáveis como itens excluídos. Um desligamento durante o mês mantém a pessoa elegível integralmente; não há proporcionalidade automática. Fornecedor inativo e composição histórica incompleta preservam o valor, mas geram impedimento explícito para revisão.
+
+Enquanto não houver pedido na competência prevista, alterações de elegibilidade, fornecedor ou da competência-base geram nova versão, sem apagar as anteriores. O primeiro pedido congela a versão vigente. Alterações posteriores modificam somente solicitado e realizado, mantendo o previsto usado na comparação.
+
+Os estados **Previsto**, **Solicitado** e **Concluído** são derivados do ciclo financeiro e não substituem os estados persistidos de competência, pedido ou item. Previsto existe sem pedido vigente; Solicitado possui saldo pendente; Concluído não possui item que exija ação. Cancelamento, confirmação parcial, rejeição e reversão permanecem ocorrências complementares e auditáveis.
+
 ## RN-012 — Valores calculados e informados
 
 Quando um valor puder ser calculado a partir de quantidade/dias e valor unitário, o sistema deve preservar a possibilidade de comparar o valor calculado com um valor efetivamente informado.

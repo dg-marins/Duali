@@ -20,6 +20,7 @@
     "admin:reset": "pnpm --filter @duali/api admin:reset",
     "verify:intern-import": "pnpm --filter @duali/api verify:intern-import",
     "verify:audited-import": "pnpm --filter @duali/api verify:audited-import",
+    "verify:benefit-forecasts": "pnpm --filter @duali/api verify:benefit-forecasts",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,json,css,html}\" \"packages/*/src/**/*.ts\" \"*.ts\" \"*.json\" \"*.js\" \"scripts/*.mjs\""
   },
   "devDependencies": {

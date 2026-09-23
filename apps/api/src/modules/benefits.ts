@@ -25,6 +25,10 @@ import {
 } from "../core.js";
 import { registerResource, saveResource, type Resource } from "./resources.js";
 import { transportCalculation } from "./transport.js";
+import {
+  generateNextMonthForecasts,
+  refreshForecastsForSupplier,
+} from "./benefit-cycle.js";
 const monthEnd = (month: Date) =>
   new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0));
 const weekdayIndexes: Record<string, number> = {
@@ -169,6 +173,10 @@ export const benefitResources: Resource[] = [
     model: "fornecedor",
     schema: fornecedorSchema,
     search: "nome",
+    after: async (tx, current, previous, userId) => {
+      if (previous && current.ativo !== previous.ativo)
+        await refreshForecastsForSupplier(tx, String(current.id), userId);
+    },
   },
   {
     path: "configuracoes-beneficios",
@@ -176,6 +184,28 @@ export const benefitResources: Resource[] = [
     schema: configuracaoBeneficioSchema,
     filters: ["unidadeId", "fornecedorId", "tipo"],
     include: { unidade: true, fornecedor: true },
+    after: async (tx, current, previous, userId) => {
+      if (
+        !previous ||
+        current.ativa !== previous.ativa ||
+        current.fornecedorId !== previous.fornecedorId
+      ) {
+        await refreshForecastsForSupplier(
+          tx,
+          String(current.fornecedorId),
+          userId,
+        );
+        if (
+          previous?.fornecedorId &&
+          previous.fornecedorId !== current.fornecedorId
+        )
+          await refreshForecastsForSupplier(
+            tx,
+            String(previous.fornecedorId),
+            userId,
+          );
+      }
+    },
   },
   {
     path: "beneficios-vinculo",
@@ -1248,6 +1278,14 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
           before,
           row,
         );
+        if (status === "FECHADA")
+          await generateNextMonthForecasts(
+            tx,
+            before.unidadeId,
+            before.competencia,
+            "FECHAMENTO_COMPETENCIA",
+            req.userId,
+          );
         return row;
       });
     });
@@ -1274,6 +1312,13 @@ export function registerBenefits(app: FastifyInstance, db: PrismaClient) {
         id,
         before,
         { ...row, motivo },
+      );
+      await generateNextMonthForecasts(
+        tx,
+        before.unidadeId,
+        before.competencia,
+        "REABERTURA_COMPETENCIA",
+        req.userId,
       );
       return row;
     });

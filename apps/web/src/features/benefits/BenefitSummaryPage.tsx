@@ -6,8 +6,12 @@ import { LoadingSkeleton, money, RefreshingContent } from "../../ui";
 
 type Summary = {
   previsto: string;
+  solicitado: string;
+  concluido: string;
   compradoLiquido: string;
   emPedido: string;
+  cicloMensal: Row[];
+  previsaoPersistida: boolean;
   lancamentosPendentes: number;
 };
 
@@ -64,17 +68,12 @@ export function BenefitSummaryPage({
     const params = new URLSearchParams({ competencia: `${month}-01` });
     if (unit) params.set("unidadeId", unit);
     setLoading(true);
-    void Promise.all([
-      api<Summary>(`beneficios/resumo?${params}`),
-      api<Row>(`dashboard?${params}`),
-    ])
-      .then(([totals, dashboard]) => {
+    void api<Summary>(`beneficios/resumo?${params}`)
+      .then((totals) => {
         if (!active) return;
         setSummary(totals);
         setChartRows(
-          Array.isArray(dashboard.preparacaoMensalPorFornecedor)
-            ? (dashboard.preparacaoMensalPorFornecedor as Row[])
-            : [],
+          Array.isArray(totals.cicloMensal) ? totals.cicloMensal : [],
         );
         setError("");
       })
@@ -175,22 +174,22 @@ export function BenefitSummaryPage({
                 hint: "Calculado para a competência",
               },
               {
-                key: "comprado",
-                label: "Comprado líquido",
-                value: money(summary?.compradoLiquido),
+                key: "solicitado",
+                label: "Valor solicitado",
+                value: money(summary?.solicitado),
+                hint: "Pedidos vigentes da competência",
+              },
+              {
+                key: "concluido",
+                label: "Valor concluído",
+                value: money(summary?.concluido),
                 hint: "Confirmado menos reversões",
               },
               {
                 key: "pedido",
-                label: "Em pedido",
+                label: "Saldo pendente",
                 value: money(summary?.emPedido),
-                hint: "Reservado e ainda pendente",
-              },
-              {
-                key: "pendente",
-                label: "Lançamentos pendentes",
-                value: String(summary?.lancamentosPendentes ?? 0),
-                hint: "Aguardando conferência",
+                hint: "Ainda aguardando conclusão",
               },
             ].map((metric) => (
               <button
@@ -214,6 +213,14 @@ export function BenefitSummaryPage({
               setUnit={setUnit}
               setCategory={setCategory}
             />
+            {!summary?.previsaoPersistida &&
+              Number(summary?.solicitado ?? 0) > 0 && (
+                <p className="muted">
+                  Estes pedidos foram emitidos sem uma previsão futura
+                  persistida. O valor calculado do lançamento é mantido apenas
+                  para compatibilidade histórica.
+                </p>
+              )}
             {Math.abs(chartTotal - planned) > 0.005 && (
               <p className="muted">
                 O gráfico mostra somente valores atribuídos a fornecedores.
