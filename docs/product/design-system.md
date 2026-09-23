@@ -1,4 +1,4 @@
-# Duali Design System — Modern SaaS
+﻿# Duali Design System — Modern SaaS
 
 ## Princípios
 
@@ -110,8 +110,22 @@ esse campo apareceu em mockups exploratórios. Quando o wizard for implementado,
 seus campos serão definidos pelas decisões funcionais aprovadas naquele momento
 e pelo domínio real do Duali.
 
-## Limite desta fase
+## Componentes fundamentais
 
-Esta fundação não migra AppShell, Sidebar, Topbar, Button, DataTable,
-StatusBadge, páginas, rotas ou fluxos operacionais. Essas mudanças dependem das
-próximas fases e de validação visual específica.
+Os componentes oficiais ficam em `apps/web/src/components/ui`. O arquivo
+`ui.tsx` é uma fachada temporária de compatibilidade, sem implementação
+paralela. Os estilos oficiais usam o prefixo `.ds-` em `styles/components/`.
+
+- `Button` possui `primary`, `secondary`, `danger` e `ghost`; `IconButton` é a única API oficial para ações somente com ícone.
+- Campos oficiais são opt-in e o `CurrencyInput` preserva seu contrato de string decimal e entrada brasileira.
+- `StatusBadge` usa registro explícito no frontend, sem dependência de Prisma.
+- `DataTable` permite `priority`, `expandable` ou `scroll`, escolhidos pelo consumidor, e prioridades declarativas por coluna.
+- `Dialog`, `ConfirmDialog` e `Sheet` usam Radix Dialog.
+
+## Política de exports
+
+- **official:** exports de `components/ui`;
+- **compatible:** fachada `ui.tsx` e caminho histórico de `Button`;
+- **deprecated:** variantes antigas de Button, `FormDialog`, `FormSheet`, propriedade `mobile` do DataTable e export de `Notice` por `components.tsx`.
+
+A migração é opt-in. Páginas, inputs e regras `nth-child` legadas permanecem até a respectiva Golden Reference. Nenhuma página deve ser redesenhada apenas para adotar a biblioteca.

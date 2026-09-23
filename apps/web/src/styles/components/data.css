@@ -1,0 +1,68 @@
+.ds-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.ds-data-table table {
+  width: 100%;
+}
+.ds-data-table__sort {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.ds-data-table__actions {
+  width: 1%;
+  white-space: nowrap;
+}
+.ds-data-table__expand-heading,
+.ds-data-table__expand-cell {
+  display: none;
+}
+.ds-data-table--scroll {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.ds-data-table--scroll table {
+  min-width: max-content;
+}
+.ds-action-menu {
+  z-index: var(--layer-dropdown);
+}
+.ds-action-menu__separator {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--space-1) 0;
+}
+.ds-action-menu__item.is-danger {
+  color: var(--color-danger-text);
+}
+.ds-filter-chip {
+  gap: var(--space-1);
+}
+.ds-pagination label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+@media (max-width: 720px) {
+  .ds-data-table--priority .ds-column--secondary,
+  .ds-data-table--priority .ds-column--desktop,
+  .ds-data-table--expandable .ds-column--secondary,
+  .ds-data-table--expandable .ds-column--desktop {
+    display: none;
+  }
+  .ds-data-table--expandable .ds-data-table__expand-heading,
+  .ds-data-table--expandable .ds-data-table__expand-cell {
+    display: table-cell;
+  }
+  .ds-data-table__details {
+    display: table-row;
+  }
+}

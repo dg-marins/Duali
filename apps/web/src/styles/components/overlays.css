@@ -1,0 +1,32 @@
+.ds-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: min(90dvh, 900px);
+}
+.ds-dialog--sm {
+  width: min(440px, calc(100vw - 32px));
+}
+.ds-dialog--md {
+  width: min(720px, calc(100vw - 32px));
+}
+.ds-dialog--lg {
+  width: min(1040px, calc(100vw - 32px));
+}
+.ds-dialog__header {
+  flex: 0 0 auto;
+}
+.ds-dialog__body {
+  min-height: 0;
+  overflow: auto;
+}
+.ds-dialog__footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--color-surface);
+}
+.ds-dialog__overlay {
+  z-index: var(--layer-overlay);
+}
+.ds-dialog {
+  z-index: var(--layer-modal);
+}

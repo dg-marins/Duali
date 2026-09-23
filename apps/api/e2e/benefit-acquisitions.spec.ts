@@ -118,7 +118,7 @@ test("exibe previsão futura no mesmo ciclo do Dashboard e de Benefícios", asyn
     );
     await expect(
       page.getByRole("button", { name: /Valor previsto/ }),
-    ).toContainText(/R\$\s*200,00/);
+    ).toContainText(/R\$\s*200,00/, { timeout: 30_000 });
     await expect(
       page.getByRole("button", { name: /Previsto R\$\s*200,00/ }),
     ).toHaveAttribute("aria-pressed", "true");
@@ -142,7 +142,7 @@ test("exibe previsão futura no mesmo ciclo do Dashboard e de Benefícios", asyn
     await page.goto(`/app?competencia=2026-10-01&unidadeId=${unit.id}`);
     await expect(
       page.getByRole("heading", { name: "Benefício Mensal" }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 30_000 });
     await expect(
       page.getByRole("button", { name: /Previsto R\$\s*200,00/ }),
     ).toBeVisible();

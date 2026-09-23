@@ -20,22 +20,9 @@ import {
   RefreshingContent,
   useFormDirty,
 } from "./ui";
-export function Notice({
-  text,
-  error = false,
-}: {
-  text: string;
-  error?: boolean;
-}) {
-  return text ? (
-    <div
-      role={error ? "alert" : "status"}
-      className={error ? "notice error" : "notice"}
-    >
-      {text}
-    </div>
-  ) : null;
-}
+import { Notice } from "./components/ui";
+/** @deprecated Import Notice from ./components/ui. */
+export { Notice };
 export function Lookup({
   field,
   value,

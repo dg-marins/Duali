@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 :root {
   font-family: Inter, system-ui, sans-serif;
   color: #19302d;
@@ -2073,73 +2073,10 @@ th {
   font-weight: 400;
   color: var(--muted);
 }
-.people-segments {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 18px;
-}
-.people-segment {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  background: white;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  padding: 16px;
-  text-align: left;
-}
-.people-segment strong {
-  font-size: 26px;
-  color: #223c34;
-  font-weight: 650;
-}
-.people-segment.selected {
-  border-color: var(--brand);
-  background: #edf7f1;
-  box-shadow: inset 0 -3px var(--brand);
-  color: var(--brand);
-}
-.people-segment[data-segment="INATIVO"] {
-  --segment-tone: #a43e2d;
-  --segment-background: #fff1ee;
-}
-.people-segment[data-segment="SEM_VINCULO"] {
-  --segment-tone: #8a6100;
-  --segment-background: #fff8df;
-}
-.people-segment[data-segment="INATIVO"],
-.people-segment[data-segment="SEM_VINCULO"] {
-  color: var(--segment-tone);
-  background: var(--segment-background);
-}
-.people-segment[data-segment="INATIVO"] strong,
-.people-segment[data-segment="SEM_VINCULO"] strong {
-  color: var(--segment-tone);
-}
-.people-segment[data-segment="INATIVO"].selected,
-.people-segment[data-segment="SEM_VINCULO"].selected {
-  border-color: var(--segment-tone);
-  box-shadow: inset 0 -3px var(--segment-tone);
-}
-.golden-people .filter-grid {
-  grid-template-columns: minmax(200px, 1fr) minmax(160px, 240px) auto auto;
-  align-items: end;
-}
-.golden-people .advanced-filters {
-  margin-top: 16px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-.golden-people .panel,
 .golden-profile .panel,
 .golden-registry .panel {
   padding: 20px;
   box-shadow: none;
-}
-.golden-people table th,
-.golden-people table td {
-  padding: 13px 14px;
 }
 .optional-link,
 .registry-units label {
@@ -2201,14 +2138,6 @@ th {
   }
   .golden-shell .topbar-context > span {
     display: none;
-  }
-  .people-segments {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-  .people-segment {
-    padding: 12px;
-    gap: 5px;
   }
   .golden-people .filter-grid,
   .golden-people .advanced-filters {
@@ -2311,83 +2240,6 @@ th {
 }
 .golden-registry td {
   overflow-wrap: anywhere;
-}
-.golden-people table {
-  table-layout: fixed;
-  min-width: 800px;
-  white-space: normal;
-}
-.golden-people td {
-  overflow-wrap: anywhere;
-}
-.golden-people td:first-child {
-  overflow: hidden;
-}
-.golden-people .people-name {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-.golden-people.people-stage table {
-  table-layout: fixed;
-  min-width: 1120px;
-}
-.people-stage th:nth-child(1) {
-  width: 21%;
-}
-.people-stage th:nth-child(2) {
-  width: 8%;
-}
-.people-stage th:nth-child(3) {
-  width: 10%;
-}
-.people-stage th:nth-child(4) {
-  width: 13%;
-}
-.people-stage th:nth-child(5) {
-  width: 20%;
-}
-.people-stage th:nth-child(6) {
-  width: 9%;
-}
-.people-stage th:nth-child(7) {
-  width: 11%;
-}
-.people-stage th:nth-child(8) {
-  width: 8%;
-}
-.people-stage td:nth-child(2),
-.people-stage td:nth-child(6),
-.people-stage td:nth-child(7),
-.people-stage td:nth-child(8) {
-  white-space: nowrap;
-  overflow-wrap: normal;
-}
-.people-institution {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-@media (max-width: 700px) {
-  .golden-people.people-stage table {
-    min-width: 0;
-    table-layout: auto;
-  }
-  .golden-people table {
-    min-width: 0;
-  }
-  .golden-people .mobile-expand-cell button {
-    white-space: nowrap;
-  }
-  .golden-people td.mobile-primary {
-    width: 100%;
-  }
 }
 @media (max-width: 850px) {
   .golden-shell.sidebar-collapsed {

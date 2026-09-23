@@ -189,6 +189,68 @@ test("pessoas mantém os dados anteriores durante busca e troca após a resposta
   }
 });
 
+test("pessoas apresenta erro inicial sem confundir com estado vazio", async ({
+  page,
+}) => {
+  const db = new PrismaClient({ datasourceUrl: testDatabaseUrl() });
+  const { user, password } = await credentials(db);
+  await page.route("**/api/pessoas-operacional?*", async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: { code: "INTERNAL", message: "Falha inicial de pessoas." },
+      }),
+    });
+  });
+  try {
+    await login(page, user.email, password);
+    await page.getByRole("button", { name: "Pessoas", exact: true }).click();
+    await expect(page.getByText("Falha inicial de pessoas.")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Tentar novamente" }),
+    ).toBeVisible();
+    await expect(page.getByText("Nenhuma pessoa cadastrada")).toHaveCount(0);
+    await expect(
+      page.getByText("Nenhuma pessoa encontrada com estes filtros"),
+    ).toHaveCount(0);
+  } finally {
+    await db.$disconnect();
+  }
+});
+
+test("pessoas apresenta estado de base vazia com ação de cadastro", async ({
+  page,
+}) => {
+  const db = new PrismaClient({ datasourceUrl: testDatabaseUrl() });
+  const { user, password } = await credentials(db);
+  await page.route("**/api/pessoas-operacional?*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [],
+        total: 0,
+        totalPopulacao: 0,
+        page: 1,
+        pageSize: 25,
+        segmentos: {},
+      }),
+    });
+  });
+  try {
+    await login(page, user.email, password);
+    await page.getByRole("button", { name: "Pessoas", exact: true }).click();
+    await expect(page.getByText("Nenhuma pessoa cadastrada")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Adicionar primeira pessoa" }),
+    ).toBeVisible();
+    await expect(page.getByText(/Falha/)).toHaveCount(0);
+  } finally {
+    await db.$disconnect();
+  }
+});
+
 test("detalhe mantém o shell no mobile e respeita movimento reduzido", async ({
   page,
 }) => {

@@ -27,6 +27,8 @@ import { AppShell } from "./AppShell";
 import "./style.css";
 import "./styles/foundations/index.css";
 import "./styles/shell/index.css";
+import "./styles/components/index.css";
+import "./styles/pages/people.css";
 const auxiliary: Record<string, string> = {
   "/app/cadastros/unidades": "unidades",
   "/app/cadastros/equipes": "equipes",

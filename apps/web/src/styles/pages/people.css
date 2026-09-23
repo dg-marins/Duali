@@ -1,0 +1,297 @@
+.people-page {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.people-page .page-header,
+.people-page .filter-bar,
+.people-page .people-results {
+  margin: 0;
+}
+
+.people-segment-nav {
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding: 2px 2px var(--space-1);
+  scrollbar-width: thin;
+}
+
+.people-segment-option {
+  min-width: max-content;
+  min-height: var(--size-control);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--duali-radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+
+.people-segment-option strong {
+  min-width: 24px;
+  border-radius: 999px;
+  background: var(--color-neutral-soft);
+  color: var(--color-text-primary);
+  padding: 2px 7px;
+  text-align: center;
+  font-size: var(--font-size-secondary);
+}
+
+.people-segment-option:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-subtle);
+}
+
+.people-segment-option[aria-pressed="true"] {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-active);
+  box-shadow: inset 0 -2px var(--color-primary);
+}
+
+.people-segment-option[aria-pressed="true"] strong {
+  background: var(--color-surface);
+  color: var(--color-primary-active);
+}
+
+.people-segment-option[data-segment="SEM_VINCULO"] {
+  color: var(--color-warning-text);
+}
+
+.people-segment-option[data-segment="INATIVO"] {
+  color: var(--color-danger-text);
+}
+
+.people-page .filter-bar-main {
+  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 0.8fr) minmax(
+      0,
+      2.4fr
+    );
+  align-items: end;
+}
+
+.people-unit-filter,
+.people-page .filter-secondary label {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.people-page .filter-secondary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (min-width: 851px) {
+  .people-page .filter-details:not([open]) > .filter-secondary {
+    display: grid;
+  }
+}
+
+.people-additional-filter-heading {
+  display: none;
+}
+
+.people-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.people-error .notice {
+  flex: 1;
+  margin: 0;
+}
+
+.people-results {
+  padding: var(--space-5);
+}
+
+.people-results .result-count {
+  margin-bottom: var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-secondary);
+}
+
+.people-page .ds-data-table table {
+  table-layout: fixed;
+  min-width: 760px;
+}
+
+.people-page .ds-column--primary {
+  width: 30%;
+}
+
+.people-page .ds-column--always {
+  width: 14%;
+}
+
+.people-page th[data-column="nomeCompleto"] {
+  width: 29%;
+}
+
+.people-page th[data-column="vinculo"] {
+  width: 13%;
+}
+
+.people-page th[data-column="unidade"] {
+  width: 18%;
+}
+
+.people-page th[data-column="equipe"] {
+  width: 18%;
+}
+
+.people-page th[data-column="status"] {
+  width: 12%;
+}
+
+.people-page:has(th[data-column="instituicao"]) th[data-column="nomeCompleto"] {
+  width: 22%;
+}
+
+.people-page:has(th[data-column="instituicao"]) th[data-column="vinculo"],
+.people-page:has(th[data-column="instituicao"]) th[data-column="status"] {
+  width: 9%;
+}
+
+.people-page:has(th[data-column="instituicao"]) th[data-column="unidade"],
+.people-page:has(th[data-column="instituicao"]) th[data-column="equipe"] {
+  width: 11%;
+}
+
+.people-page th[data-column="instituicao"] {
+  width: 17%;
+}
+
+.people-page th[data-column="admissao"],
+.people-page th[data-column="terminoPrevisto"] {
+  width: 10%;
+}
+
+.people-page:has(th[data-column="instituicao"]) th[data-column="status"] {
+  width: 10%;
+}
+
+.people-identity {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.people-name,
+.people-identity > span,
+.people-institution {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-page .ds-data-table tbody td:not(.ds-data-table__expand-cell) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-name {
+  width: 100%;
+  text-align: left;
+}
+
+.people-identity > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-auxiliary);
+}
+
+.people-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.people-page .pagination {
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 850px) {
+  .people-page {
+    gap: var(--space-4);
+  }
+  .people-page .page-header {
+    align-items: flex-start;
+  }
+  .people-segment-nav {
+    margin-inline: calc(-1 * var(--space-4));
+    padding-inline: var(--space-4);
+    scroll-snap-type: x proximity;
+  }
+  .people-page .filter-bar-main {
+    grid-template-columns: 1fr 1fr;
+  }
+  .people-page .filter-search {
+    grid-column: 1 / -1;
+  }
+  .people-page .filter-secondary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .people-results {
+    padding: var(--space-4);
+  }
+}
+
+@media (max-width: 700px) {
+  .people-page .page-header {
+    gap: var(--space-3);
+  }
+  .people-page .page-header > div {
+    min-width: 0;
+  }
+  .people-page .filter-bar-main,
+  .people-page .filter-secondary {
+    grid-template-columns: 1fr;
+  }
+  .people-page .filter-search {
+    grid-column: auto;
+  }
+  .people-page .ds-data-table table {
+    min-width: 0;
+    table-layout: auto;
+  }
+  .people-page .ds-data-table .ds-column--primary {
+    width: auto;
+  }
+  .people-page .ds-data-table .ds-column--always {
+    display: table-cell;
+    width: 1%;
+    white-space: nowrap;
+  }
+  .people-page .mobile-expand-cell {
+    width: 1%;
+  }
+  .people-page .pagination {
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+  .people-page .ds-data-table__details td,
+  .people-page .ds-data-table__details dl,
+  .people-page .ds-data-table__details dl div,
+  .people-page .ds-data-table__details dd {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .people-page .ds-data-table__details dl div {
+    grid-template-columns: minmax(82px, 0.7fr) minmax(0, 1fr);
+  }
+  .people-page .ds-data-table__details dd {
+    overflow-wrap: anywhere;
+  }
+}
