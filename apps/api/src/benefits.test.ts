@@ -1441,9 +1441,56 @@ test("closing forecasts the next month, freezes the baseline and derives request
       url: `/api/beneficios/ciclo-mensal?unidadeId=${unit.id}&competencia=2026-10-01`,
       headers: f.headers,
     });
+    const forecastCycle = forecastSummary.json<{
+      totais: { previsto: string };
+      pessoasPrevistas: number;
+      estado: string;
+      unidades: Array<{
+        unidadeId: string;
+        pessoasPrevistas: number;
+        valorPrevisto: string;
+        fechamento: string;
+      }>;
+    }>();
+    expect(forecastCycle.totais).toMatchObject({ previsto: "200.00" });
+    expect(forecastCycle).toMatchObject({
+      pessoasPrevistas: 1,
+      estado: "PREVISTO",
+      unidades: [
+        expect.objectContaining({
+          unidadeId: unit.id,
+          pessoasPrevistas: 1,
+          valorPrevisto: "200.00",
+          fechamento: "ABERTA",
+        }),
+      ],
+    });
+
+    const forecastDetail = await f.app.inject({
+      method: "GET",
+      url: `/api/beneficios/ciclo-mensal/detalhe?unidadeId=${unit.id}&competencia=2026-10-01&tipo=ALIMENTACAO`,
+      headers: f.headers,
+    });
+    expect(forecastDetail.statusCode, forecastDetail.body).toBe(200);
     expect(
-      forecastSummary.json<{ totais: { previsto: string } }>().totais,
-    ).toMatchObject({ previsto: "200.00" });
+      forecastDetail.json<{
+        possuiPrevisao: boolean;
+        previsao: { numero: number; itens: Array<{ valorPrevisto: string }> };
+        pedidos: unknown[];
+      }>(),
+    ).toMatchObject({
+      possuiPrevisao: true,
+      previsao: {
+        numero: forecast.numero,
+        itens: expect.arrayContaining([
+          expect.objectContaining({
+            valorPrevisto: "200.00",
+            incluido: true,
+          }),
+        ]),
+      },
+      pedidos: [],
+    });
 
     const generated = await f.app.inject({
       method: "POST",

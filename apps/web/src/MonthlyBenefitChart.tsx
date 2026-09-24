@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { type Row } from "./api";
 import { EmptyState, StatusBadge, money } from "./ui";
+import { sumDecimal } from "./features/benefits/benefitCycleModel";
 
 const preparationChartColors = [
   "#0f766e",
@@ -26,7 +27,7 @@ type PreparationChartItem = {
   label: string;
   detail?: string;
   value: number;
-  values: Record<ChartMetric, number>;
+  values: Record<ChartMetric, string>;
   status?: string;
   occurrences: string[];
   impediments: string[];
@@ -64,10 +65,10 @@ const stateLabels: Record<string, string> = {
 
 const metricValue = (row: Row, metric: ChartMetric) => Number(row[metric] ?? 0);
 
-const rowValues = (row: Row): Record<ChartMetric, number> => ({
-  valorPrevisto: metricValue(row, "valorPrevisto"),
-  valorSolicitado: metricValue(row, "valorSolicitado"),
-  valorConcluido: metricValue(row, "valorConcluido"),
+const rowValues = (row: Row): Record<ChartMetric, string> => ({
+  valorPrevisto: String(row.valorPrevisto ?? "0.00"),
+  valorSolicitado: String(row.valorSolicitado ?? "0.00"),
+  valorConcluido: String(row.valorConcluido ?? "0.00"),
 });
 
 function mergeText(current: string[], value: unknown) {
@@ -180,15 +181,18 @@ export function MonthlyBenefitChart({
             values = rowValues(row);
           if (current) {
             for (const key of Object.keys(values) as ChartMetric[])
-              current.values[key] += values[key];
-            current.value = current.values[metric];
+              current.values[key] = sumDecimal([
+                current.values[key],
+                values[key],
+              ]);
+            current.value = Number(current.values[metric]);
             mergeText(current.occurrences, row.ocorrencias);
             mergeText(current.impediments, row.impedimentos);
           } else
             totals.set(id, {
               id,
               label: String(row.unidade),
-              value: values[metric],
+              value: Number(values[metric]),
               values,
               occurrences: Array.isArray(row.ocorrencias)
                 ? (row.ocorrencias as string[])
@@ -210,15 +214,18 @@ export function MonthlyBenefitChart({
             values = rowValues(row);
           if (current) {
             for (const key of Object.keys(values) as ChartMetric[])
-              current.values[key] += values[key];
-            current.value = current.values[metric];
+              current.values[key] = sumDecimal([
+                current.values[key],
+                values[key],
+              ]);
+            current.value = Number(current.values[metric]);
             mergeText(current.occurrences, row.ocorrencias);
             mergeText(current.impediments, row.impedimentos);
           } else
             totals.set(id, {
               id,
               label: benefitCategoryLabels[id] ?? id.replaceAll("_", " "),
-              value: values[metric],
+              value: Number(values[metric]),
               values,
               occurrences: Array.isArray(row.ocorrencias)
                 ? (row.ocorrencias as string[])
@@ -241,7 +248,7 @@ export function MonthlyBenefitChart({
             label: String(row.fornecedor),
             detail:
               benefitCategoryLabels[category] ?? category.replaceAll("_", " "),
-            value: values[metric],
+            value: Number(values[metric]),
             values,
             ...(row.estado ? { status: String(row.estado) } : {}),
             occurrences: Array.isArray(row.ocorrencias)
@@ -266,14 +273,17 @@ export function MonthlyBenefitChart({
           end: 0,
           color: preparationChartColors[index % preparationChartColors.length]!,
         }));
-  const levelTotals = chartItems.reduce(
-    (totals, item) => {
-      for (const key of Object.keys(totals) as ChartMetric[])
-        totals[key] += item.values[key];
-      return totals;
-    },
-    { valorPrevisto: 0, valorSolicitado: 0, valorConcluido: 0 },
-  );
+  const levelTotals = {
+    valorPrevisto: sumDecimal(
+      chartItems.map((item) => item.values.valorPrevisto),
+    ),
+    valorSolicitado: sumDecimal(
+      chartItems.map((item) => item.values.valorSolicitado),
+    ),
+    valorConcluido: sumDecimal(
+      chartItems.map((item) => item.values.valorConcluido),
+    ),
+  };
   return (
     <>
       {chartItems.length ? (
@@ -465,6 +475,42 @@ export function MonthlyBenefitChart({
               })}
             </div>
           </div>
+          <table
+            className="sr-only"
+            aria-label="Alternativa textual do gráfico mensal de benefícios"
+          >
+            <caption>
+              Valores por{" "}
+              {category ? "fornecedor" : unit ? "categoria" : "unidade"}
+            </caption>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Previsto</th>
+                <th>Solicitado</th>
+                <th>Concluído</th>
+                <th>Ocorrências</th>
+              </tr>
+            </thead>
+            <tbody>
+              {chartItems.map((item) => (
+                <tr key={item.id}>
+                  <th>{item.label}</th>
+                  <td>{money(item.values.valorPrevisto)}</td>
+                  <td>{money(item.values.valorSolicitado)}</td>
+                  <td>{money(item.values.valorConcluido)}</td>
+                  <td>
+                    {[...item.occurrences, ...item.impediments]
+                      .map(
+                        (value) =>
+                          occurrenceLabels[value] ?? value.replaceAll("_", " "),
+                      )
+                      .join(", ") || "Nenhuma"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
         <EmptyState

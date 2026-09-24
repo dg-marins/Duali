@@ -28,7 +28,6 @@ import {
 } from "./ui";
 import { Notice, RecordForm } from "./components";
 import { screens } from "./resources";
-import { X } from "lucide-react";
 import { PeoplePage as GoldenPeoplePage } from "./features/people/PeoplePage";
 
 type Navigate = (path: string) => void;
@@ -133,9 +132,7 @@ function filtersQuery(filters: Record<string, string>, page: number) {
 }
 
 export function PeoplePage({ navigate }: { navigate: Navigate }) {
-  return (
-    <GoldenPeoplePage navigate={navigate} PersonFormComponent={PersonForm} />
-  );
+  return <GoldenPeoplePage navigate={navigate} />;
 }
 const weekdayLabels: Record<string, string> = {
   SEGUNDA: "Segunda",
@@ -231,50 +228,17 @@ function StructuredScaleFields({
   );
 }
 function PersonForm({
-  modal = false,
   person,
-  options = { units: [], teams: [], institutions: [], suppliers: [] },
   onClose,
   onSaved,
   onDirtyChange,
 }: {
-  modal?: boolean;
-  person?: Row;
-  options?: ReturnType<typeof useOptions>;
+  person: Row;
   onClose: () => void;
   onSaved: (id?: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const initial = useMemo<Row>(
-    () => ({
-      nomeCompleto: "",
-      cpf: "",
-      rg: "",
-      dataNascimento: "",
-      email: "",
-      telefone: "",
-      observacoes: "",
-      ativa: true,
-      incluirVinculo: true,
-      unidadeId: "",
-      equipeId: "",
-      tipo: "CLT",
-      dataAdmissao: "",
-      matricula: "",
-      cargoFuncao: "",
-      gestor: "",
-      escala: "",
-      escalaEstruturada: null,
-      instituicaoEnsinoId: "",
-      periodoAcademico: "",
-      valorBolsa: "",
-      dataTerminoPrevista: "",
-      periodicidadeDocumentoMeses: "6",
-      tceStatus: "AGUARDANDO_ASSINATURA",
-      ...person,
-    }),
-    [person],
-  );
+  const initial = useMemo<Row>(() => ({ ...person }), [person]);
   const [data, setData] = useState<Row>(initial),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -286,32 +250,26 @@ function PersonForm({
   const field = (key: string, label: string, type = "text") => (
     <label>
       <span>{label}</span>
-      {type === "currency" ? (
-        <CurrencyInput
-          value={String(data[key] ?? "")}
-          onValueChange={(value) => setData({ ...data, [key]: value })}
-        />
-      ) : (
-        <input
-          type={type}
-          value={String(data[key] ?? "").slice(
-            0,
-            type === "date" ? 10 : undefined,
-          )}
-          onChange={(e) =>
-            setData({
-              ...data,
-              [key]: ["cpf", "rg", "telefone"].includes(key)
-                ? e.target.value.replace(/\D/g, "") || null
-                : e.target.value || null,
-            })
-          }
-        />
-      )}
+      <input
+        type={type}
+        value={String(data[key] ?? "").slice(
+          0,
+          type === "date" ? 10 : undefined,
+        )}
+        onChange={(event) =>
+          setData({
+            ...data,
+            [key]: ["cpf", "rg", "telefone"].includes(key)
+              ? event.target.value.replace(/\D/g, "") || null
+              : event.target.value || null,
+          })
+        }
+      />
     </label>
   );
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError("");
     try {
@@ -319,73 +277,14 @@ function PersonForm({
         Object.entries(data)
           .filter(
             ([key]) =>
-              ![
-                "id",
-                "criadoEm",
-                "atualizadoEm",
-                "vinculos",
-                "unidadeId",
-                "equipeId",
-                "tipo",
-                "dataAdmissao",
-                "matricula",
-                "cargoFuncao",
-                "gestor",
-                "escala",
-                "escalaEstruturada",
-                "instituicaoEnsinoId",
-                "periodoAcademico",
-                "valorBolsa",
-                "dataTerminoPrevista",
-                "periodicidadeDocumentoMeses",
-                "tceStatus",
-                "incluirVinculo",
-              ].includes(key),
+              !["id", "criadoEm", "atualizadoEm", "vinculos"].includes(key),
           )
           .map(([key, value]) => [key, value === "" ? null : value]),
       );
-      const saved = person?.id
-        ? await api<Row>(`pessoas/${person.id}`, "PUT", payload)
-        : !data.incluirVinculo
-          ? await api<Row>("pessoas", "POST", payload)
-          : await api<Row>("pessoas-com-vinculo", "POST", {
-              pessoa: payload,
-              vinculo: Object.fromEntries(
-                [
-                  "unidadeId",
-                  "equipeId",
-                  "tipo",
-                  "dataAdmissao",
-                  "matricula",
-                  "cargoFuncao",
-                  "gestor",
-                  "escala",
-                  "escalaEstruturada",
-                ].map((key) => [key, data[key] === "" ? null : data[key]]),
-              ),
-              ...(data.tipo === "ESTAGIO"
-                ? {
-                    estagio: {
-                      instituicaoEnsinoId: data.instituicaoEnsinoId || null,
-                      periodoAcademico: data.periodoAcademico || null,
-                      valorBolsa:
-                        data.valorBolsa === "" ? null : data.valorBolsa,
-                      dataTerminoPrevista:
-                        data.dataTerminoPrevista === ""
-                          ? null
-                          : data.dataTerminoPrevista,
-                      periodicidadeDocumentoMeses:
-                        data.periodicidadeDocumentoMeses === ""
-                          ? undefined
-                          : data.periodicidadeDocumentoMeses,
-                      tceStatus: data.tceStatus || "AGUARDANDO_ASSINATURA",
-                    },
-                  }
-                : {}),
-            });
-      onSaved(String(saved.id ?? person?.id ?? ""));
-    } catch (e) {
-      setError((e as Error).message);
+      await api<Row>(`pessoas/${person.id}`, "PUT", payload);
+      onSaved(String(person.id));
+    } catch (reason) {
+      setError((reason as Error).message);
     } finally {
       setBusy(false);
     }
@@ -393,18 +292,13 @@ function PersonForm({
   return (
     <section className="panel form-panel">
       <div className="section-heading">
-        <h2>{person ? "Editar pessoa" : "Nova pessoa"}</h2>
-        <button
-          type="button"
-          className={modal ? "person-modal-close" : "secondary"}
-          aria-label="Fechar"
-          onClick={close}
-        >
-          {modal ? <X size={18} aria-hidden="true" /> : "Fechar"}
+        <h2>Editar pessoa</h2>
+        <button type="button" className="secondary" onClick={close}>
+          Fechar
         </button>
       </div>
       <Notice text={error} error />
-      <form onSubmit={(e) => void submit(e)}>
+      <form onSubmit={(event) => void submit(event)}>
         <fieldset>
           <legend>Dados pessoais</legend>
           <div className="form-grid">
@@ -421,168 +315,12 @@ function PersonForm({
             {field("telefone", "Telefone")}
           </div>
         </fieldset>
-        {/* Legacy address fields remain in the data model but are intentionally hidden from this form. */}
-        {/* eslint-disable-next-line no-constant-binary-expression */}
-        {false && (
-          <fieldset>
-            <legend>Endereço</legend>
-            <div className="form-grid">
-              {field("cep", "CEP")}
-              {field("logradouro", "Logradouro")}
-              {field("numeroEndereco", "Número")}
-              {field("complemento", "Complemento")}
-              {field("bairro", "Bairro")}
-              {field("cidadeEndereco", "Cidade")}
-              {field("ufEndereco", "UF")}{" "}
-              {Boolean(data.endereco) && (
-                <label className="wide">
-                  <span>Endereço legado importado</span>
-                  <textarea value={String(data.endereco)} readOnly />
-                </label>
-              )}
-            </div>
-          </fieldset>
-        )}
-        {!person && (
-          <label className="optional-link">
-            <input
-              type="checkbox"
-              checked={Boolean(data.incluirVinculo)}
-              onChange={(e) =>
-                setData({ ...data, incluirVinculo: e.target.checked })
-              }
-            />
-            <span>Adicionar vínculo inicial</span>
-          </label>
-        )}
-        {!person && Boolean(data.incluirVinculo) && (
-          <fieldset>
-            <legend>Vínculo inicial</legend>
-            <div className="form-grid">
-              <label>
-                <span>Unidade *</span>
-                <select
-                  required
-                  value={String(data.unidadeId ?? "")}
-                  onChange={(e) =>
-                    setData({ ...data, unidadeId: e.target.value })
-                  }
-                >
-                  <option value="">Selecione</option>
-                  {options.units.map((row) => (
-                    <option key={String(row.id)} value={String(row.id)}>
-                      {`${String(row.sigla ?? "").trim() ? `${String(row.sigla).trim()} - ` : ""}${String(row.nome ?? "")}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Equipe</span>
-                <select
-                  value={String(data.equipeId ?? "")}
-                  onChange={(e) =>
-                    setData({ ...data, equipeId: e.target.value || null })
-                  }
-                >
-                  <option value="">Sem equipe</option>
-                  {[...options.teams]
-                    .sort((a, b) =>
-                      display(a).localeCompare(display(b), "pt-BR", {
-                        sensitivity: "base",
-                      }),
-                    )
-                    .map((row) => (
-                      <option key={String(row.id)} value={String(row.id)}>
-                        {display(row)}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                <span>Tipo *</span>
-                <select
-                  required
-                  value={String(data.tipo)}
-                  onChange={(e) => setData({ ...data, tipo: e.target.value })}
-                >
-                  <option value="CLT">CLT</option>
-                  <option value="ESTAGIO">Estágio</option>
-                  <option value="APRENDIZ">Aprendiz</option>
-                  <option value="TRAINEE">Trainee</option>
-                </select>
-              </label>
-              {field("dataAdmissao", "Admissão *", "date")}
-              {field("matricula", "Matrícula")}
-              {field("cargoFuncao", "Cargo/Função")}
-              {field("gestor", "Gestor")}
-            </div>
-            <StructuredScaleFields
-              value={(data.escalaEstruturada as Row | null | undefined) ?? null}
-              onChange={(escalaEstruturada) =>
-                setData({ ...data, escalaEstruturada })
-              }
-            />
-            {data.tipo === "ESTAGIO" && (
-              <div className="form-grid">
-                <label>
-                  <span>Instituição de ensino</span>
-                  <select
-                    value={String(data.instituicaoEnsinoId ?? "")}
-                    onChange={(e) =>
-                      setData({
-                        ...data,
-                        instituicaoEnsinoId: e.target.value || null,
-                      })
-                    }
-                  >
-                    <option value="">Selecione</option>
-                    {options.institutions.map((row) => (
-                      <option key={String(row.id)} value={String(row.id)}>
-                        {`${String(row.sigla ?? "").trim() ? `${String(row.sigla).trim()} - ` : ""}${String(row.nome ?? "")}`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {field("periodoAcademico", "Período acadêmico")}
-                {field("valorBolsa", "Bolsa", "currency")}
-                {field(
-                  "periodicidadeDocumentoMeses",
-                  "Periodicidade do TCE/aditivo (meses)",
-                  "number",
-                )}
-                {field(
-                  "dataTerminoPrevista",
-                  "Fim previsto do estágio",
-                  "date",
-                )}
-                <label>
-                  <span>TCE *</span>
-                  <select
-                    required
-                    value={String(data.tceStatus ?? "AGUARDANDO_ASSINATURA")}
-                    onChange={(e) =>
-                      setData({ ...data, tceStatus: e.target.value })
-                    }
-                  >
-                    <option value="AGUARDANDO_ASSINATURA">
-                      Aguardando assinatura
-                    </option>
-                    {new Date(String(data.dataAdmissao)).setHours(0, 0, 0, 0) <=
-                      new Date().setHours(0, 0, 0, 0) && (
-                      <option value="ASSINADO">Assinado</option>
-                    )}
-                  </select>
-                </label>
-              </div>
-            )}
-          </fieldset>
-        )}
         <fieldset>
           <legend>Observações</legend>
           <textarea
             value={String(data.observacoes ?? "")}
-            onChange={(e) =>
-              setData({ ...data, observacoes: e.target.value || null })
+            onChange={(event) =>
+              setData({ ...data, observacoes: event.target.value || null })
             }
           />
         </fieldset>
@@ -604,7 +342,6 @@ function PersonForm({
     </section>
   );
 }
-
 export function PersonEditor({
   id,
   navigate,
@@ -637,8 +374,8 @@ export function PersonEditor({
   return (
     <>
       <PageHeader
-        title={id ? "Editar pessoa" : "Nova pessoa"}
-        description="Dados pessoais, contato e endereço."
+        title="Editar pessoa"
+        description="Dados pessoais e contato."
         breadcrumb={
           <button
             className="link-button"
@@ -651,7 +388,7 @@ export function PersonEditor({
         }
       />
       <PersonForm
-        {...(person ? { person } : {})}
+        person={person!}
         onClose={() => navigate(destination)}
         onSaved={(savedId) =>
           navigate(id && savedId ? `/app/pessoas/${savedId}` : "/app/pessoas")
@@ -2971,14 +2708,7 @@ export const InternsPage = ({ navigate }: { navigate: Navigate }) => (
     navigate={navigate}
   />
 );
-export const LeavePage = ({ navigate }: { navigate: Navigate }) => (
-  <OperationalList
-    kind="descansos"
-    title="Férias"
-    description="Saldos reconstruídos, prazos e inconsistências por vínculo."
-    navigate={navigate}
-  />
-);
+export { LeavePage } from "./features/leave/LeavePage";
 export const BenefitLaunchesPage = ({ navigate }: { navigate: Navigate }) => (
   <OperationalList
     kind="beneficios"

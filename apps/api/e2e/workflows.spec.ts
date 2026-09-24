@@ -94,23 +94,23 @@ test("administrator completes the operational RH journey", async ({ page }) => {
 
     await page.getByRole("button", { name: "Pessoas", exact: true }).click();
     await page.getByRole("button", { name: "+ Nova pessoa" }).click();
-    const personForm = page.locator(".form-panel");
-    await personForm.getByLabel("Nome completo *").fill("Rascunho");
-    await personForm
-      .getByRole("button", { name: "Fechar", exact: true })
-      .click();
+    await page.getByLabel("Nome completo").fill("Rascunho");
+    await page.getByRole("button", { name: "Cancelar", exact: true }).click();
     await expect(
       page.getByRole("dialog", { name: "Descartar alterações?" }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Continuar editando" }).click();
-    await personForm.getByLabel("Nome completo *").fill(`Pessoa E2E ${suffix}`);
-    await personForm.getByLabel("E-mail").fill(`pessoa-${suffix}@example.test`);
-    await personForm.getByLabel("Unidade *").selectOption(unit.id);
-    await personForm.getByLabel("Admissão *").fill("2024-01-01");
-    await personForm
-      .getByRole("button", { name: "Salvar", exact: true })
-      .click();
-    await expect(personForm).toBeHidden();
+    await page.getByLabel("Nome completo").fill(`Pessoa E2E ${suffix}`);
+    await page.getByLabel("E-mail").fill(`pessoa-${suffix}@example.test`);
+    await page.getByRole("button", { name: "Próximo" }).click();
+    await page.getByLabel("Unidade").selectOption(unit.id);
+    await page.getByLabel("Admissão").fill("2024-01-01");
+    await page.getByRole("button", { name: "Próximo" }).click();
+    await page.getByRole("button", { name: "Confirmar cadastro" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Pessoa cadastrada" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Voltar para Pessoas" }).click();
     await page.getByLabel("Buscar pessoa").fill(suffix);
     await page.getByRole("cell", { name: `Pessoa E2E ${suffix}` }).click();
     await expect(
@@ -159,18 +159,23 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       .click();
     await expect(internshipForm).toBeHidden();
 
-    await page.goto("/app/ferias");
-    await page.getByRole("button", { name: "Programar período" }).click();
-    const leaveForm = page.locator(".form-panel");
-    await selectLookup(leaveForm, "Vínculo", `${suffix}.*ESTAGIO`, suffix);
+    await page.goto(`/app/ferias?q=${suffix}`);
+    await page
+      .getByRole("button", { name: "Programar férias ou descanso" })
+      .click();
+    const leaveForm = page.getByRole("dialog", {
+      name: "Programar férias ou descanso",
+    });
     await leaveForm
-      .getByLabel("Tipo", { exact: true })
-      .selectOption("DESCANSO_ESTAGIO");
-    await leaveForm.getByLabel("Início").fill("2026-01-01");
-    await leaveForm.getByLabel("Fim").fill("2026-01-05");
-    await leaveForm.getByRole("button", { name: "Usar sugestão" }).click();
+      .getByRole("button", { name: new RegExp(`${suffix} Estágio`) })
+      .click();
+    await leaveForm.getByRole("button", { name: "Continuar" }).click();
+    await leaveForm.getByRole("button", { name: "Continuar" }).click();
+    await leaveForm.getByLabel("Data inicial").fill("2026-01-01");
+    await leaveForm.getByLabel("Data final").fill("2026-01-05");
+    await leaveForm.getByRole("button", { name: "Continuar" }).click();
     await leaveForm
-      .getByRole("button", { name: "Salvar", exact: true })
+      .getByRole("button", { name: "Confirmar programação" })
       .click();
     await expect(leaveForm).toBeHidden();
 

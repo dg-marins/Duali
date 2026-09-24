@@ -141,13 +141,22 @@ test("erro de negócio permanece na tela sem encerrar a sessão", async ({
     await login(page, user.email, password);
     await page.getByRole("button", { name: "Pessoas", exact: true }).click();
     await page.getByRole("button", { name: "+ Nova pessoa" }).click();
-    const form = page.locator(".form-panel");
-    await form.getByLabel("Nome completo *").fill("Pessoa inválida");
-    await form.getByLabel("CPF").fill("123");
-    await form.getByLabel("Unidade *").selectOption(unit.id);
-    await form.getByLabel("Admissão *").fill("2026-01-01");
-    await form.getByRole("button", { name: "Salvar", exact: true }).click();
-    await expect(form.getByText("Confira os campos informados.")).toBeVisible();
+    await page.getByLabel("Nome completo *").fill("Pessoa inválida");
+    await page.getByRole("button", { name: "Próximo" }).click();
+    await page.getByLabel("Unidade *").selectOption(unit.id);
+    await page.getByLabel("Admissão *").fill("2026-01-01");
+    await page.getByRole("button", { name: "Próximo" }).click();
+    await page.route("**/api/pessoas-com-vinculo", (route) =>
+      route.fulfill({
+        status: 422,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { code: "DOMAIN", message: "Confira os campos informados." },
+        }),
+      }),
+    );
+    await page.getByRole("button", { name: "Confirmar cadastro" }).click();
+    await expect(page.getByText("Confira os campos informados.")).toBeVisible();
     await expect(page.locator(".shell")).toBeVisible();
   } finally {
     await db.$disconnect();

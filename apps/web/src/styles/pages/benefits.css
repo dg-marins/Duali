@@ -1,0 +1,198 @@
+.benefits-page {
+  min-width: 0;
+}
+.benefits-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.benefits-context {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(240px, 1fr);
+  gap: var(--space-4);
+  align-items: end;
+}
+.benefits-context > label,
+.benefits-month-navigation label {
+  display: grid;
+  gap: var(--space-2);
+}
+.benefits-month-navigation {
+  display: grid;
+  grid-template-columns: 40px minmax(180px, 1fr) 40px;
+  gap: var(--space-2);
+  align-items: end;
+}
+.benefit-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.benefits-notices {
+  display: grid;
+  gap: var(--space-2);
+}
+.benefits-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.benefits-error .notice {
+  flex: 1 1 320px;
+}
+.benefit-summary-chart,
+.benefits-unit-section {
+  min-width: 0;
+}
+.benefits-unit-section > header {
+  margin-bottom: var(--space-4);
+}
+.benefits-unit-section > header p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+}
+.benefits-unit-section .ds-data-table {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.benefits-unit-section table {
+  min-width: 850px;
+}
+.competency-unit-grid {
+  display: grid;
+  gap: var(--space-4);
+}
+.competency-unit-card > header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  align-items: start;
+  margin-bottom: var(--space-4);
+}
+.competency-unit-card > header p {
+  color: var(--color-text-muted);
+  margin: var(--space-1) 0 0;
+}
+.competency-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(285px, 1fr));
+  gap: var(--space-3);
+}
+.competency-category-card {
+  display: grid;
+  gap: var(--space-3);
+  min-height: 180px;
+  padding: var(--space-4);
+  text-align: left;
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--duali-radius-lg);
+}
+.competency-category-card:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+.competency-category-title {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: center;
+}
+.competency-category-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+.competency-category-card dl div {
+  display: grid;
+  gap: 2px;
+}
+.competency-category-card dt {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+.competency-category-card dd {
+  margin: 0;
+  font-weight: 600;
+}
+.competency-category-card small {
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+.competency-detail-modal {
+  display: grid;
+  gap: var(--space-5);
+}
+.competency-detail-modal section {
+  display: grid;
+  gap: var(--space-3);
+}
+.benefit-detail-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--duali-radius-md);
+  overflow: hidden;
+}
+.benefit-detail-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.benefit-detail-list li:last-child {
+  border-bottom: 0;
+}
+.benefit-detail-list li > span:first-child {
+  display: grid;
+  gap: var(--space-1);
+}
+.benefit-detail-list small {
+  color: var(--color-text-muted);
+}
+.benefit-order-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--duali-radius-lg);
+}
+.benefit-order-card > header,
+.benefit-order-card > header > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+.benefit-order-card.is-cancelled {
+  background: var(--color-surface-subtle);
+}
+@media (max-width: 900px) {
+  .benefit-summary-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .benefits-context {
+    grid-template-columns: 1fr;
+  }
+  .benefit-summary-metrics {
+    grid-template-columns: 1fr;
+  }
+  .competency-category-grid {
+    grid-template-columns: 1fr;
+  }
+  .competency-category-card dl {
+    grid-template-columns: 1fr 1fr;
+  }
+  .benefit-detail-list li {
+    align-items: start;
+  }
+}

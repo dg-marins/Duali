@@ -242,11 +242,10 @@ test("Golden Reference de Pessoas preserva contexto e comportamento responsivo",
       .getByRole("button", { name: "+ Nova pessoa", exact: true })
       .click();
     await expect(page).toHaveURL(/\/app\/pessoas\/nova\?/);
-    await expect(page.getByRole("dialog")).toBeVisible();
-    await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Fechar" })
-      .click();
+    await expect(
+      page.getByRole("heading", { name: "Dados pessoais" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Cancelar" }).click();
     await expect(page).toHaveURL(/\/app\/pessoas\?/);
     expect(new URL(page.url()).searchParams.get("q")).toBe(searchTerm);
     expect(new URL(page.url()).searchParams.get("page")).toBe("1");

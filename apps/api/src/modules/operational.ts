@@ -25,6 +25,10 @@ const operationalListSchema = listSchema.extend({
     .string()
     .regex(/^\d{4}-\d{2}$/)
     .optional(),
+  ano: z.coerce.number().int().min(2000).max(2200).optional(),
+  situacao: z
+    .enum(["A_PROGRAMAR", "PROGRAMADO", "EM_GOZO", "CONCLUIDO"])
+    .optional(),
   sort: z.enum(["nome", "admissao", "status", "prazo"]).default("nome"),
   direction: z.enum(["asc", "desc"]).default("asc"),
 });
@@ -451,23 +455,53 @@ export function registerOperational(app: FastifyInstance, db: PrismaClient) {
         ...linkFilters(query),
         ...(query.q ? { pessoa: personSearch(query.q) } : {}),
       };
-    const [records, total] = await Promise.all([
-      db.vinculo.findMany({
-        where,
-        include: { pessoa: true, unidade: true, equipe: true },
-        orderBy: { dataAdmissao: "desc" },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-      db.vinculo.count({ where }),
-    ]);
-    const items = await Promise.all(
+    const records = await db.vinculo.findMany({
+      where,
+      include: { pessoa: true, unidade: true, equipe: true },
+      orderBy: [{ pessoa: { nomeCompleto: "asc" } }, { dataAdmissao: "desc" }],
+    });
+    const projected = await Promise.all(
       records.map(async (link) => ({
         ...link,
         saldo: await balance(db, link.id),
       })),
     );
-    return { items, total, page: query.page, pageSize: query.pageSize };
+    const year = query.ano ?? new Date().getUTCFullYear();
+    const inYear = (
+      period: { dataInicio: Date; status: string },
+      status: string,
+    ) =>
+      period.status === status && period.dataInicio.getUTCFullYear() === year;
+    const matches = (item: (typeof projected)[number], situation: string) => {
+      const ledger = item.saldo;
+      if (situation === "A_PROGRAMAR")
+        return (
+          item.pessoa.ativa &&
+          ["ATIVO", "AFASTADO"].includes(item.status) &&
+          new Prisma.Decimal(ledger.saldoDisponivelParaProgramar).greaterThan(0)
+        );
+      return ledger.periodos.some((period) => inYear(period, situation));
+    };
+    const resumo = {
+      aProgramar: projected.filter((item) => matches(item, "A_PROGRAMAR"))
+        .length,
+      programadas: projected.filter((item) => matches(item, "PROGRAMADO"))
+        .length,
+      emFerias: projected.filter((item) => matches(item, "EM_GOZO")).length,
+      concluidas: projected.filter((item) => matches(item, "CONCLUIDO")).length,
+    };
+    const filtered = query.situacao
+      ? projected.filter((item) => matches(item, query.situacao!))
+      : projected;
+    const start = (query.page - 1) * query.pageSize;
+    return {
+      items: filtered.slice(start, start + query.pageSize),
+      total: filtered.length,
+      page: query.page,
+      pageSize: query.pageSize,
+      resumo,
+      ano: year,
+    };
   });
 
   app.get("/api/beneficios-operacional", async (req) => {

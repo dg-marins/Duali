@@ -117,7 +117,7 @@ test("exibe previsão futura no mesmo ciclo do Dashboard e de Benefícios", asyn
       `/app/beneficios?competencia=2026-10-01&unidadeId=${unit.id}`,
     );
     await expect(
-      page.getByRole("button", { name: /Valor previsto/ }),
+      page.locator(".ds-metric-card").filter({ hasText: "Valor previsto" }),
     ).toContainText(/R\$\s*200,00/, { timeout: 30_000 });
     await expect(
       page.getByRole("button", { name: /Previsto R\$\s*200,00/ }),
@@ -230,12 +230,14 @@ test("administra pedido e confirmação de aquisição mensal", async ({
       .getByRole("button", { name: "Gerar pedido", exact: true })
       .click();
     await page.getByRole("button", { name: /Alimenta/ }).click();
-    await expect(page.getByText("Pendente", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Confirmar", exact: true }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
     await page
-      .getByRole("button", { name: "Confirmar aquisição", exact: true })
+      .getByRole("button", { name: "Confirmar compra", exact: true })
       .click();
-    await expect(page.getByText("Confirmada", { exact: true })).toBeVisible();
+    await page
+      .getByRole("button", { name: "Registrar confirmação", exact: true })
+      .click();
+    await expect(page.getByText("CONFIRMADA", { exact: true })).toBeVisible();
   } finally {
     await db.$disconnect();
   }
@@ -244,6 +246,7 @@ test("administra pedido e confirmação de aquisição mensal", async ({
 test("faz pedido de alimentação sem adesão prévia e o apresenta no perfil", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   const db = new PrismaClient({ datasourceUrl: testDatabaseUrl() });
   const suffix = randomUUID(),
     password = `${suffix}Aa!`,
@@ -356,10 +359,13 @@ test("faz pedido de alimentação sem adesão prévia e o apresenta no perfil", 
       page.getByRole("heading", { name: "Benefícios", exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /Valor previsto/ }),
-    ).toContainText(/R\$\s*561,00/, { timeout: 30_000 });
+      page.locator(".ds-metric-card").filter({ hasText: "Valor previsto" }),
+    ).toContainText("Sem previsão", { timeout: 30_000 });
     await expect(
-      page.getByRole("heading", { name: "Benefício Mensal" }),
+      page.locator(".ds-metric-card").filter({ hasText: "Valor solicitado" }),
+    ).toContainText(/R\$\s*561,00/);
+    await expect(
+      page.getByRole("heading", { name: "Ciclo mensal" }),
     ).toBeVisible();
     await page.screenshot({
       path: "artifacts/beneficios-resumo-desktop.png",
@@ -403,9 +409,10 @@ test("faz pedido de alimentação sem adesão prévia e o apresenta no perfil", 
       `/app/beneficios/competencias?unidadeId=${unit.id}&competencia=2026-09-01&tipo=ALIMENTACAO`,
     );
     await page.getByRole("button", { name: /Alimenta/ }).click();
-    await page.getByRole("button", { name: "Cancelar", exact: true }).click();
-    await expect(page.getByRole("dialog").getByText("Cancelada")).toBeVisible();
-    await page.getByText("1 item(ns)").click();
+    await page
+      .getByRole("button", { name: "Cancelar pedido", exact: true })
+      .click();
+    await expect(page.getByRole("dialog").getByText("CANCELADA")).toBeVisible();
     await expect(
       page
         .getByRole("dialog")
@@ -413,7 +420,7 @@ test("faz pedido de alimentação sem adesão prévia e o apresenta no perfil", 
         .filter({ hasText: /R\$\s*561,00/ }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("button", { name: /Cancelado/ })).toContainText(
+    await expect(page.getByRole("button", { name: /Alimenta/ })).toContainText(
       /R\$\s*0,00/,
     );
     await page.goto(

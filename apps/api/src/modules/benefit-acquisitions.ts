@@ -5,6 +5,7 @@ import {
   aquisicaoPedidoSchema,
   aquisicaoPrepararSchema,
   aquisicaoReverterSchema,
+  beneficioCicloDetalheQuerySchema,
   beneficioCicloQuerySchema,
   pedidoMensalGerarSchema,
   pedidoMensalSimulacaoSchema,
@@ -25,6 +26,7 @@ import {
   operationalBenefitCompetence,
 } from "./benefits.js";
 import {
+  benefitCycleDetail,
   benefitCycleSummary,
   refreshExistingNextMonthForecasts,
 } from "./benefit-cycle.js";
@@ -863,6 +865,15 @@ export function registerBenefitAcquisitions(
       query.unidadeId,
     );
   });
+  app.get("/api/beneficios/ciclo-mensal/detalhe", async (req) => {
+    const query = beneficioCicloDetalheQuerySchema.parse(req.query);
+    return benefitCycleDetail(
+      db,
+      new Date(`${query.competencia}T00:00:00.000Z`),
+      query.unidadeId!,
+      query.tipo,
+    );
+  });
   app.get("/api/beneficios/resumo", async (req) => {
     const query = z
       .object({
@@ -918,6 +929,12 @@ export function registerBenefitAcquisitions(
       cancelado: cycle.totais.cancelado,
       lancamentosPendentes: rows.filter((row) => row.status === "PENDENTE")
         .length,
+      pessoasPrevistas: cycle.pessoasPrevistas,
+      estado: cycle.estado,
+      ocorrencias: cycle.ocorrencias,
+      impedimentos: cycle.impedimentos,
+      fechamentos: cycle.fechamentos,
+      unidades: cycle.unidades,
       cicloMensal: cycle.itens,
       legado: {
         previsto: previsto.toFixed(2),

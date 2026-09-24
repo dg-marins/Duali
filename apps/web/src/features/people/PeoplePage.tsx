@@ -1,16 +1,9 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentType,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
 import { api, display, type Row } from "../../api";
 import {
   Button,
   DataTable,
-  Dialog,
   EmptyState,
   FilterBar,
   LoadingSkeleton,
@@ -22,7 +15,7 @@ import {
   type DataTableColumn,
 } from "../../components/ui";
 import { PageHeader, formatDate } from "../../ui";
-import { usePeopleOptions, type PeopleOptions } from "./usePeopleOptions";
+import { usePeopleOptions } from "./usePeopleOptions";
 
 type Navigate = (path: string) => void;
 type Filters = {
@@ -40,12 +33,6 @@ type ListResult = {
   page: number;
   pageSize: number;
   segmentos?: Record<string, number>;
-};
-export type PersonFormComponentProps = {
-  modal?: boolean;
-  options?: PeopleOptions;
-  onClose: () => void;
-  onSaved: (id?: string) => void;
 };
 
 const segments = [
@@ -70,13 +57,7 @@ function optionName(options: Row[], id: string) {
   return display(options.find((row) => String(row.id) === id));
 }
 
-export function PeoplePage({
-  navigate,
-  PersonFormComponent,
-}: {
-  navigate: Navigate;
-  PersonFormComponent: ComponentType<PersonFormComponentProps>;
-}) {
+export function PeoplePage({ navigate }: { navigate: Navigate }) {
   const options = usePeopleOptions();
   const initial = useMemo(() => new URLSearchParams(location.search), []);
   const [filters, setFilters] = useState<Filters>({
@@ -97,20 +78,15 @@ export function PeoplePage({
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState("");
+  const [announcement, setAnnouncement] = useState("");
   const [version, setVersion] = useState(0);
-  const [focusAfterLoad, setFocusAfterLoad] = useState("");
   const newPersonButton = useRef<HTMLButtonElement>(null);
-  const creating = location.pathname === "/app/pessoas/nova";
   const query = queryFor(filters, page);
   const hasFilters = Object.values(filters).some(Boolean);
 
   useEffect(() => {
     let active = true;
-    history.replaceState(
-      {},
-      "",
-      `${creating ? "/app/pessoas/nova" : "/app/pessoas"}?${query}`,
-    );
+    history.replaceState({}, "", `/app/pessoas?${query}`);
     setLoading(true);
     const timer = setTimeout(() => {
       void api<ListResult>(`pessoas-operacional?${query}`)
@@ -132,10 +108,10 @@ export function PeoplePage({
       active = false;
       clearTimeout(timer);
     };
-  }, [creating, query, version]);
+  }, [query, version]);
 
   useEffect(() => {
-    if (loading || !hasLoaded || creating) return;
+    if (loading || !hasLoaded) return;
     const stored = sessionStorage.getItem("duali.people.return");
     if (stored) {
       const context = JSON.parse(stored) as {
@@ -167,15 +143,25 @@ export function PeoplePage({
         });
       }
     }
-    if (focusAfterLoad) {
-      requestAnimationFrame(() =>
-        document
-          .querySelector<HTMLElement>(`[data-person-id="${focusAfterLoad}"]`)
-          ?.focus(),
-      );
-      setFocusAfterLoad("");
+    const createdContext = sessionStorage.getItem("duali.people.created");
+    if (createdContext) {
+      const context = JSON.parse(createdContext) as { id: string; url: string };
+      if (context.url === location.pathname + location.search) {
+        requestAnimationFrame(() => {
+          const row = document.querySelector<HTMLElement>(
+            `[data-person-id="${context.id}"]`,
+          );
+          (row ?? newPersonButton.current)?.focus({ preventScroll: true });
+          setAnnouncement(
+            row
+              ? "Pessoa cadastrada e selecionada na listagem."
+              : "Pessoa cadastrada. Ela não aparece nos filtros atuais.",
+          );
+          sessionStorage.removeItem("duali.people.created");
+        });
+      }
     }
-  }, [creating, focusAfterLoad, hasLoaded, loading]);
+  }, [hasLoaded, loading]);
 
   const update = (key: keyof Filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -213,11 +199,6 @@ export function PeoplePage({
       JSON.stringify({ url: listUrl, scroll: window.scrollY }),
     );
     navigate(`/app/pessoas/nova?${query}`);
-  };
-  const closeCreate = (savedId?: string) => {
-    if (savedId) setFocusAfterLoad(savedId);
-    navigate(`/app/pessoas?${query}`);
-    if (savedId) setVersion((current) => current + 1);
   };
 
   const columns: DataTableColumn[] = [
@@ -346,6 +327,9 @@ export function PeoplePage({
   const initialError = Boolean(error && !hasLoaded && !data.items.length);
   return (
     <div className="people-page golden-people">
+      <span className="sr-only" aria-live="polite">
+        {announcement}
+      </span>
       <PageHeader
         title="Pessoas"
         description="Gerencie pessoas e vínculos da organização."
@@ -359,26 +343,6 @@ export function PeoplePage({
           </Button>
         }
       />
-      <Dialog
-        open={creating}
-        onOpenChange={(open) => {
-          if (!open) closeCreate();
-        }}
-        title="Nova pessoa"
-        description="Cadastre a pessoa e, se desejar, seu vínculo inicial."
-        hideHeader
-        className="person-create-dialog"
-        size="lg"
-      >
-        {creating && (
-          <PersonFormComponent
-            modal
-            options={options}
-            onClose={() => closeCreate()}
-            onSaved={closeCreate}
-          />
-        )}
-      </Dialog>
       <nav
         className="people-segment-nav"
         aria-label="Segmento atual das pessoas"

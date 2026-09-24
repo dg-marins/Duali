@@ -326,7 +326,7 @@ export async function benefitCycleSummary(
   competence: Date,
   unitId?: string,
 ) {
-  const [forecasts, orders] = await Promise.all([
+  const [forecasts, orders, closings] = await Promise.all([
     db.previsaoBeneficioVersao.findMany({
       where: {
         competencia: competence,
@@ -345,6 +345,13 @@ export async function benefitCycleSummary(
         fornecedor: true,
         itens: { include: { movimentacoes: true } },
       },
+    }),
+    db.fechamentoCompetenciaBeneficio.findMany({
+      where: {
+        competencia: competence,
+        ...(unitId ? { unidadeId: unitId } : {}),
+      },
+      include: { unidade: true },
     }),
   ]);
   const groups = new Map<string, CycleGroup>();
@@ -478,6 +485,78 @@ export async function benefitCycleSummary(
       cancelado: new Prisma.Decimal(0),
     },
   );
+  const closingByUnit = new Map(
+    closings.map((closing) => [closing.unidadeId, closing.status]),
+  );
+  const unitGroups = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const current = unitGroups.get(row.unidadeId) ?? [];
+    current.push(row);
+    unitGroups.set(row.unidadeId, current);
+  }
+  const stateFor = (values: {
+    requested: Prisma.Decimal;
+    pending: Prisma.Decimal;
+    forecast: Prisma.Decimal;
+    cancelled: Prisma.Decimal;
+  }) =>
+    values.pending.greaterThan(0)
+      ? ("SOLICITADO" as const)
+      : values.requested.greaterThan(0)
+        ? ("CONCLUIDO" as const)
+        : values.forecast.greaterThan(0)
+          ? ("PREVISTO" as const)
+          : ("CANCELADO" as const);
+  const units = [...unitGroups.entries()]
+    .map(([groupUnitId, unitRows]) => {
+      const values = unitRows.reduce(
+        (total, row) => ({
+          forecast: total.forecast.plus(row.valorPrevisto),
+          requested: total.requested.plus(row.valorSolicitado),
+          concluded: total.concluded.plus(row.valorConcluido),
+          pending: total.pending.plus(row.saldoPendente),
+          cancelled: total.cancelled.plus(row.valorCancelado),
+        }),
+        {
+          forecast: new Prisma.Decimal(0),
+          requested: new Prisma.Decimal(0),
+          concluded: new Prisma.Decimal(0),
+          pending: new Prisma.Decimal(0),
+          cancelled: new Prisma.Decimal(0),
+        },
+      );
+      const predictedLinks = new Set(
+        unitRows.flatMap((row) => row.vinculosPrevistos),
+      );
+      return {
+        unidadeId: groupUnitId,
+        unidade: unitRows[0]!.unidade,
+        possuiPrevisao: unitRows.some(
+          (row) => row.vinculosPrevistos.length > 0,
+        ),
+        pessoasPrevistas: predictedLinks.size,
+        valorPrevisto: values.forecast.toFixed(2),
+        valorSolicitado: values.requested.toFixed(2),
+        valorConcluido: values.concluded.toFixed(2),
+        saldoPendente: values.pending.toFixed(2),
+        estado: stateFor(values),
+        ocorrencias: [
+          ...new Set(unitRows.flatMap((row) => row.ocorrencias)),
+        ].sort(),
+        impedimentos: [
+          ...new Set(unitRows.flatMap((row) => row.impedimentos)),
+        ].sort(),
+        fechamento: closingByUnit.get(groupUnitId) ?? ("ABERTA" as const),
+      };
+    })
+    .sort((left, right) => left.unidade.localeCompare(right.unidade, "pt-BR"));
+  const predictedLinks = new Set(rows.flatMap((row) => row.vinculosPrevistos));
+  const aggregateState = stateFor({
+    forecast: totals.previsto,
+    requested: totals.solicitado,
+    pending: totals.pendente,
+    cancelled: totals.cancelado,
+  });
   return {
     competencia: competence.toISOString().slice(0, 10),
     possuiPrevisao: forecasts.length > 0,
@@ -488,6 +567,129 @@ export async function benefitCycleSummary(
       pendente: totals.pendente.toFixed(2),
       cancelado: totals.cancelado.toFixed(2),
     },
+    pessoasPrevistas: predictedLinks.size,
+    estado: aggregateState,
+    ocorrencias: [...new Set(rows.flatMap((row) => row.ocorrencias))].sort(),
+    impedimentos: [...new Set(rows.flatMap((row) => row.impedimentos))].sort(),
+    fechamentos: closings.map((closing) => ({
+      unidadeId: closing.unidadeId,
+      unidade: closing.unidade.nome,
+      status: closing.status,
+    })),
+    unidades: units,
     itens: rows,
+  };
+}
+
+export async function benefitCycleDetail(
+  db: Database,
+  competence: Date,
+  unitId: string,
+  type: TipoBeneficio,
+) {
+  const [forecast, orders, closing] = await Promise.all([
+    db.previsaoBeneficioVersao.findFirst({
+      where: {
+        competencia: competence,
+        unidadeId: unitId,
+        tipo: type,
+        vigente: true,
+      },
+      include: {
+        itens: {
+          include: { fornecedor: true },
+          orderBy: [{ incluido: "desc" }, { pessoaNome: "asc" }],
+        },
+      },
+    }),
+    db.aquisicaoBeneficio.findMany({
+      where: { competencia: competence, unidadeId: unitId, tipo: type },
+      include: {
+        fornecedor: true,
+        itens: {
+          include: {
+            movimentacoes: { orderBy: { criadoEm: "asc" } },
+            competencia: {
+              include: {
+                transporteItens: { include: { fornecedor: true } },
+              },
+            },
+          },
+          orderBy: { pessoaNome: "asc" },
+        },
+      },
+      orderBy: { criadoEm: "asc" },
+    }),
+    db.fechamentoCompetenciaBeneficio.findUnique({
+      where: {
+        unidadeId_competencia: { unidadeId: unitId, competencia: competence },
+      },
+    }),
+  ]);
+  return {
+    competencia: competence.toISOString().slice(0, 10),
+    unidadeId: unitId,
+    tipo: type,
+    possuiPrevisao: Boolean(forecast),
+    previsao: forecast
+      ? {
+          id: forecast.id,
+          numero: forecast.numero,
+          competenciaBase: forecast.competenciaBase.toISOString().slice(0, 10),
+          congeladaEm: forecast.congeladaEm?.toISOString() ?? null,
+          baseReaberta: forecast.baseReaberta,
+          composicaoIncompleta: forecast.composicaoIncompleta,
+          itens: forecast.itens.map((item) => ({
+            id: item.id,
+            vinculoId: item.vinculoId,
+            pessoaNome: item.pessoaNome,
+            fornecedorId: item.fornecedorId,
+            fornecedor: item.fornecedorNome,
+            fornecedorAtivo: item.fornecedor.ativo,
+            valorPrevisto: item.valorPrevisto.toFixed(2),
+            composicao: item.composicao,
+            incluido: item.incluido,
+            motivoExclusao: item.motivoExclusao,
+            impedimentos: item.impedimentos,
+            origemValor: item.origemValor,
+          })),
+        }
+      : null,
+    pedidos: orders.map((order) => ({
+      id: order.id,
+      status: order.status,
+      fornecedorId: order.fornecedorId,
+      fornecedor: order.fornecedor.nome,
+      referenciaExterna: order.referenciaExterna,
+      dataCompra: order.dataCompra?.toISOString().slice(0, 10) ?? null,
+      criadoEm: order.criadoEm.toISOString(),
+      itens: order.itens.map((item) => ({
+        id: item.id,
+        vinculoId: item.vinculoId,
+        pessoaNome: item.pessoaNome,
+        equipeNome: item.equipeNome,
+        status: item.status,
+        valorPrevisto: item.valorPrevisto.toFixed(2),
+        valorSolicitado: (item.valorSolicitado ?? item.valorPrevisto).toFixed(
+          2,
+        ),
+        valorReservado: item.valorReservado.toFixed(2),
+        composicao: item.composicao,
+        transportes: item.competencia.transporteItens.map((transport) => ({
+          tipoConducao: transport.tipoConducao,
+          fornecedorId: transport.fornecedorId,
+          fornecedor: transport.fornecedor?.nome ?? null,
+          valorDiario: transport.valorDiario.toFixed(2),
+        })),
+        movimentacoes: item.movimentacoes.map((movement) => ({
+          id: movement.id,
+          tipo: movement.tipo,
+          valor: movement.valor.toFixed(2),
+          data: movement.data.toISOString().slice(0, 10),
+          motivo: movement.motivo,
+        })),
+      })),
+    })),
+    fechamento: closing?.status ?? ("ABERTA" as const),
   };
 }

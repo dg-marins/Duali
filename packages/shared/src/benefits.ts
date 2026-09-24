@@ -166,6 +166,9 @@ export const beneficioCicloQuerySchema = z
     unidadeId: id.optional(),
   })
   .strict();
+export const beneficioCicloDetalheQuerySchema = beneficioCicloQuerySchema
+  .extend({ unidadeId: id, tipo: z.enum(benefitTypes) })
+  .strict();
 const decimalString = z.string().regex(/^-?\d+\.\d{2}$/);
 export const beneficioCicloItemSchema = z
   .object({
@@ -201,7 +204,59 @@ export const beneficioCicloResponseSchema = z
         cancelado: decimalString,
       })
       .strict(),
+    pessoasPrevistas: z.number().int().nonnegative(),
+    estado: z.enum(["PREVISTO", "SOLICITADO", "CONCLUIDO", "CANCELADO"]),
+    ocorrencias: z.array(z.string()),
+    impedimentos: z.array(z.string()),
+    fechamentos: z.array(
+      z
+        .object({
+          unidadeId: id,
+          unidade: z.string(),
+          status: z.enum(["ABERTA", "EM_REVISAO", "FECHADA"]),
+        })
+        .strict(),
+    ),
+    unidades: z.array(
+      z
+        .object({
+          unidadeId: id,
+          unidade: z.string(),
+          possuiPrevisao: z.boolean(),
+          pessoasPrevistas: z.number().int().nonnegative(),
+          valorPrevisto: decimalString,
+          valorSolicitado: decimalString,
+          valorConcluido: decimalString,
+          saldoPendente: decimalString,
+          estado: z.enum(["PREVISTO", "SOLICITADO", "CONCLUIDO", "CANCELADO"]),
+          ocorrencias: z.array(z.string()),
+          impedimentos: z.array(z.string()),
+          fechamento: z.enum(["ABERTA", "EM_REVISAO", "FECHADA"]),
+        })
+        .strict(),
+    ),
     itens: z.array(beneficioCicloItemSchema),
+  })
+  .strict();
+export const beneficioCicloDetalheResponseSchema = z
+  .object({
+    competencia: date,
+    unidadeId: id,
+    tipo: z.enum(benefitTypes),
+    possuiPrevisao: z.boolean(),
+    previsao: z
+      .object({
+        id: id,
+        numero: z.number().int().positive(),
+        competenciaBase: date,
+        congeladaEm: z.string().nullable(),
+        baseReaberta: z.boolean(),
+        composicaoIncompleta: z.boolean(),
+        itens: z.array(z.record(z.string(), z.unknown())),
+      })
+      .nullable(),
+    pedidos: z.array(z.record(z.string(), z.unknown())),
+    fechamento: z.enum(["ABERTA", "EM_REVISAO", "FECHADA"]),
   })
   .strict();
 export const pedidoMensalGerarSchema = pedidoMensalSimulacaoSchema.extend({

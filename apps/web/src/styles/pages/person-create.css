@@ -1,0 +1,197 @@
+.person-create-page {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 1040px;
+  margin: 0 auto;
+}
+.person-create-page .page-header,
+.person-create-card {
+  margin: 0;
+}
+.person-create-card {
+  display: grid;
+  gap: var(--space-6);
+  padding: var(--space-6);
+}
+.person-create-stage {
+  display: grid;
+  gap: var(--space-5);
+}
+.person-create-stage > h2 {
+  margin: 0;
+  font-size: var(--font-size-section-title);
+  line-height: var(--line-height-section-title);
+}
+.person-create-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.person-create-grid > .wide,
+.person-create-grid > .notice,
+.person-create-scale {
+  grid-column: 1 / -1;
+}
+.person-create-link-step {
+  display: grid;
+  gap: var(--space-5);
+}
+.person-create-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--duali-radius-md);
+  background: var(--color-surface-subtle);
+}
+.person-create-toggle span {
+  display: grid;
+  gap: var(--space-1);
+}
+.person-create-toggle small {
+  color: var(--color-text-muted);
+}
+.person-create-scale {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--duali-radius-md);
+}
+.person-create-scale legend {
+  padding-inline: var(--space-2);
+  font-weight: 600;
+}
+.person-create-scale .ds-form-field {
+  max-width: 360px;
+}
+.person-create-weekdays {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.person-create-weekdays label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--duali-radius-sm);
+}
+.person-create-weekdays label.is-selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+.person-create-weekdays .field-error {
+  grid-column: 1 / -1;
+}
+.person-create-review {
+  display: grid;
+  gap: var(--space-4);
+}
+.person-create-review section {
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--duali-radius-md);
+}
+.person-create-review header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.person-create-review h3,
+.person-create-review p {
+  margin: 0;
+}
+.person-create-review dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+}
+.person-create-review dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-auxiliary);
+}
+.person-create-review dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+.person-create-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--layer-sticky);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+  backdrop-filter: blur(8px);
+}
+.person-create-actions > div {
+  display: flex;
+  gap: var(--space-3);
+}
+.person-create-success {
+  min-height: calc(100dvh - var(--size-topbar) - 80px);
+  place-items: center;
+}
+.person-create-success > section {
+  width: min(560px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  text-align: center;
+}
+.person-create-success h1,
+.person-create-success p {
+  margin: 0;
+}
+.person-create-success svg {
+  color: var(--color-success);
+}
+.person-create-success-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+@media (max-width: 700px) {
+  .person-create-page {
+    gap: var(--space-4);
+  }
+  .person-create-card {
+    gap: var(--space-5);
+    padding: var(--space-4);
+  }
+  .person-create-grid,
+  .person-create-review dl {
+    grid-template-columns: 1fr;
+  }
+  .person-create-weekdays {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .person-create-actions {
+    position: static;
+    flex-direction: column-reverse;
+    align-items: stretch;
+    margin: 0;
+    padding: var(--space-4) 0 0;
+    background: var(--color-surface);
+    backdrop-filter: none;
+  }
+  .person-create-actions > div,
+  .person-create-success-actions {
+    display: grid;
+  }
+  .person-create-actions button,
+  .person-create-success-actions button {
+    width: 100%;
+  }
+}

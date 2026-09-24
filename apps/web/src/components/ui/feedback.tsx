@@ -9,10 +9,43 @@ export type SemanticTone =
   | "review"
   | "neutral";
 
+export function PageHeader({
+  title,
+  description,
+  action,
+  breadcrumb,
+}: {
+  title: string;
+  description?: string;
+  action?: ReactNode;
+  breadcrumb?: ReactNode;
+}) {
+  return (
+    <header className="page-header">
+      <div>
+        {breadcrumb && <div className="breadcrumb">{breadcrumb}</div>}
+        <h1>{title}</h1>
+        {description && <p>{description}</p>}
+      </div>
+      {action}
+    </header>
+  );
+}
+
+export function money(value: unknown) {
+  return value == null || value === ""
+    ? "—"
+    : new Intl.NumberFormat("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      }).format(Number(value));
+}
+
 export const STATUS_DEFINITIONS = {
   ATIVO: { label: "Ativo", tone: "success" },
   VIGENTE: { label: "Vigente", tone: "success" },
   PROGRAMADO: { label: "Programado", tone: "success" },
+  A_PROGRAMAR: { label: "A programar", tone: "warning" },
   CONCLUIDO: { label: "Concluído", tone: "success" },
   PAGO: { label: "Pago", tone: "success" },
   CONFIRMADA: { label: "Confirmada", tone: "success" },
@@ -21,6 +54,7 @@ export const STATUS_DEFINITIONS = {
   VALIDO: { label: "Válido", tone: "success" },
   REGULAR: { label: "Regular", tone: "success" },
   PENDENTE: { label: "Pendente", tone: "warning" },
+  SOLICITADO: { label: "Solicitado", tone: "warning" },
   AFASTADO: { label: "Afastado", tone: "warning" },
   PARCIAL: { label: "Parcial", tone: "warning" },
   AGUARDANDO_DEPENDENCIA: {

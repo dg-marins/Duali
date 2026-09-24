@@ -24,11 +24,16 @@ import { BenefitAcquisitionPage } from "./features/benefits/BenefitAcquisitionPa
 import { MonthlyOrderPage } from "./features/benefits/MonthlyOrderPage";
 import { Toaster } from "sonner";
 import { AppShell } from "./AppShell";
+import { requestNavigation } from "./navigationGuard";
 import "./style.css";
 import "./styles/foundations/index.css";
 import "./styles/shell/index.css";
 import "./styles/components/index.css";
 import "./styles/pages/people.css";
+import "./styles/pages/person-create.css";
+import "./styles/pages/benefits.css";
+import "./styles/pages/vacations.css";
+import { PersonCreatePage } from "./features/people/create/PersonCreatePage";
 const auxiliary: Record<string, string> = {
   "/app/cadastros/unidades": "unidades",
   "/app/cadastros/equipes": "equipes",
@@ -45,8 +50,10 @@ function useRoute() {
       ? "/app"
       : location.pathname;
   const navigate = (next: string) => {
-    routerNavigate(next);
-    window.scrollTo({ top: 0 });
+    requestNavigation(next, () => {
+      routerNavigate(next);
+      window.scrollTo({ top: 0 });
+    });
   };
   return {
     path,
@@ -239,7 +246,8 @@ function RouteContent({
   path: string;
   navigate: (path: string) => void;
 }) {
-  if (path === "/app/pessoas/nova") return <PeoplePage navigate={navigate} />;
+  if (path === "/app/pessoas/nova")
+    return <PersonCreatePage navigate={navigate} />;
   const editPerson = path.match(/^\/app\/pessoas\/([0-9a-f-]+)\/editar$/i);
   if (editPerson)
     return <PersonEditor id={editPerson[1]!} navigate={navigate} />;

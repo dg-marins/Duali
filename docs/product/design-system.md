@@ -129,3 +129,21 @@ paralela. Os estilos oficiais usam o prefixo `.ds-` em `styles/components/`.
 - **deprecated:** variantes antigas de Button, `FormDialog`, `FormSheet`, propriedade `mobile` do DataTable e export de `Notice` por `components.tsx`.
 
 A migração é opt-in. Páginas, inputs e regras `nth-child` legadas permanecem até a respectiva Golden Reference. Nenhuma página deve ser redesenhada apenas para adotar a biblioteca.
+
+## Golden Reference do Cadastro de Pessoa
+
+`/app/pessoas/nova` é uma página dedicada dentro do AppShell. A criação usa os componentes oficiais e um `Stepper` estritamente apresentacional; regras de vínculo e estágio pertencem ao fluxo, não ao componente.
+
+O fluxo contém Dados pessoais, Vínculo, Dados do estágio quando o tipo final é Estágio, Revisão e Cadastro concluído. O vínculo inicial continua opcional. A aplicação não grava rascunhos: somente a confirmação final chama o endpoint correspondente.
+
+O cadastro principal contém identificação, contato e observações. Nome social e endereço não fazem parte dessa experiência. A revisão usa blocos de leitura e não replica campos desabilitados.
+
+Uma proteção genérica e opt-in pode bloquear a navegação de fluxos com alterações pendentes. O cadastro a utiliza em conjunto com `ConfirmDialog` e com o `beforeunload` nativo, sem acoplar regras da página ao AppShell. O formulário de edição existente permanece separado e não foi convertido em wizard.
+
+## Golden Reference de Férias e Descansos
+
+A página de Férias estabelece o padrão para operações orientadas a pessoa e tempo. A listagem prioriza o saldo disponível para programar e mantém o saldo contábil separado dos dias já comprometidos. Os quatro indicadores contam vínculos únicos no ano selecionado e são calculados pelo backend sobre toda a população filtrada.
+
+O histórico apresenta somente datas sustentadas pelos registros. Mudanças de status sem timestamp próprio não são convertidas em eventos fictícios. A programação usa o Stepper oficial, grava apenas na confirmação e preserva os endpoints e regras existentes de períodos, consumos e ajustes.
+
+Decisão de domínio pendente: Aprendiz não recebe direito automático, embora a validação atual aceite `DESCANSO_ESTAGIO`. A Golden Reference não altera esse comportamento.

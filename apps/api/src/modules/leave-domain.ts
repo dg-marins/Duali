@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@duali/database";
+import { Prisma, type PrismaClient } from "@duali/database";
 import { entitlements } from "@duali/shared";
 import { audit, transaction, type Tx } from "../core.js";
 export async function acquire(
@@ -77,17 +77,43 @@ export async function balance(tx: Tx, vinculoId: string) {
       include: { unidade: true, pessoa: true },
     }),
   ]);
-  const acquired = rights.reduce((sum, r) => sum + Number(r.quantidadeDias), 0),
-    adjusted = adjustments.reduce(
-      (sum, r) =>
-        sum + (r.tipo === "CREDITO" ? 1 : -1) * Number(r.quantidadeDias),
-      0,
+  const acquiredDecimal = rights.reduce(
+      (sum, right) => sum.plus(right.quantidadeDias),
+      new Prisma.Decimal(0),
     ),
-    consumed = consumptions.reduce(
-      (sum, r) => sum + Number(r.quantidadeDias),
-      0,
+    adjustedDecimal = adjustments.reduce(
+      (sum, adjustment) =>
+        sum.plus(
+          adjustment.tipo === "CREDITO"
+            ? adjustment.quantidadeDias
+            : adjustment.quantidadeDias.negated(),
+        ),
+      new Prisma.Decimal(0),
+    ),
+    consumedDecimal = consumptions.reduce(
+      (sum, consumption) => sum.plus(consumption.quantidadeDias),
+      new Prisma.Decimal(0),
+    ),
+    balanceDecimal = acquiredDecimal
+      .plus(adjustedDecimal)
+      .minus(consumedDecimal);
+  const acquired = acquiredDecimal.toNumber(),
+    adjusted = adjustedDecimal.toNumber(),
+    consumed = consumedDecimal.toNumber(),
+    saldo = balanceDecimal.toDecimalPlaces(2).toNumber();
+  const committedDecimal = periods.reduce((sum, period) => {
+    if (period.status === "PROGRAMADO") return sum.plus(period.quantidadeDias);
+    if (period.status !== "EM_GOZO") return sum;
+    const periodConsumed = consumptions
+      .filter((consumption) => consumption.periodoId === period.id)
+      .reduce(
+        (total, consumption) => total.plus(consumption.quantidadeDias),
+        new Prisma.Decimal(0),
+      );
+    return sum.plus(
+      Prisma.Decimal.max(0, period.quantidadeDias.minus(periodConsumed)),
     );
-  const saldo = Math.round((acquired + adjusted - consumed) * 100) / 100;
+  }, new Prisma.Decimal(0));
   const now = new Date();
   now.setUTCHours(0, 0, 0, 0);
   const pending = rights.map((r) => ({
@@ -160,6 +186,12 @@ export async function balance(tx: Tx, vinculoId: string) {
     tipo: v.tipo,
     status: v.status,
     saldo,
+    saldoContabil: balanceDecimal.toDecimalPlaces(2).toString(),
+    diasComprometidos: committedDecimal.toDecimalPlaces(2).toString(),
+    saldoDisponivelParaProgramar: balanceDecimal
+      .minus(committedDecimal)
+      .toDecimalPlaces(2)
+      .toString(),
     adquiridos: acquired,
     consumidos: consumed,
     ajustes: adjusted,
