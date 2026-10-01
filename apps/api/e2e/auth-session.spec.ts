@@ -40,13 +40,12 @@ test("sessão expirada remove o shell e retorna à rota anterior após login", a
     await login(page, user.email, password);
     await page.getByRole("button", { name: "Pessoas", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Pessoas" })).toBeVisible();
+    await page.getByLabel("Buscar pessoa").click();
     await db.sessao.updateMany({
       where: { usuarioId: user.id },
       data: { expiraEm: new Date(Date.now() - 1000) },
     });
-    await page
-      .getByPlaceholder("Nome, CPF, e-mail ou matrícula")
-      .fill("expirada");
+    await page.keyboard.insertText("expirada");
     await expect(
       page.getByText("Sua sessão expirou. Entre novamente."),
     ).toBeVisible();
@@ -141,10 +140,12 @@ test("erro de negócio permanece na tela sem encerrar a sessão", async ({
     await login(page, user.email, password);
     await page.getByRole("button", { name: "Pessoas", exact: true }).click();
     await page.getByRole("button", { name: "+ Nova pessoa" }).click();
-    await page.getByLabel("Nome completo *").fill("Pessoa inválida");
+    await page
+      .getByLabel("Nome completo", { exact: true })
+      .fill("Pessoa inválida");
     await page.getByRole("button", { name: "Próximo" }).click();
-    await page.getByLabel("Unidade *").selectOption(unit.id);
-    await page.getByLabel("Admissão *").fill("2026-01-01");
+    await page.getByLabel("Unidade", { exact: true }).selectOption(unit.id);
+    await page.getByLabel("Admissão", { exact: true }).fill("2026-01-01");
     await page.getByRole("button", { name: "Próximo" }).click();
     await page.route("**/api/pessoas-com-vinculo", (route) =>
       route.fulfill({

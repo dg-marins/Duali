@@ -212,11 +212,13 @@ export function RefreshingContent({
   children,
   label = "Atualizando conteúdo…",
   className = "",
+  preserveContentAccess = false,
 }: {
   refreshing: boolean;
   children: ReactNode;
   label?: string;
   className?: string;
+  preserveContentAccess?: boolean;
 }) {
   return (
     <div
@@ -236,7 +238,10 @@ export function RefreshingContent({
           </span>
         </>
       )}
-      <div className="refreshing-body" inert={refreshing}>
+      <div
+        className="refreshing-body"
+        inert={refreshing && !preserveContentAccess ? true : undefined}
+      >
         {children}
       </div>
     </div>
@@ -250,6 +255,7 @@ export function MetricCard({
   supportingText,
   icon,
   onClick,
+  pressed,
 }: {
   label: string;
   value: ReactNode;
@@ -257,6 +263,7 @@ export function MetricCard({
   supportingText?: ReactNode;
   icon?: ReactNode;
   onClick?: () => void;
+  pressed?: boolean;
 }) {
   const content = (
     <>
@@ -273,6 +280,7 @@ export function MetricCard({
       type="button"
       className={joinClasses("metric-card", "ds-metric-card", tone)}
       onClick={onClick}
+      aria-pressed={pressed}
     >
       {content}
     </button>

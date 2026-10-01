@@ -1,0 +1,59 @@
+.benefit-closing-page {
+  min-width: 0;
+}
+
+.benefit-closing-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1.4fr) repeat(2, minmax(11rem, 1fr));
+  gap: var(--space-4);
+  align-items: end;
+}
+
+.benefit-closing-summary,
+.benefit-closing-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.benefit-closing-totals {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-block: var(--space-4);
+}
+
+.benefit-closing-status-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--duali-radius-lg);
+  background: var(--color-surface);
+}
+
+.benefit-closing-status-card > span,
+.benefit-closing-status-card small {
+  color: var(--color-text-secondary);
+}
+
+.benefit-closing-page .ds-data-table--scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (max-width: 1000px) {
+  .benefit-closing-summary,
+  .benefit-closing-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .benefit-closing-filter-grid,
+  .benefit-closing-summary,
+  .benefit-closing-totals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

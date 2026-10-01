@@ -10,9 +10,11 @@ export type StepperItem = {
 export function Stepper({
   steps,
   onStep,
+  ariaLabel = "Etapas do cadastro",
 }: {
   steps: StepperItem[];
   onStep?: (id: string) => void;
+  ariaLabel?: string;
 }) {
   const current = Math.max(
     0,
@@ -21,7 +23,7 @@ export function Stepper({
   return (
     <nav
       className="ds-stepper"
-      aria-label="Etapas do cadastro"
+      aria-label={ariaLabel}
       style={{ "--step-count": steps.length } as CSSProperties}
     >
       <p className="ds-stepper__mobile" aria-live="polite">

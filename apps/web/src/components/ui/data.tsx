@@ -50,6 +50,7 @@ type DataTableProps<T extends Row = Row> = {
   onSort?: (key: string, direction: SortDirection) => void;
   rowActions?: (row: T) => ReactNode;
   getRowLabel?: (row: T) => string;
+  expandButtonText?: string;
 };
 
 export function DataTable<T extends Row = Row>({
@@ -65,6 +66,7 @@ export function DataTable<T extends Row = Row>({
   onSort,
   rowActions,
   getRowLabel,
+  expandButtonText = "Detalhes",
 }: DataTableProps<T>) {
   const legacyContract = responsiveStrategy == null;
   const strategy = responsiveStrategy ?? "expandable";
@@ -216,7 +218,7 @@ export function DataTable<T extends Row = Row>({
                         }}
                         onKeyDown={(event) => event.stopPropagation()}
                       >
-                        Detalhes
+                        {expandButtonText}
                       </Button>
                     </td>
                   )}

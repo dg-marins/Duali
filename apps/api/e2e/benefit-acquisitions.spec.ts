@@ -226,9 +226,7 @@ test("administra pedido e confirmação de aquisição mensal", async ({
     ).toBeVisible();
     await page.getByLabel("Incluir Colaboradora aquisição E2E").check();
     await page.getByLabel("Dias de Colaboradora aquisição E2E").fill("22");
-    await page
-      .getByRole("button", { name: "Gerar pedido", exact: true })
-      .click();
+    await confirmMonthlyOrder(page);
     await page.getByRole("button", { name: /Alimenta/ }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await page
@@ -321,6 +319,7 @@ test("faz pedido de alimentação sem adesão prévia e o apresenta no perfil", 
     await expect(
       page.getByRole("heading", { name: "Fazer pedido" }),
     ).toBeVisible({ timeout: 15000 });
+    await page.getByRole("textbox", { name: "Competência" }).fill("2026-09");
     await page.getByRole("combobox", { name: "Unidade" }).selectOption(unit.id);
     await page
       .getByRole("combobox", { name: "Benefício" })
@@ -337,7 +336,7 @@ test("faz pedido de alimentação sem adesão prévia e o apresenta no perfil", 
     await expect(page.getByLabel(`Incluir ${personName}`)).toBeChecked();
     await page.getByLabel(`Dias de ${personName}`).fill("22");
     await page.getByLabel(`Valor diário de ${personName}`).fill("25,50");
-    await page.getByRole("button", { name: "Gerar pedido" }).click();
+    await confirmMonthlyOrder(page);
     await expect(page).toHaveURL(/\/app\/beneficios\/competencias/);
     await page.goto(
       `/app/pessoas/${person.id}?tab=beneficios&competencia=2026-09-01`,
@@ -427,7 +426,7 @@ test("faz pedido de alimentação sem adesão prévia e o apresenta no perfil", 
       `/app/beneficios/aquisicao?unidadeId=${unit.id}&competencia=2026-09-01&tipo=ALIMENTACAO`,
     );
     await expect(page.getByLabel(`Incluir ${personName}`)).toBeEnabled();
-    await page.getByRole("button", { name: "Gerar pedido" }).click();
+    await confirmMonthlyOrder(page);
     await expect(page).toHaveURL(/\/app\/beneficios\/competencias/);
     await expect(page.getByRole("button", { name: /Alimenta/ })).toContainText(
       /R\$\s*561,00/,
@@ -514,6 +513,7 @@ test("registra ajuste de benefício no fechamento sem painel genérico", async (
     ).toHaveCount(0);
     await page.goto("/app/beneficios/fechamento");
     await page.getByRole("textbox", { name: "Buscar unidade" }).fill(unit.nome);
+    await page.getByRole("textbox", { name: "Competência" }).fill("2026-09");
     const unitSelect = page.getByRole("combobox", {
       name: "Unidade",
       exact: true,
@@ -605,7 +605,9 @@ test("pede transporte com várias conduções e fornecedores sem adesão prévia
     await page.goto(
       `/app/beneficios/aquisicao?unidadeId=${unit.id}&competencia=2026-09-01&tipo=TRANSPORTE`,
     );
-    await expect(page.getByText(personName, { exact: true })).toBeVisible();
+    await expect(page.getByText(personName, { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(page.getByText("Equipe", { exact: true })).toHaveCount(0);
     await page.getByLabel(`Incluir ${personName}`).check();
     await page.getByLabel(`Dias de ${personName}`).fill("22");
@@ -644,7 +646,7 @@ test("pede transporte com várias conduções e fornecedores sem adesão prévia
       await row.getByRole("textbox").fill(amount);
     }
     await expect(page.locator(".transport-composition-row")).toHaveCount(4);
-    await page.getByRole("button", { name: "Gerar pedido" }).click();
+    await confirmMonthlyOrder(page);
     await expect(page).toHaveURL(/\/app\/beneficios\/competencias/);
     const generatedOrders = await db.aquisicaoBeneficio.findMany({
       where: {
@@ -692,3 +694,10 @@ test("pede transporte com várias conduções e fornecedores sem adesão prévia
     await db.$disconnect();
   }
 });
+async function confirmMonthlyOrder(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "Gerar pedido", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Gerar pedidos e reservas?" })
+    .getByRole("button", { name: "Gerar pedido", exact: true })
+    .click();
+}

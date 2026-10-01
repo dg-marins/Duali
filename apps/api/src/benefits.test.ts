@@ -1007,6 +1007,11 @@ test("monthly order creates the technical benefit and fixed food snapshot idempo
         where: { vinculoId: link.id, tipo: "ALIMENTACAO" },
       }),
     ).toBe(1);
+    expect(
+      await f.db.beneficioVinculo.count({
+        where: { vinculoId: excludedLink.id, tipo: "ALIMENTACAO" },
+      }),
+    ).toBe(1);
     const newcomer = await f.db.pessoa.create({
       data: { nomeCompleto: "Nova colaboradora" },
     });
@@ -1726,6 +1731,7 @@ test("direct order excludes inactive and departed people and rolls back invalid 
       where: { vinculoId: active.id },
     });
     expect(item.valorSolicitado?.toFixed(2)).toBe("75.00");
+    expect(item.valorReservado.toFixed(2)).toBe("75.00");
   } finally {
     await f.app.close();
   }

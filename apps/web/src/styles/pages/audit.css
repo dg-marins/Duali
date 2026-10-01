@@ -1,0 +1,64 @@
+.audit-page .filter-bar-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+}
+
+.audit-page .filter-search {
+  max-width: none;
+}
+
+.audit-page .filter-details {
+  grid-column: 1 / -1;
+}
+
+.audit-page .filter-secondary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.audit-page .filter-bar-main > *,
+.audit-page .filter-secondary > * {
+  min-width: 0;
+}
+
+.audit-detail-dialog .ds-data-table {
+  max-height: min(60vh, 520px);
+}
+
+.audit-detail-dialog td {
+  max-width: 360px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.audit-mobile-detail-action {
+  display: none;
+}
+
+@media (max-width: 850px) {
+  .audit-page .filter-bar-main {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .audit-page .filter-search {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .audit-page .filter-bar-main,
+  .audit-page .filter-secondary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .audit-action-cell {
+    display: grid;
+    gap: var(--space-2);
+    justify-items: start;
+  }
+
+  .audit-mobile-detail-action {
+    display: inline-flex;
+    padding-inline: var(--space-2);
+  }
+}

@@ -126,12 +126,14 @@ export function FormField({
     ? cloneElement(
         children as ReactElement<{
           id?: string;
+          "aria-label"?: string;
           "aria-describedby"?: string;
           "aria-invalid"?: boolean;
           required?: boolean;
         }>,
         {
           id: fieldId,
+          ...(typeof label === "string" ? { "aria-label": label } : {}),
           ...(describedBy ? { "aria-describedby": describedBy } : {}),
           ...(error ? { "aria-invalid": true } : {}),
           ...(required == null ? {} : { required }),

@@ -1,0 +1,151 @@
+.pendings-page__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.pendings-page__filters,
+.pendings-page__filter-fields,
+.pendings-page__chips {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.pendings-page__filters {
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.pendings-page__filter-fields {
+  flex: 1 1 480px;
+}
+
+.pendings-page__filter-fields > * {
+  flex: 1 1 220px;
+}
+
+.pendings-page__chips {
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.pendings-page__list-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.pendings-page__list-heading h2,
+.pendings-page__list-heading p {
+  margin: 0;
+}
+
+.pendings-page__list-heading p,
+.pendings-page__list-heading > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height-secondary);
+}
+
+.pendings-page__list .ds-badge {
+  white-space: normal;
+}
+
+.pendings-page__list .ds-data-table table {
+  table-layout: fixed;
+  white-space: normal;
+}
+
+.pendings-page__list [data-column="pessoa"] {
+  width: 13%;
+}
+
+.pendings-page__list [data-column="severidade"],
+.pendings-page__list [data-column="modulo"] {
+  width: 10%;
+}
+
+.pendings-page__list [data-column="codigo"] {
+  width: 23%;
+  overflow-wrap: anywhere;
+}
+
+.pendings-page__list [data-column="origem"] {
+  width: 17%;
+}
+
+.pendings-page__list [data-column="acao"] {
+  width: 10%;
+}
+
+.pendings-page__list td {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1000px) {
+  .pendings-page__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 850px) {
+  .pendings-page__metrics,
+  .pendings-page__filter-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pendings-page__filter-fields {
+    display: grid;
+    flex-basis: 100%;
+  }
+
+  .pendings-page__list-heading {
+    display: grid;
+  }
+
+  .pendings-page .ds-data-table th.ds-column--always,
+  .pendings-page .ds-data-table td.ds-column--always {
+    display: table-cell;
+  }
+
+  .pendings-page__list .ds-data-table th,
+  .pendings-page__list .ds-data-table td {
+    padding-inline: var(--space-2);
+  }
+
+  .pendings-page__list .ds-data-table table {
+    table-layout: fixed;
+  }
+
+  .pendings-page__list .ds-data-table th {
+    font-size: 11px;
+  }
+
+  .pendings-page__list .ds-badge {
+    padding-inline: var(--space-1);
+    font-size: 11px;
+  }
+
+  .pendings-page__list [data-column="pessoa"] {
+    width: 28%;
+  }
+
+  .pendings-page__list [data-column="severidade"] {
+    width: 24%;
+  }
+
+  .pendings-page__list [data-column="acao"],
+  .pendings-page__list .ds-data-table__expand-cell,
+  .pendings-page__list .ds-data-table__expand-heading {
+    width: 24%;
+  }
+
+  .pendings-page__list [data-column="acao"] .ds-button,
+  .pendings-page__list .ds-data-table__expand-cell .ds-button {
+    padding-inline: var(--space-1);
+  }
+}

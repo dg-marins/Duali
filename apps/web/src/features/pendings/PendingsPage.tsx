@@ -1,18 +1,61 @@
-import { useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, display, type Row } from "../../api";
-import { Notice } from "../../components";
-import { Button } from "../../components/ui/button";
-import { LoadingSkeleton, RefreshingContent } from "../../ui";
+import {
+  Badge,
+  Button,
+  DataTable,
+  EmptyState,
+  FilterChip,
+  FormField,
+  LoadingSkeleton,
+  MetricCard,
+  Notice,
+  PageHeader,
+  RefreshingContent,
+  Select,
+  type DataTableColumn,
+} from "../../components/ui";
+
 type Navigate = (path: string) => void;
+type ListResponse = {
+  items: Row[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+const modules = ["IMPORTACAO", "VINCULO", "ESTAGIO", "DESCANSO", "BENEFICIO"];
+const severities = ["CRITICA", "ATENCAO", "REVISAO"];
+const severityPresentation: Record<
+  string,
+  { label: string; tone: "danger" | "warning" | "review" | "info" }
+> = {
+  CRITICA: { label: "Crítica", tone: "danger" },
+  ATENCAO: { label: "Atenção", tone: "warning" },
+  REVISAO: { label: "Revisão", tone: "review" },
+  INFORMATIVA: { label: "Informativa", tone: "info" },
+};
+
+function SeverityBadge({ value }: { value: unknown }) {
+  const presentation = severityPresentation[String(value)] ?? {
+    label: display(value),
+    tone: "info" as const,
+  };
+  return <Badge tone={presentation.tone}>{presentation.label}</Badge>;
+}
+
 export function PendingsPage({ navigate }: { navigate: Navigate }) {
-  const [items, setItems] = useState<Row[]>([]),
-    [summary, setSummary] = useState<Row>({}),
-    [loading, setLoading] = useState(true),
-    [hasLoaded, setHasLoaded] = useState(false),
-    [error, setError] = useState("");
-  const [module, setModule] = useState(""),
-    [severity, setSeverity] = useState("");
-  useEffect(() => {
+  const [items, setItems] = useState<Row[]>([]);
+  const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<Row>({});
+  const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const [module, setModule] = useState("");
+  const [severity, setSeverity] = useState("");
+
+  const load = useCallback(() => {
     let active = true;
     setLoading(true);
     const query = new URLSearchParams({
@@ -20,16 +63,16 @@ export function PendingsPage({ navigate }: { navigate: Navigate }) {
       ...(severity ? { severidade: severity } : {}),
       pageSize: "100",
     });
-    Promise.all([
-      api<{ items: Row[] }>(`pendencias?${query}`),
+    void Promise.all([
+      api<ListResponse>(`pendencias?${query}`),
       api<Row>("pendencias/resumo"),
     ])
       .then(([list, totals]) => {
-        if (active) {
-          setItems(list.items);
-          setSummary(totals);
-          setError("");
-        }
+        if (!active) return;
+        setItems(list.items);
+        setTotal(list.total);
+        setSummary(totals);
+        setError("");
       })
       .catch((reason) => {
         if (active) setError((reason as Error).message);
@@ -43,112 +86,224 @@ export function PendingsPage({ navigate }: { navigate: Navigate }) {
     return () => {
       active = false;
     };
-  }, [module, severity]);
+  }, [module, severity, reloadKey]);
+  useEffect(() => load(), [load]);
+
+  const columns = useMemo<DataTableColumn<Row>[]>(
+    () => [
+      {
+        key: "pessoa",
+        label: "Pessoa",
+        priority: "primary",
+        render: (item) => display(item.pessoa),
+      },
+      {
+        key: "severidade",
+        label: "Severidade",
+        priority: "always",
+        render: (item) => <SeverityBadge value={item.severidade} />,
+      },
+      {
+        key: "codigo",
+        label: "Tipo",
+        priority: "secondary",
+        render: (item) => <Badge>{display(item.codigo)}</Badge>,
+      },
+      {
+        key: "modulo",
+        label: "Módulo",
+        priority: "secondary",
+        render: (item) => display(item.modulo),
+      },
+      {
+        key: "origem",
+        label: "Origem",
+        priority: "desktop",
+        render: (item) => display(item.origem),
+      },
+      {
+        key: "descricao",
+        label: "Descrição",
+        priority: "secondary",
+        render: (item) => display(item.descricao),
+      },
+      {
+        key: "acao",
+        label: "Ação",
+        priority: "always",
+        render: (item) => (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => navigate(String(item.href))}
+          >
+            Revisar
+          </Button>
+        ),
+      },
+    ],
+    [navigate],
+  );
+  const filtered = Boolean(module || severity);
+  const globalTotal = Number(summary.total ?? 0);
+
   return (
-    <div className="page-stack">
-      <section className="page-heading">
-        <div>
-          <p className="eyebrow">Central operacional</p>
-          <h1>Pendências</h1>
-          <p>
-            Dados que precisam de correção, conferência ou uma decisão humana.
-          </p>
-        </div>
-      </section>
-      <Notice text={error} error />
+    <div className="pendings-page page-stack">
+      <PageHeader
+        title="Pendências"
+        description="Dados que precisam de correção, conferência ou uma decisão humana."
+      />
+
+      {error && hasLoaded && items.length > 0 && <Notice text={error} error />}
       {loading && !hasLoaded ? (
         <LoadingSkeleton variant="metrics" label="Carregando pendências…" />
+      ) : !hasLoaded ||
+        (error && items.length === 0 && Object.keys(summary).length === 0) ? (
+        <EmptyState
+          title="Não foi possível carregar as pendências"
+          description={error || "Tente novamente."}
+          action={
+            <Button onClick={() => setReloadKey((value) => value + 1)}>
+              Tentar novamente
+            </Button>
+          }
+        />
       ) : (
-        <RefreshingContent refreshing={loading}>
-          <section className="stats-grid">
+        <RefreshingContent refreshing={loading} preserveContentAccess>
+          <section
+            className="pendings-page__metrics"
+            aria-label="Resumo global de pendências"
+          >
             {(
               [
-                ["Críticas", "criticas"],
-                ["Atenção", "atencao"],
-                ["Dados para revisão", "revisao"],
-                ["Dependências", "dependencias"],
+                ["Críticas", "criticas", "danger"],
+                ["Atenção", "atencao", "warning"],
+                ["Dados para revisão", "revisao", "review"],
+                ["Dependências", "dependencias", "neutral"],
               ] as const
-            ).map(([label, key]) => (
-              <article className="stat-card" key={key}>
-                <span>{label}</span>
-                <strong>{String(summary[key] ?? 0)}</strong>
-              </article>
+            ).map(([label, key, tone]) => (
+              <MetricCard
+                key={key}
+                label={label}
+                value={String(summary[key] ?? 0)}
+                tone={tone}
+                supportingText="Total global"
+              />
             ))}
           </section>
         </RefreshingContent>
       )}
-      <section className="panel filter-panel">
-        <div className="filter-grid">
-          <label>
-            <span>Módulo</span>
-            <select value={module} onChange={(e) => setModule(e.target.value)}>
+
+      <section
+        className="panel pendings-page__filters"
+        aria-label="Filtros de pendências"
+      >
+        <div className="pendings-page__filter-fields">
+          <FormField label="Módulo" id="pendings-module">
+            <Select
+              value={module}
+              onChange={(event) => setModule(event.target.value)}
+            >
               <option value="">Todos</option>
-              <option>IMPORTACAO</option>
-              <option>VINCULO</option>
-              <option>ESTAGIO</option>
-              <option>DESCANSO</option>
-              <option>BENEFICIO</option>
-            </select>
-          </label>
-          <label>
-            <span>Severidade</span>
-            <select
+              {modules.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+          <FormField label="Severidade" id="pendings-severity">
+            <Select
               value={severity}
-              onChange={(e) => setSeverity(e.target.value)}
+              onChange={(event) => setSeverity(event.target.value)}
             >
               <option value="">Todas</option>
-              <option>CRITICA</option>
-              <option>ATENCAO</option>
-              <option>REVISAO</option>
-            </select>
-          </label>
+              {severities.map((value) => (
+                <option key={value} value={value}>
+                  {severityPresentation[value]?.label}
+                </option>
+              ))}
+            </Select>
+          </FormField>
         </div>
+        {filtered && (
+          <div className="pendings-page__chips" aria-label="Filtros aplicados">
+            {module && (
+              <FilterChip
+                label={`Módulo: ${module}`}
+                onRemove={() => setModule("")}
+              />
+            )}
+            {severity && (
+              <FilterChip
+                label={`Severidade: ${severityPresentation[severity]?.label ?? severity}`}
+                onRemove={() => setSeverity("")}
+              />
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setModule("");
+                setSeverity("");
+              }}
+            >
+              Limpar filtros
+            </Button>
+          </div>
+        )}
       </section>
-      <section className="panel">
+
+      <section
+        className="panel pendings-page__list"
+        aria-labelledby="pendings-list-title"
+      >
+        <div className="pendings-page__list-heading">
+          <div>
+            <h2 id="pendings-list-title">Itens para revisão</h2>
+            <p>{total} pendência(s) nos filtros atuais</p>
+          </div>
+          {total > items.length && (
+            <span>
+              {items.length} de {total} itens exibidos
+            </span>
+          )}
+        </div>
         {loading && !hasLoaded ? (
           <LoadingSkeleton label="Carregando pendências…" />
         ) : (
-          <RefreshingContent refreshing={loading}>
-            {!items.length ? (
-              <p>Nenhuma pendência para estes filtros.</p>
-            ) : (
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Pessoa</th>
-                      <th>Tipo</th>
-                      <th>Origem</th>
-                      <th>Descrição</th>
-                      <th>Severidade</th>
-                      <th>Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => (
-                      <tr key={String(item.id)}>
-                        <td>{display(item.pessoa)}</td>
-                        <td>
-                          <span className="badge">{display(item.codigo)}</span>
-                        </td>
-                        <td>{display(item.origem)}</td>
-                        <td>{display(item.descricao)}</td>
-                        <td>{display(item.severidade)}</td>
-                        <td>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => navigate(String(item.href))}
-                          >
-                            Revisar
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+          <RefreshingContent refreshing={loading} preserveContentAccess>
+            <DataTable
+              columns={columns}
+              rows={items}
+              responsiveStrategy="expandable"
+              expandButtonText="Mais"
+              getRowLabel={(item) => display(item.pessoa ?? item.codigo)}
+              empty={
+                globalTotal === 0 ? (
+                  <EmptyState
+                    title="Nenhuma pendência existente"
+                    description="Não há dados aguardando correção, conferência ou decisão."
+                  />
+                ) : (
+                  <EmptyState
+                    title="Nenhuma pendência para estes filtros"
+                    description="Existem pendências, mas nenhuma corresponde à combinação selecionada."
+                    action={
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setModule("");
+                          setSeverity("");
+                        }}
+                      >
+                        Limpar filtros
+                      </Button>
+                    }
+                  />
+                )
+              }
+            />
           </RefreshingContent>
         )}
       </section>

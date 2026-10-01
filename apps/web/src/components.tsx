@@ -8,29 +8,66 @@ import {
   type FormEvent,
 } from "react";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
-import { toast } from "sonner";
 import { api, ApiError, display, type Row } from "./api";
 import { label, type Screen, type Field } from "./resources";
 import {
+  ActionMenu,
+  Button,
+  Checkbox,
   ConfirmDialog,
-  FormActions,
-  FormDialog,
+  DataTable,
+  DateInput,
+  Dialog,
+  EmptyState,
   FilterBar,
+  FormField,
+  Input,
   LoadingSkeleton,
+  PageHeader,
+  Pagination,
   RefreshingContent,
+  Select,
+  StatusBadge,
+  Textarea,
   useFormDirty,
 } from "./ui";
 import { Notice } from "./components/ui";
 /** @deprecated Import Notice from ./components/ui. */
 export { Notice };
+
+export function buildRecordPayload(screen: Screen, data: Row) {
+  const payload: Row = {};
+  for (const field of screen.fields) {
+    const value = data[field.key];
+    if (field.type === "password" && !value) continue;
+    payload[field.key] =
+      field.type === "checkbox"
+        ? Boolean(value)
+        : value === ""
+          ? null
+          : field.type === "number"
+            ? Number(value)
+            : value;
+  }
+  return payload;
+}
+
 export function Lookup({
   field,
   value,
   onChange,
+  id,
+  required,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
 }: {
   field: Field;
   value: unknown;
   onChange: (value: unknown) => void;
+  id?: string;
+  required?: boolean;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean;
 }) {
   const [q, setQ] = useState(""),
     [items, setItems] = useState<Row[]>([]),
@@ -138,9 +175,13 @@ export function Lookup({
     <div ref={root} className="lookup searchable-select" aria-busy={loading}>
       <button
         ref={trigger}
+        id={id}
         type="button"
         className="searchable-trigger secondary"
         aria-label={field.label}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
+        aria-required={required || undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
@@ -168,6 +209,7 @@ export function Lookup({
               placeholder="Buscar opções…"
               value={q}
               onChange={(event) => {
+                setLoading(true);
                 setQ(event.target.value);
                 setActiveIndex(0);
               }}
@@ -182,10 +224,14 @@ export function Lookup({
                   event.preventDefault();
                   setActiveIndex((index) => Math.max(index - 1, 0));
                 }
-                if (event.key === "Enter" && items[activeIndex]) {
+                if (event.key === "Enter") {
                   event.preventDefault();
-                  onChange(String(items[activeIndex]!.id));
-                  closeOptions();
+                  event.stopPropagation();
+                  const activeItem = items[activeIndex];
+                  if (activeItem) {
+                    onChange(String(activeItem.id));
+                    closeOptions();
+                  }
                 }
                 if (event.key === "Escape") {
                   event.preventDefault();
@@ -204,35 +250,41 @@ export function Lookup({
             {!loading && !error && items.length === 0 && (
               <div className="searchable-state">Nenhuma opção encontrada.</div>
             )}
-            {items.map((row, index) => (
-              <button
-                type="button"
-                role="option"
-                id={`${listId}-${String(row.id)}`}
-                tabIndex={-1}
-                aria-selected={String(row.id) === String(value ?? "")}
-                className={
-                  index === activeIndex
-                    ? "searchable-option active"
-                    : "searchable-option"
-                }
-                key={String(row.id)}
-                onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => {
-                  onChange(String(row.id));
-                  closeOptions();
-                }}
-              >
-                <span>{optionLabel(row)}</span>
-                {String(row.id) === String(value ?? "") && (
-                  <Check size={16} aria-hidden="true" />
-                )}
-              </button>
-            ))}
+            {loading && (
+              <div className="searchable-state" role="status">
+                Carregando opções…
+              </div>
+            )}
+            {!loading &&
+              items.map((row, index) => (
+                <button
+                  type="button"
+                  role="option"
+                  id={`${listId}-${String(row.id)}`}
+                  tabIndex={-1}
+                  aria-selected={String(row.id) === String(value ?? "")}
+                  className={
+                    index === activeIndex
+                      ? "searchable-option active"
+                      : "searchable-option"
+                  }
+                  key={String(row.id)}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onClick={() => {
+                    onChange(String(row.id));
+                    closeOptions();
+                  }}
+                >
+                  <span>{optionLabel(row)}</span>
+                  {String(row.id) === String(value ?? "") && (
+                    <Check size={16} aria-hidden="true" />
+                  )}
+                </button>
+              ))}
           </div>
         </div>
       )}
-      {field.required && (
+      {(required ?? field.required) && (
         <input
           className="sr-only"
           tabIndex={-1}
@@ -290,19 +342,7 @@ export function RecordForm({
     setSaving(true);
     setError("");
     setFields({});
-    const payload: Row = {};
-    for (const f of screen.fields) {
-      const value = data[f.key];
-      if (f.type === "password" && !value) continue;
-      payload[f.key] =
-        f.type === "checkbox"
-          ? Boolean(value)
-          : value === ""
-            ? null
-            : f.type === "number"
-              ? Number(value)
-              : value;
-    }
+    const payload = buildRecordPayload(screen, data);
     try {
       await api(
         screen.path + (record ? "/" + String(record.id) : ""),
@@ -323,83 +363,87 @@ export function RecordForm({
         <h2>
           {record ? "Editar" : "Novo registro"} · {screen.title}
         </h2>
-        <button type="button" className="secondary" onClick={close}>
+        <Button type="button" variant="secondary" onClick={close}>
           Fechar
-        </button>
+        </Button>
       </div>
       <form onSubmit={(e) => void submit(e)}>
         <Notice text={error} error />
         <div className="form-grid">
-          {screen.fields.map((f) => (
-            <label key={f.key} className={f.type === "textarea" ? "wide" : ""}>
-              <span>
-                {f.label}
-                {f.required ? " *" : ""}
-              </span>
-              {f.resource ? (
-                <Lookup
-                  field={f}
-                  value={data[f.key]}
-                  onChange={(v) => setData({ ...data, [f.key]: v })}
-                />
-              ) : f.options ? (
-                <select
-                  aria-label={f.label}
-                  required={f.required ?? false}
-                  value={String(data[f.key] ?? "")}
-                  onChange={(e) =>
-                    setData({ ...data, [f.key]: e.target.value })
-                  }
-                >
-                  <option value="">Selecione…</option>
-                  {f.options.map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
-              ) : f.type === "textarea" ? (
-                <textarea
-                  value={String(data[f.key] ?? "")}
-                  onChange={(e) =>
-                    setData({ ...data, [f.key]: e.target.value })
-                  }
-                />
-              ) : (
-                <input
-                  type={f.type ?? "text"}
-                  required={f.required ?? false}
-                  step={f.type === "number" ? "0.01" : undefined}
-                  autoComplete={
-                    f.type === "password" ? "new-password" : undefined
-                  }
-                  {...(f.type === "checkbox"
-                    ? { checked: Boolean(data[f.key]) }
-                    : { value: String(data[f.key] ?? "") })}
-                  onChange={(e) =>
-                    setData({
-                      ...data,
-                      [f.key]:
-                        f.type === "checkbox"
-                          ? e.target.checked
-                          : e.target.value,
-                    })
-                  }
-                />
-              )}{" "}
-              {fields[f.key]?.map((message) => (
-                <small className="field-error" key={message}>
-                  {message}
-                </small>
-              ))}
-            </label>
-          ))}
+          {screen.fields.map((f) => {
+            const update = (value: unknown) =>
+              setData((current) => ({ ...current, [f.key]: value }));
+            const fieldError = fields[f.key]?.join(" ");
+            const value = data[f.key];
+            const required = Boolean(
+              f.required ||
+                (screen.path === "usuarios" &&
+                  !record &&
+                  f.type === "password"),
+            );
+            return (
+              <FormField
+                key={f.key}
+                label={f.label}
+                required={required}
+                {...(fieldError ? { error: fieldError } : {})}
+                {...(f.type === "textarea" ? { className: "wide" } : {})}
+                {...(screen.path === "usuarios" &&
+                record &&
+                f.type === "password"
+                  ? { description: "Deixe vazio para manter a senha atual." }
+                  : {})}
+              >
+                {f.resource ? (
+                  <Lookup field={f} value={value} onChange={update} />
+                ) : f.options ? (
+                  <Select
+                    value={String(value ?? "")}
+                    onChange={(event) => update(event.target.value)}
+                  >
+                    <option value="">Selecione…</option>
+                    {f.options.map((option) => (
+                      <option key={option}>{option}</option>
+                    ))}
+                  </Select>
+                ) : f.type === "textarea" ? (
+                  <Textarea
+                    value={String(value ?? "")}
+                    onChange={(event) => update(event.target.value)}
+                  />
+                ) : f.type === "checkbox" ? (
+                  <Checkbox
+                    checked={Boolean(value)}
+                    onChange={(event) => update(event.target.checked)}
+                  />
+                ) : f.type === "date" ? (
+                  <DateInput
+                    value={String(value ?? "")}
+                    onChange={(event) => update(event.target.value)}
+                  />
+                ) : (
+                  <Input
+                    type={f.type ?? "text"}
+                    step={f.type === "number" ? "0.01" : undefined}
+                    autoComplete={
+                      f.type === "password" ? "new-password" : undefined
+                    }
+                    value={String(value ?? "")}
+                    onChange={(event) => update(event.target.value)}
+                  />
+                )}
+              </FormField>
+            );
+          })}
         </div>
         {screen.path === "periodos" && data.dataInicio && data.dataFim ? (
           <p>
             Dias corridos inclusivos:{" "}
             {inclusiveDays(String(data.dataInicio), String(data.dataFim))}{" "}
-            <button
+            <Button
               type="button"
-              className="secondary compact"
+              variant="secondary"
+              size="sm"
               onClick={() =>
                 setData({
                   ...data,
@@ -411,10 +455,17 @@ export function RecordForm({
               }
             >
               Usar sugestão
-            </button>
+            </Button>
           </p>
         ) : null}
-        <FormActions pending={saving} onCancel={close} />
+        <div className="form-actions">
+          <Button type="submit" loading={saving}>
+            {saving ? "Salvando…" : "Salvar"}
+          </Button>
+          <Button type="button" variant="secondary" onClick={close}>
+            Cancelar
+          </Button>
+        </div>
       </form>
       <ConfirmDialog
         open={confirmClose}
@@ -470,31 +521,56 @@ export function Records({
       active = false;
     };
   }, [screen.path, page, q, version]);
+  const columns = screen.columns.map((key, index) => {
+    const isStatus = ["ativo", "ativa", "status"].includes(key);
+    return {
+      key,
+      label: label(key, screen),
+      priority: isStatus
+        ? ("always" as const)
+        : index === 0
+          ? ("primary" as const)
+          : index === 1
+            ? ("secondary" as const)
+            : ("desktop" as const),
+      render: (row: Row) =>
+        isStatus ? (
+          <StatusBadge
+            value={
+              typeof row[key] === "boolean"
+                ? row[key]
+                  ? "ATIVO"
+                  : "INATIVO"
+                : row[key]
+            }
+          />
+        ) : (
+          display(row[key])
+        ),
+    };
+  });
+  const openCreate = () => {
+    setEditing(null);
+    setNotice("");
+  };
   return (
-    <>
-      <div className="section-heading">
-        <div>
-          <h1>{screen.title}</h1>
-          <p>{screen.description}</p>
-        </div>
-        <button
-          onClick={() => {
-            setEditing(null);
-            setNotice("");
-          }}
-        >
-          Novo registro
-        </button>
-      </div>
+    <div className="registry-page">
+      <PageHeader
+        title={screen.title}
+        description={screen.description}
+        action={<Button onClick={openCreate}>Novo registro</Button>}
+      />
       <Notice text={notice} />
-      <Notice text={error} error />
-      <FormDialog
+      {error && rows.length > 0 && <Notice text={error} error />}
+      <Dialog
         open={editing !== undefined}
         onOpenChange={(open) => {
           if (!open) setEditing(undefined);
         }}
         title={`${editing ? "Editar" : "Novo registro"} · ${screen.title}`}
         description={screen.description}
+        className="registry-dialog"
+        size="lg"
       >
         {editing !== undefined && (
           <RecordForm
@@ -505,14 +581,13 @@ export function Records({
             onClose={() => setEditing(undefined)}
             onSaved={() => {
               setEditing(undefined);
-              setVersion(version + 1);
+              setVersion((current) => current + 1);
               setNotice("Registro salvo com sucesso.");
-              toast.success("Registro salvo com sucesso.");
             }}
           />
         )}
-      </FormDialog>
-      <section className="panel">
+      </Dialog>
+      <section className="panel registry-results">
         <FilterBar
           search={q}
           searchLabel="Buscar registros"
@@ -522,80 +597,89 @@ export function Records({
           }}
           activeFilters={
             q
-              ? [{ key: "q", label: `Busca: ${q}`, onRemove: () => setQ("") }]
+              ? [
+                  {
+                    key: "q",
+                    label: `Busca: ${q}`,
+                    onRemove: () => {
+                      setQ("");
+                      setPage(1);
+                    },
+                  },
+                ]
               : []
           }
         />
-        <div className="result-count">{total} registros</div>
+        <div className="result-count" aria-live="polite">
+          {total} {total === 1 ? "registro" : "registros"}
+        </div>
         {loading && !hasLoaded ? (
           <LoadingSkeleton
             label={`Carregando ${screen.title.toLowerCase()}…`}
           />
+        ) : error && rows.length === 0 ? (
+          <div className="registry-error">
+            <Notice text={error} error />
+            <Button
+              variant="secondary"
+              onClick={() => setVersion((current) => current + 1)}
+            >
+              Tentar novamente
+            </Button>
+          </div>
         ) : (
           <RefreshingContent refreshing={loading}>
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    {screen.columns.map((k) => (
-                      <th key={k}>{label(k, screen)}</th>
-                    ))}
-                    <th>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={String(row.id)}>
-                      {screen.columns.map((k) => (
-                        <td key={k}>{display(row[k])}</td>
-                      ))}
-                      <td>
-                        {onOpen && (
-                          <button
-                            className="secondary compact"
-                            onClick={() => onOpen(row)}
-                          >
-                            Ver detalhes
-                          </button>
-                        )}{" "}
-                        <button
-                          className="secondary compact"
-                          onClick={() => setEditing(row)}
-                        >
-                          Editar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!rows.length && (
-                <p className="empty">
-                  Nenhum registro encontrado. Cadastre o primeiro ou ajuste a
-                  busca.
-                </p>
+            <DataTable
+              rows={rows}
+              columns={columns}
+              primaryKey={screen.columns[0]!}
+              responsiveStrategy="priority"
+              empty={
+                <EmptyState
+                  title={q ? "Nenhum resultado" : "Nenhum cadastro"}
+                  description={
+                    q
+                      ? "Não há registros para a busca informada."
+                      : "Cadastre o primeiro registro para começar."
+                  }
+                  action={
+                    q ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setQ("");
+                          setPage(1);
+                        }}
+                      >
+                        Limpar busca
+                      </Button>
+                    ) : (
+                      <Button onClick={openCreate}>Novo registro</Button>
+                    )
+                  }
+                />
+              }
+              rowActions={(row) => (
+                <ActionMenu
+                  label={`Ações de ${display(row)}`}
+                  items={[
+                    ...(onOpen
+                      ? [
+                          {
+                            label: "Ver detalhes",
+                            onSelect: () => onOpen(row),
+                          },
+                        ]
+                      : []),
+                    { label: "Editar", onSelect: () => setEditing(row) },
+                  ]}
+                />
               )}
-            </div>
+            />
           </RefreshingContent>
         )}
-        <div className="pagination">
-          <button
-            className="secondary"
-            disabled={page === 1}
-            onClick={() => setPage(page - 1)}
-          >
-            Anterior
-          </button>
-          <span>Página {page}</span>
-          <button
-            className="secondary"
-            disabled={page * 25 >= total}
-            onClick={() => setPage(page + 1)}
-          >
-            Próxima
-          </button>
-        </div>
+        <Pagination page={page} total={total} onChange={setPage} />
       </section>
-    </>
+    </div>
   );
 }

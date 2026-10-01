@@ -1,0 +1,231 @@
+.benefit-order-page {
+  min-width: 0;
+}
+
+.benefit-order-context {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(220px, 1.3fr) minmax(
+      180px,
+      1fr
+    );
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.benefit-order-content {
+  min-width: 0;
+}
+
+.benefit-order-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.benefit-order-summary h2,
+.benefit-order-summary p {
+  margin: 0;
+}
+
+.benefit-order-summary p,
+.benefit-order-summary__total span,
+.benefit-order-reference span,
+.benefit-order-transport__heading span {
+  color: var(--color-text-secondary);
+}
+
+.benefit-order-summary__total {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 180px;
+  text-align: right;
+}
+
+.benefit-order-summary__total strong {
+  font-size: 1.35rem;
+}
+
+.benefit-order-page .ds-data-table {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.benefit-order-page .ds-data-table table {
+  min-width: 1080px;
+}
+
+.benefit-order-page .ds-data-table td {
+  vertical-align: top;
+}
+
+.benefit-order-reference,
+.benefit-order-away,
+.benefit-order-parameters,
+.benefit-order-transport {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.benefit-order-reference {
+  min-width: 160px;
+}
+
+.benefit-order-parameters {
+  min-width: 260px;
+}
+
+.benefit-order-food-fields,
+.benefit-order-quantity-fields {
+  display: grid;
+  grid-template-columns: minmax(84px, 0.65fr) minmax(130px, 1fr);
+  gap: var(--space-2);
+}
+
+.benefit-order-transport {
+  min-width: 640px;
+}
+
+.benefit-order-transport__heading {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.benefit-order-transport__row {
+  display: grid;
+  grid-template-columns:
+    minmax(130px, 1fr) minmax(180px, 1.2fr) minmax(130px, 0.8fr)
+    auto;
+  gap: var(--space-2);
+  align-items: end;
+  padding-block: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.benefit-order-blocked {
+  display: block;
+  max-width: 230px;
+  color: var(--color-danger-text);
+}
+
+.benefit-order-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 850px) {
+  .benefit-order-context {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .benefit-order-context .ds-form-field:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .benefit-order-context,
+  .benefit-order-food-fields,
+  .benefit-order-quantity-fields,
+  .benefit-order-transport__row {
+    grid-template-columns: 1fr;
+  }
+
+  .benefit-order-summary,
+  .benefit-order-actions,
+  .benefit-order-transport__heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .benefit-order-summary__total {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .benefit-order-page .ds-data-table table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .benefit-order-page .ds-data-table th,
+  .benefit-order-page .ds-data-table td {
+    padding-inline: 2px;
+    white-space: normal;
+  }
+
+  .benefit-order-page .ds-data-table {
+    font-size: 0.75rem;
+  }
+
+  .benefit-order-page .ds-data-table th.ds-column--always,
+  .benefit-order-page .ds-data-table td.ds-column--always {
+    display: table-cell;
+  }
+
+  .benefit-order-page .ds-data-table [data-column="include"] {
+    width: 28px;
+    font-size: 0;
+  }
+
+  .benefit-order-page .ds-data-table [data-column="person"] {
+    width: 70px;
+  }
+
+  .benefit-order-page .ds-data-table [data-column="total"] {
+    width: 70px;
+  }
+
+  .benefit-order-page .ds-data-table [data-column="status"] {
+    width: 64px;
+  }
+
+  .benefit-order-page .ds-data-table__expand-heading,
+  .benefit-order-page .ds-data-table__expand-cell {
+    width: 44px;
+  }
+
+  .benefit-order-page .ds-data-table [data-column="total"] output {
+    white-space: nowrap;
+  }
+
+  .benefit-order-page .ds-data-table__details .benefit-order-transport,
+  .benefit-order-page .ds-data-table__details .benefit-order-parameters {
+    min-width: 0;
+  }
+
+  .benefit-order-page .ds-data-table__details td,
+  .benefit-order-page .ds-data-table__details dl,
+  .benefit-order-page .ds-data-table__details dl div,
+  .benefit-order-page .ds-data-table__details dd {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .benefit-order-page .ds-data-table__details dl div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .benefit-order-page .ds-data-table__details dl div:has(dd:empty) {
+    display: none;
+  }
+
+  .benefit-order-page .ds-data-table__details dd {
+    overflow-wrap: anywhere;
+  }
+
+  .benefit-order-page .ds-data-table__details .ds-input,
+  .benefit-order-page .ds-data-table__details .ds-select {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .benefit-order-actions .ds-button {
+    width: 100%;
+  }
+}

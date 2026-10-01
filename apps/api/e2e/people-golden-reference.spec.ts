@@ -4,6 +4,33 @@ import argon2 from "argon2";
 import { PrismaClient } from "@duali/database";
 import { testDatabaseUrl } from "../src/test-helper.js";
 
+async function expectStableScreenshot(
+  page: import("@playwright/test").Page,
+  name: string,
+) {
+  await page.evaluate(async () => {
+    if (document.activeElement instanceof HTMLElement)
+      document.activeElement.blur();
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+  await expect(page).toHaveScreenshot(name, { animations: "disabled" });
+}
+
+async function filterGeometry(page: import("@playwright/test").Page) {
+  return page.locator(".filter-bar-main > *").evaluateAll((elements) =>
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        className: element.className,
+        x: rect.x,
+        width: rect.width,
+      };
+    }),
+  );
+}
+
 test("Golden Reference de Pessoas preserva contexto e comportamento responsivo", async ({
   page,
 }) => {
@@ -163,14 +190,44 @@ test("Golden Reference de Pessoas preserva contexto e comportamento responsivo",
     await expect(
       page.locator('.people-segment[aria-pressed="true"]'),
     ).toHaveText(/Todos/);
-    await expect(page).toHaveScreenshot("pessoas-desktop-1440x900.png", {
-      animations: "disabled",
+    const initialGeometry = await filterGeometry(page);
+    const longUnit = await db.unidade.create({
+      data: {
+        nome: `Unidade com nome adicional muito extenso ${suffix}`,
+        sigla: `L${suffix.slice(0, 7)}`,
+        uf: "RJ",
+      },
     });
+    const longTeam = await db.equipe.create({
+      data: { nome: `Equipe com nome adicional muito extenso ${suffix}` },
+    });
+    await page.reload();
+    await expect(page.getByText("6 pessoas encontradas")).toBeVisible();
+    await expect(
+      page.getByLabel("Unidade").locator(`option[value="${longUnit.id}"]`),
+    ).toHaveCount(1);
+    await expect(
+      page.getByLabel("Equipe").locator(`option[value="${longTeam.id}"]`),
+    ).toHaveCount(1);
+    expect(await filterGeometry(page)).toEqual(initialGeometry);
+    await db.equipe.delete({ where: { id: longTeam.id } });
+    await db.unidade.delete({ where: { id: longUnit.id } });
+    await page.reload();
+    await expect(page.getByText("6 pessoas encontradas")).toBeVisible();
+    expect(await filterGeometry(page)).toEqual(initialGeometry);
+    await expectStableScreenshot(page, "pessoas-desktop-1440x900.png");
 
     await page.setViewportSize({ width: 1366, height: 768 });
-    await expect(page).toHaveScreenshot("pessoas-desktop-1366x768.png", {
-      animations: "disabled",
-    });
+    await expectStableScreenshot(page, "pessoas-desktop-1366x768.png");
+
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await expect(page.locator(".filter-bar-main")).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await page.setViewportSize({ width: 1366, height: 768 });
 
     const counts = await page
       .locator(".people-segment strong")
@@ -180,9 +237,7 @@ test("Golden Reference de Pessoas preserva contexto e comportamento responsivo",
       page.getByRole("columnheader", { name: "Instituição" }),
     ).toBeVisible();
     await expect(page.locator(".people-segment strong")).toHaveText(counts);
-    await expect(page).toHaveScreenshot("pessoas-estagio-1366x768.png", {
-      animations: "disabled",
-    });
+    await expectStableScreenshot(page, "pessoas-estagio-1366x768.png");
 
     await page.getByLabel("Unidade").selectOption(unit.id);
     await page.getByLabel("Status").selectOption("ATIVO");
@@ -194,17 +249,13 @@ test("Golden Reference de Pessoas preserva contexto e comportamento responsivo",
     await expect(
       page.getByRole("button", { name: /Remover filtro Status/ }),
     ).toBeVisible();
-    await expect(page).toHaveScreenshot("pessoas-filtros-1366x768.png", {
-      animations: "disabled",
-    });
+    await expectStableScreenshot(page, "pessoas-filtros-1366x768.png");
 
     await page.getByLabel("Buscar pessoa").fill("não existe nesta população");
     await expect(
       page.getByText("Nenhuma pessoa encontrada com estes filtros"),
     ).toBeVisible();
-    await expect(page).toHaveScreenshot("pessoas-empty-1366x768.png", {
-      animations: "disabled",
-    });
+    await expectStableScreenshot(page, "pessoas-empty-1366x768.png");
 
     await page
       .getByRole("button", { name: "Limpar filtros", exact: true })
@@ -213,9 +264,7 @@ test("Golden Reference de Pessoas preserva contexto e comportamento responsivo",
     await page.locator('.people-segment[data-segment="ESTAGIO"]').click();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByText("1 pessoas encontradas")).toBeVisible();
-    await expect(page).toHaveScreenshot("pessoas-mobile-390x844.png", {
-      animations: "disabled",
-    });
+    await expectStableScreenshot(page, "pessoas-mobile-390x844.png");
 
     const currentUrl = page.url();
     const expand = page.getByRole("button", {
@@ -227,9 +276,7 @@ test("Golden Reference de Pessoas preserva contexto e comportamento responsivo",
     expect(controls).toBeTruthy();
     await expect(page.locator(`#${controls}`)).toBeVisible();
     expect(page.url()).toBe(currentUrl);
-    await expect(page).toHaveScreenshot("pessoas-mobile-expanded-390x844.png", {
-      animations: "disabled",
-    });
+    await expectStableScreenshot(page, "pessoas-mobile-expanded-390x844.png");
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,

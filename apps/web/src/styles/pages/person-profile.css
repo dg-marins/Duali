@@ -1,0 +1,120 @@
+.person-profile-page,
+.person-editor-page {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.person-profile-page .profile-identity {
+  align-items: center;
+}
+
+.person-profile-page .profile-identity .ds-status-badge {
+  width: fit-content;
+}
+
+.person-profile-tabs {
+  display: flex;
+  gap: var(--space-1);
+  max-width: 100%;
+  overflow-x: auto;
+  padding: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--duali-radius-md);
+  background: var(--color-surface);
+  scrollbar-width: thin;
+}
+
+.person-profile-tabs .ds-button {
+  flex: 0 0 auto;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.person-profile-tabs .ds-button.active {
+  color: var(--color-primary-active);
+  background: var(--color-primary-soft);
+}
+
+.person-profile-summary dl {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.person-profile-summary dl > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.8fr) minmax(0, 1.2fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.person-profile-summary dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-secondary);
+}
+
+.person-profile-summary dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.person-profile-link-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  color: var(--color-text-secondary);
+}
+
+.person-profile-page [role="tabpanel"] {
+  min-width: 0;
+}
+
+.person-profile-page .ds-data-table {
+  max-width: 100%;
+}
+
+.person-profile-page .ds-timeline {
+  margin-top: var(--space-4);
+}
+
+.person-editor-form {
+  max-width: 60rem;
+}
+
+.person-editor-form > h2 {
+  margin-top: 0;
+}
+
+@media (max-width: 850px) {
+  .person-profile-page,
+  .person-editor-page {
+    gap: var(--space-4);
+  }
+
+  .person-profile-page .profile-identity {
+    align-items: flex-start;
+  }
+
+  .person-profile-page .profile-grid,
+  .person-profile-page .metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .person-profile-summary dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .person-profile-page .context-actions,
+  .person-editor-form .form-actions {
+    align-items: stretch;
+  }
+
+  .person-profile-page .context-actions .ds-button,
+  .person-editor-form .form-actions .ds-button {
+    width: 100%;
+  }
+}

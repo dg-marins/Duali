@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, display, type Row } from "../../api";
-import { Notice, RecordForm } from "../../components";
-import { screens } from "../../resources";
+import { api, display, type Row } from "../../../api";
+import { Notice, RecordForm } from "../../../components";
+import { screens } from "../../../resources";
 import {
   DataTable,
   EmptyState,
@@ -12,7 +12,10 @@ import {
   ConfirmDialog,
   Pagination,
   useFormDirty,
-} from "../../ui";
+  Button,
+  FilterChip,
+  StatusBadge,
+} from "../../../ui";
 
 const categories = [
   ["ALIMENTACAO", "Alimentação"],
@@ -98,24 +101,24 @@ export function BenefitRegistryPage() {
       (!filterUnit || row.unidadeId === filterUnit),
   );
   return (
-    <div className="golden-registry">
+    <div className="benefit-registry-page page-stack">
       <PageHeader
         title="Benefícios"
         description="Defina o benefício, o fornecedor e as unidades atendidas."
         action={
-          <button
+          <Button
             onClick={() => {
               setEditing(null);
               setOpen(true);
             }}
           >
             + Associar benefício
-          </button>
+          </Button>
         }
       />
       <Notice text={error} error />
       <section className="panel">
-        <div className="registry-filters">
+        <div className="registry-filters benefit-registry-filters">
           <label>
             <span>Benefício</span>
             <select
@@ -168,12 +171,44 @@ export function BenefitRegistryPage() {
             </select>
           </label>
         </div>
+        {(filterType || filterSupplier || filterUnit) && (
+          <div className="filter-chips" aria-label="Filtros ativos">
+            {filterType && (
+              <FilterChip
+                label={`Benefício: ${categories.find(([value]) => value === filterType)?.[1] ?? filterType}`}
+                onRemove={() => {
+                  setFilterType("");
+                  setPage(1);
+                }}
+              />
+            )}
+            {filterSupplier && (
+              <FilterChip
+                label={`Fornecedor: ${display(suppliers.find((row) => row.id === filterSupplier))}`}
+                onRemove={() => {
+                  setFilterSupplier("");
+                  setPage(1);
+                }}
+              />
+            )}
+            {filterUnit && (
+              <FilterChip
+                label={`Unidade: ${display(units.find((row) => row.id === filterUnit))}`}
+                onRemove={() => {
+                  setFilterUnit("");
+                  setPage(1);
+                }}
+              />
+            )}
+          </div>
+        )}
         {!loaded && loading ? (
           <LoadingSkeleton />
         ) : (
           <RefreshingContent refreshing={loading}>
             <DataTable
               rows={filtered.slice((page - 1) * 15, page * 15)}
+              responsiveStrategy="priority"
               primaryKey="tipo"
               empty={
                 <EmptyState
@@ -185,6 +220,7 @@ export function BenefitRegistryPage() {
                 {
                   key: "tipo",
                   label: "Benefício",
+                  priority: "primary",
                   render: (row) =>
                     categories.find(([type]) => type === row.tipo)?.[1] ??
                     display(row.tipo),
@@ -192,31 +228,38 @@ export function BenefitRegistryPage() {
                 {
                   key: "fornecedor",
                   label: "Fornecedor",
+                  priority: "secondary",
                   render: (row) => display(row.fornecedor),
                 },
                 {
                   key: "unidade",
                   label: "Unidade",
+                  priority: "secondary",
                   render: (row) => display(row.unidade),
                 },
                 {
                   key: "ativa",
                   label: "Situação",
-                  render: (row) => (row.ativa ? "Ativa" : "Inativa"),
+                  priority: "always",
+                  render: (row) => (
+                    <StatusBadge value={row.ativa ? "ATIVO" : "INATIVO"} />
+                  ),
                 },
                 {
                   key: "actions",
                   label: "Ações",
+                  priority: "always",
                   render: (row) => (
-                    <button
-                      className="secondary compact"
+                    <Button
+                      size="sm"
+                      variant="secondary"
                       onClick={() => {
                         setEditing(row);
                         setOpen(true);
                       }}
                     >
                       Editar associação
-                    </button>
+                    </Button>
                   ),
                 },
               ]}

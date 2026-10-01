@@ -83,7 +83,9 @@ test("administrator completes the operational RH journey", async ({ page }) => {
       page.getByRole("button", { name: "Novo registro" }),
     ).toBeFocused();
     await page.getByRole("button", { name: "Novo registro" }).click();
-    await teamDialog.getByLabel("Nome *").fill(`Equipe descartada ${suffix}`);
+    await teamDialog
+      .getByLabel("Nome", { exact: true })
+      .fill(`Equipe descartada ${suffix}`);
     await teamDialog.getByRole("button", { name: "Cancelar" }).click();
     const discardDialog = page.getByRole("dialog", {
       name: "Descartar alterações?",

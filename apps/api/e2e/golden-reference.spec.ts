@@ -171,7 +171,9 @@ test("Golden Reference: exclusive segments, profile, registry and responsive she
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/app/pessoas?q=" + suffix);
     const segments = page.locator(".people-segment");
-    await expect(page.getByText("5 pessoas encontradas")).toBeVisible();
+    await expect(page.getByText("5 pessoas encontradas")).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(
       segments.filter({ has: page.locator('[aria-pressed="true"]') }),
     ).toHaveCount(0);

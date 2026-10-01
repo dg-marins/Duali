@@ -1,15 +1,20 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { api, display, type Row } from "../../api";
-import { Notice } from "../../components";
-import { Button } from "../../components/ui/button";
+import { api, display, type Row } from "../../../api";
+import { Notice } from "../../../components";
 import {
   CurrencyInput,
   FormDialog,
   LoadingSkeleton,
   money,
   RefreshingContent,
-} from "../../ui";
+  DataTable,
+  EmptyState,
+  MetricCard,
+  PageHeader,
+  StatusBadge,
+  Button,
+} from "../../../ui";
 const conductionLabels: Record<string, string> = {
   ONIBUS: "Ônibus",
   ONIBUS_INTER: "Ônibus Intermunicipal",
@@ -178,19 +183,21 @@ export function BenefitClosingPage({
     await load();
   }
   return (
-    <div className="page-stack">
-      <section className="page-heading">
-        <div>
-          <p className="eyebrow">Benefícios</p>
-          <h1>Fechamento de competência</h1>
-          <p>Controle mensal por unidade, sem fluxo de aprovação.</p>
-        </div>
-        <Button variant="outline" onClick={() => navigate("/app/beneficios")}>
-          Voltar
-        </Button>
-      </section>
-      <section className="panel filter-panel">
-        <div className="filter-grid">
+    <div className="benefit-closing-page page-stack">
+      <PageHeader
+        title="Fechamento de competência"
+        description="Controle administrativo mensal por unidade. Fechar não conclui pagamentos ou compras."
+        action={
+          <Button
+            variant="secondary"
+            onClick={() => navigate("/app/beneficios")}
+          >
+            Voltar ao resumo
+          </Button>
+        }
+      />
+      <section className="panel benefit-closing-filters">
+        <div className="benefit-closing-filter-grid">
           <label>
             <span>Buscar unidade</span>
             <input
@@ -218,7 +225,7 @@ export function BenefitClosingPage({
           </label>
         </div>
       </section>
-      <Notice text={error} error />
+      <Notice tone="danger" text={error} />
       {!hasLoaded ? (
         <section className="panel">
           <LoadingSkeleton variant="detail" label="Carregando competência…" />
@@ -234,34 +241,40 @@ export function BenefitClosingPage({
             </section>
           ) : (
             <>
-              <section className="stats-grid">
-                <article className="stat-card">
-                  <span>Situação</span>
-                  <strong>{display(closing.status)}</strong>
+              <section
+                className="benefit-closing-summary"
+                aria-label="Resumo administrativo da competência"
+              >
+                <article className="benefit-closing-status-card">
+                  <span>Situação administrativa</span>
+                  <StatusBadge value={closing.status} />
+                  <small>Não representa conclusão financeira.</small>
                 </article>
-                <article className="stat-card">
-                  <span>Pessoas cobertas</span>
-                  <strong>{display(closing.pessoasCobertas)}</strong>
-                </article>
-                <article className="stat-card">
-                  <span>Pendências</span>
-                  <strong>{display(closing.pendencias)}</strong>
-                </article>
-                <article className="stat-card">
-                  <span>Total</span>
-                  <strong>{money((closing.totais as Row)?.total)}</strong>
-                </article>
+                <MetricCard
+                  label="Pessoas cobertas"
+                  value={display(closing.pessoasCobertas)}
+                />
+                <MetricCard
+                  label="Pendências"
+                  value={display(closing.pendencias)}
+                  tone={Number(closing.pendencias) > 0 ? "warning" : "neutral"}
+                />
+                <MetricCard
+                  label="Total dos lançamentos"
+                  value={money((closing.totais as Row)?.total)}
+                />
               </section>
               <section className="panel">
-                <h2>Totais</h2>
-                <div className="stats-grid">
+                <h2>Totais por benefício</h2>
+                <div className="benefit-closing-totals">
                   {Object.entries((closing.totais as Row) ?? {})
                     .filter(([k]) => k !== "total")
                     .map(([k, v]) => (
-                      <article className="stat-card" key={k}>
-                        <span>{k.replaceAll("_", " ")}</span>
-                        <strong>{money(v)}</strong>
-                      </article>
+                      <MetricCard
+                        key={k}
+                        label={benefitLabels[k] ?? k.replaceAll("_", " ")}
+                        value={money(v)}
+                      />
                     ))}
                 </div>
                 <div className="form-actions">
@@ -294,55 +307,67 @@ export function BenefitClosingPage({
                   Selecione uma pessoa para registrar uma correção antes do
                   fechamento.
                 </p>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Pessoa</th>
-                        <th>Benefício</th>
-                        <th>Fornecedor</th>
-                        <th>Valor final</th>
-                        <th>Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {((closing.lancamentos as Row[] | undefined) ?? []).map(
-                        (row) => {
-                          const benefit = row.beneficioVinculo as Row;
-                          const link = benefit.vinculo as Row;
-                          const config = row.configuracao as Row;
-                          return (
-                            <tr key={String(row.id)}>
-                              <td>{display(link.pessoa)}</td>
-                              <td>
-                                {benefitLabels[String(benefit.tipo)] ??
-                                  display(benefit.tipo)}
-                              </td>
-                              <td>
-                                {benefit.tipo === "TRANSPORTE"
-                                  ? "Por condução"
-                                  : display(config.fornecedor)}
-                              </td>
-                              <td>{money(row.valorFinal)}</td>
-                              <td>
-                                <Button
-                                  variant="outline"
-                                  disabled={closing.status === "FECHADA"}
-                                  onClick={() => setAdjusting(row)}
-                                >
-                                  Registrar ajuste
-                                </Button>
-                              </td>
-                            </tr>
-                          );
-                        },
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                {!((closing.lancamentos as Row[] | undefined) ?? []).length && (
-                  <p>Nenhum lançamento nesta unidade e competência.</p>
-                )}
+                <DataTable
+                  rows={(closing.lancamentos as Row[] | undefined) ?? []}
+                  responsiveStrategy="scroll"
+                  empty={
+                    <EmptyState
+                      title="Nenhum lançamento"
+                      description="Não há lançamentos nesta unidade e competência."
+                    />
+                  }
+                  columns={[
+                    {
+                      key: "pessoa",
+                      label: "Pessoa",
+                      priority: "primary",
+                      render: (row) =>
+                        display(
+                          ((row.beneficioVinculo as Row).vinculo as Row).pessoa,
+                        ),
+                    },
+                    {
+                      key: "beneficio",
+                      label: "Benefício",
+                      priority: "always",
+                      render: (row) =>
+                        benefitLabels[
+                          String((row.beneficioVinculo as Row).tipo)
+                        ] ?? display((row.beneficioVinculo as Row).tipo),
+                    },
+                    {
+                      key: "fornecedor",
+                      label: "Fornecedor",
+                      priority: "secondary",
+                      render: (row) =>
+                        (row.beneficioVinculo as Row).tipo === "TRANSPORTE"
+                          ? "Por condução"
+                          : display((row.configuracao as Row).fornecedor),
+                    },
+                    {
+                      key: "valor",
+                      label: "Valor final",
+                      priority: "always",
+                      align: "end",
+                      render: (row) => money(row.valorFinal),
+                    },
+                    {
+                      key: "acao",
+                      label: "Ação",
+                      priority: "always",
+                      render: (row) => (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={closing.status === "FECHADA"}
+                          onClick={() => setAdjusting(row)}
+                        >
+                          Registrar ajuste
+                        </Button>
+                      ),
+                    },
+                  ]}
+                />
               </section>
             </>
           )}

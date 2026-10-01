@@ -1,4 +1,4 @@
-import { BenefitRegistryPage } from "./features/benefits/BenefitRegistryPage";
+import { BenefitRegistryPage } from "./features/benefits/registry/BenefitRegistryPage";
 import { BenefitSummaryPage } from "./features/benefits/BenefitSummaryPage";
 import React, { useEffect, useRef, useState, type FormEvent } from "react";
 import dualiBrand from "./assets/duali-brand.png";
@@ -7,21 +7,23 @@ import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
 import { ApiError, api, onUnauthorized, setCsrf, type Row } from "./api";
 import { Notice, Records } from "./components";
 import { screens } from "./resources";
-import { Dashboard, Reporting, Audit } from "./Reporting";
-import { Imports } from "./Imports";
+import { DashboardPage as Dashboard } from "./features/dashboard/DashboardPage";
+import { ReportsPage as Reporting } from "./features/reports/ReportsPage";
+import { AuditPage as Audit } from "./features/audit/AuditPage";
+import { ImportsPage as Imports } from "./features/imports/ImportsPage";
+import { PeoplePage } from "./features/people/PeoplePage";
 import {
-  PeoplePage,
   PersonEditor,
   PersonProfile,
-  InternsPage,
-  LeavePage,
-  BenefitLaunchesPage,
-  RegistryDetail,
-} from "./Operational";
+} from "./features/people/profile/PersonProfilePage";
+import { InternsPage } from "./Operational";
+import { LeavePage } from "./features/leave/LeavePage";
+import { BenefitLaunchesPage } from "./features/benefits/launches/BenefitLaunchesPage";
+import { RegistryDetailPage as RegistryDetail } from "./features/registries/RegistryDetailPage";
 import { PendingsPage } from "./features/pendings/PendingsPage";
-import { BenefitClosingPage } from "./features/benefits/BenefitClosingPage";
+import { BenefitClosingPage } from "./features/benefits/closing/BenefitClosingPage";
 import { BenefitAcquisitionPage } from "./features/benefits/BenefitAcquisitionPage";
-import { MonthlyOrderPage } from "./features/benefits/MonthlyOrderPage";
+import { MonthlyOrderPage } from "./features/benefits/order/MonthlyOrderPage";
 import { Toaster } from "sonner";
 import { AppShell } from "./AppShell";
 import { requestNavigation } from "./navigationGuard";
@@ -33,6 +35,17 @@ import "./styles/pages/people.css";
 import "./styles/pages/person-create.css";
 import "./styles/pages/benefits.css";
 import "./styles/pages/vacations.css";
+import "./styles/pages/registries.css";
+import "./styles/pages/person-profile.css";
+import "./styles/pages/dashboard.css";
+import "./styles/pages/pendings.css";
+import "./styles/pages/reports.css";
+import "./styles/pages/audit.css";
+import "./styles/pages/imports.css";
+import "./styles/pages/benefit-launches.css";
+import "./styles/pages/benefit-closing.css";
+import "./styles/pages/benefit-registry.css";
+import "./styles/pages/benefit-order.css";
 import { PersonCreatePage } from "./features/people/create/PersonCreatePage";
 const auxiliary: Record<string, string> = {
   "/app/cadastros/unidades": "unidades",

@@ -1,6 +1,4 @@
-﻿/** Compatibility facade. New code should import from ./components/ui. */
-import { Button } from "./components/ui";
-
+/** Compatibility facade. New code should import from ./components/ui. */
 export { PageHeader, money } from "./components/ui";
 
 export {
@@ -52,25 +50,6 @@ export {
   type SemanticTone,
   type SortDirection,
 } from "./components/ui";
-
-export function FormActions({
-  pending,
-  onCancel,
-  submitLabel = "Salvar",
-}: {
-  pending?: boolean;
-  onCancel: () => void;
-  submitLabel?: string;
-}) {
-  return (
-    <div className="form-actions form-actions-sticky">
-      <Button loading={pending}>{pending ? "Salvandoâ€¦" : submitLabel}</Button>
-      <Button type="button" variant="secondary" onClick={onCancel}>
-        Cancelar
-      </Button>
-    </div>
-  );
-}
 
 export function formatDate(value: unknown) {
   if (!value) return "â€”";

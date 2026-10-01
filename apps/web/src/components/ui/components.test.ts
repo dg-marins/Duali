@@ -10,8 +10,13 @@ import {
   formatCurrencyInput,
   sanitizeCurrencyText,
 } from "./controls";
-import { STATUS_DEFINITIONS, statusDefinition } from "./feedback";
-import { paginationTotalPages, resolveColumnPriority } from "./data";
+import {
+  MetricCard,
+  RefreshingContent,
+  STATUS_DEFINITIONS,
+  statusDefinition,
+} from "./feedback";
+import { DataTable, paginationTotalPages, resolveColumnPriority } from "./data";
 
 describe("CurrencyInput", () => {
   it.each([
@@ -111,5 +116,78 @@ describe("DataTable", () => {
   it("calcula páginas com limite mínimo", () => {
     expect(paginationTotalPages(0, 25)).toBe(1);
     expect(paginationTotalPages(51, 25)).toBe(3);
+  });
+  it("permite um texto compacto sem alterar o nome acessível da expansão", () => {
+    const markup = renderToStaticMarkup(
+      createElement(DataTable, {
+        columns: [
+          { key: "nome", label: "Nome", priority: "primary" as const },
+          { key: "detalhe", label: "Detalhe", priority: "secondary" as const },
+        ],
+        rows: [{ id: "1", nome: "Marina", detalhe: "Contexto" }],
+        empty: null,
+        responsiveStrategy: "expandable" as const,
+        getRowLabel: () => "Marina",
+        expandButtonText: "Mais",
+      }),
+    );
+    expect(markup).toContain("Exibir detalhes de Marina");
+    expect(markup).toContain(">Mais</button>");
+  });
+  it("mantém Detalhes e o nome acessível quando o texto opcional é omitido", () => {
+    const markup = renderToStaticMarkup(
+      createElement(DataTable, {
+        columns: [
+          { key: "nome", label: "Nome", priority: "primary" as const },
+          { key: "detalhe", label: "Detalhe", priority: "secondary" as const },
+        ],
+        rows: [{ id: "1", nome: "Marina", detalhe: "Contexto" }],
+        empty: null,
+        responsiveStrategy: "expandable" as const,
+        getRowLabel: () => "Marina",
+      }),
+    );
+    expect(markup).toContain("Exibir detalhes de Marina");
+    expect(markup).toContain(">Detalhes</button>");
+  });
+});
+
+describe("feedback durante atualização", () => {
+  it("expõe seleção de MetricCard e mantém conteúdo acessível quando solicitado", () => {
+    const metric = renderToStaticMarkup(
+      createElement(MetricCard, {
+        label: "Pendências",
+        value: "2",
+        onClick: () => undefined,
+        pressed: true,
+      }),
+    );
+    const refreshing = renderToStaticMarkup(
+      createElement(RefreshingContent, {
+        refreshing: true,
+        preserveContentAccess: true,
+        children: createElement("p", null, "Conteúdo anterior"),
+      }),
+    );
+    expect(metric).toContain('aria-pressed="true"');
+    expect(refreshing).not.toContain("inert");
+    expect(refreshing).toContain("Conteúdo anterior");
+  });
+  it("preserva os defaults anteriores de MetricCard e RefreshingContent", () => {
+    const metric = renderToStaticMarkup(
+      createElement(MetricCard, {
+        label: "Pendências",
+        value: "2",
+        onClick: () => undefined,
+      }),
+    );
+    const refreshing = renderToStaticMarkup(
+      createElement(RefreshingContent, {
+        refreshing: true,
+        children: createElement("p", null, "Conteúdo anterior"),
+      }),
+    );
+    expect(metric).not.toContain("aria-pressed");
+    expect(refreshing).toContain("inert");
   });
 });
