@@ -1,149 +1,167 @@
-﻿# Duali Design System — Modern SaaS
+# Duali Design System — Modern SaaS
 
-## Princípios
+## Estado atual
 
-O Design System do Duali prioriza clareza, velocidade, previsibilidade, baixa
-carga cognitiva e redução de erros. A interface deve parecer um produto SaaS
-B2B coeso sem transformar todas as informações em cards, dialogs ou wizards.
+O Design System do Duali está propagado pelo produto. Foundations, AppShell,
+componentes oficiais, Golden References e páginas operacionais foram concluídos
+nas Fases 1–8. Este documento descreve o estado atual; os documentos em
+`docs/engineering/` preservam o histórico e as decisões de cada fase.
 
-As foundations são introduzidas antes da migração dos componentes. A presença
-de um token não autoriza a alteração visual de uma página nem a mudança de uma
-regra de negócio.
+O sistema prioriza clareza, velocidade, previsibilidade, baixa carga cognitiva
+e redução de erros. Componentes visuais padronizam apresentação sem substituir
+regras de domínio, contratos de API ou cálculos do backend.
 
-## Cores
+## Foundations
 
-- Navegação: `--color-sidebar` e `--color-sidebar-hover`.
-- Item ativo: `--color-sidebar-active` e
-  `--color-sidebar-active-text`.
-- Ação primária: `--color-primary`, seus estados e
-  `--color-on-primary`.
-- Estrutura: `--color-background`, `--color-surface`,
-  `--color-surface-subtle`, `--color-border` e
-  `--color-border-strong`.
-- Texto: `--color-text-primary`, `--color-text-secondary` e
-  `--color-text-muted`.
+As foundations ficam em `apps/web/src/styles/foundations/` e definem cores,
+tipografia, espaçamento, dimensões, radius, sombras, movimento, foco e camadas.
 
-O verde identifica a marca, a navegação, ações primárias e estados positivos.
-Ele não deve ser aplicado indiscriminadamente.
+- Espaçamento: 4, 8, 12, 16, 20, 24, 32, 40 e 48 pixels (`--space-1` a
+  `--space-9`).
+- Sidebar: 248px aberta e 72px recolhida.
+- Controle: 40px; linha confortável de tabela: 44–48px.
+- Radius: `--duali-radius-sm`, `--duali-radius-md` e `--duali-radius-lg`.
+- Elevação: `--duali-shadow-sm` e `--duali-shadow-md`.
+- Movimento: 120, 180 e 240ms, respeitando `prefers-reduced-motion`.
+- Foco: anel global visível e variante `.ds-focus-on-dark`.
+- Layers: base, sticky, dropdown, overlay, modal, toast e tooltip.
 
-## Semântica
+A tipografia usa uma stack local e de sistema. As classes oficiais incluem
+`.ds-page-title`, `.ds-section-title`, `.ds-body`, `.ds-secondary`,
+`.ds-auxiliary` e `.ds-kpi`.
 
-Cada família possui cor principal, texto, superfície suave e borda:
+## Cores e semântica
+
+Os tokens distinguem navegação, ação, estrutura e texto. Estados usam famílias
+semânticas explícitas:
 
 - `success`: ativo, pago, concluído e programado;
 - `warning`: pendente, a programar, afastado e atenção;
 - `danger`: erro, cancelado, inconsistência e crítico;
 - `info`: previsto, informação e conferido;
 - `review`: revisão humana ou categoria especial;
-- `neutral`: estados sem semântica específica.
+- `neutral`: estado sem definição específica.
 
-A migração do `StatusBadge` acontecerá na fase de componentes. Nesta fase os
-tokens apenas tornam essa migração possível.
+`StatusBadge` consulta `STATUS_DEFINITIONS` e usa fallback neutro para valores
+desconhecidos. Cor nunca substitui o texto do estado.
 
-## Espaçamento e dimensões
+## AppShell
 
-A escala oficial é de 4, 8, 12, 16, 20, 24, 32, 40 e 48 pixels, exposta por
-`--space-1` a `--space-9`.
+O AppShell oficial implementa navegação desktop aberta e recolhida, drawer
+mobile, grupos persistentes durante a sessão, item ativo, tooltips, conta,
+logout, foco e movimento reduzido. O router permanece manual sobre o histórico
+do navegador; o Design System não introduziu uma nova arquitetura de rotas.
 
-Referências de dimensão:
+## Componentes oficiais
 
-- controle: 40px;
-- linha confortável de tabela: 44–48px;
-- sidebar aberta: 248px;
-- sidebar recolhida: 72px;
-- topbar: 60px.
+Os componentes ficam em `apps/web/src/components/ui/` e seus estilos em
+`apps/web/src/styles/components/`.
 
-Essas referências ainda não são aplicadas ao shell ou às páginas legadas.
+- Ações: `Button`, `IconButton` e `ActionMenu`.
+- Formulários: `FormField`, `Input`, `SearchInput`, `Select`, `DateInput`,
+  `Textarea`, `Checkbox` e `CurrencyInput`.
+- Dados: `DataTable`, `Pagination`, `FilterBar`, `FilterChip` e `TableToolbar`.
+- Feedback: `StatusBadge`, `Notice`, `EmptyState`, `LoadingSkeleton`,
+  `RefreshingContent`, toast e métricas.
+- Overlays: `Dialog`, `ConfirmDialog` e `Sheet`, baseados em Radix Dialog.
+- Fluxos e tempo: `Stepper` e `Timeline`, ambos apresentacionais.
 
-## Tipografia
+`DataTable` oferece as estratégias `priority`, `expandable` e `scroll`, com
+prioridades declaradas pelo consumidor. Sorting só aparece quando há suporte
+funcional. `TableToolbar` é oficial, mas atualmente não possui consumidor; não
+é aplicado artificialmente. Não existe um componente `SummaryPanel`.
 
-O Duali utiliza uma stack local e de sistema, sem fonte externa. As classes
-opt-in são:
+## Golden References
 
-- `.ds-page-title`: 26/32, semibold;
-- `.ds-section-title`: 18/24, semibold;
-- `.ds-body`: 14/21;
-- `.ds-secondary`: 13/18;
-- `.ds-auxiliary`: 12/16;
-- `.ds-kpi`: 28/34, bold.
+As quatro Golden References concluídas definem a linguagem oficial:
 
-## Radius, sombras, movimento e foco
+1. Pessoas: PageHeader, busca, filtros, tabela, paginação, estados e
+   responsividade.
+2. Cadastro de Pessoa: página dedicada, Stepper apresentacional, revisão e
+   proteção de alterações não salvas.
+3. Benefícios e Competências: conceitos financeiros separados, gráficos,
+   detalhe e operações preservadas.
+4. Férias e Descansos: saldo contábil, dias comprometidos, disponível para
+   programar, histórico e programação.
 
-- Radius oficial: `--duali-radius-sm`, `--duali-radius-md` e
-  `--duali-radius-lg`, com 6, 8 e 12px.
-- Elevação: `--duali-shadow-sm` para popovers e dropdowns e
-  `--duali-shadow-md` para overlays.
-- Movimento: 120, 180 e 240ms, com preferência por transições discretas.
-- `prefers-reduced-motion` desativa movimentos opt-in não essenciais.
-- O foco visível usa um anel global compatível com superfícies claras e a
-  classe `.ds-focus-on-dark` oferece a variante para fundos escuros.
+O cadastro principal não reintroduz nome social ou endereço. Férias mantém o
+saldo calculado pelo backend e não inventa datas de transição. A decisão de
+domínio sobre Aprendiz e `DESCANSO_ESTAGIO` continua pendente.
 
-## Layers
+## Propagação das páginas
 
-A escala oficial é `base`, `sticky`, `dropdown`, `overlay`, `modal`, `toast` e
-`tooltip`. Os `z-index` legados serão migrados somente quando seus componentes
-forem trabalhados.
+A linguagem das Golden References foi aplicada a:
 
-## Compatibilidade e legado
+- cadastros de Unidades, Equipes, Instituições e Fornecedores, seus detalhes e
+  Usuários;
+- Perfil e edição de Pessoa;
+- Dashboard e Pendências;
+- Relatórios e Auditoria;
+- Importações;
+- Lançamentos, Fechamento e Configurações de Benefícios;
+- Fazer pedido.
 
-`style.css` continua sendo a folha legada e permanece como primeiro import. As
-foundations são carregadas depois dela, mas suas classes são opt-in e seus
-tokens oficiais ainda não substituem os nomes existentes.
+Cada fluxo preserva seus endpoints, payloads, permissões, cálculos e estados de
+domínio. Operações financeiras continuam backend-authoritative, com
+`Prisma.Decimal` no backend e strings decimais nos contratos de frontend.
 
-Os aliases abaixo são temporários e depreciados:
+## Arquitetura e compatibilidade
 
-- `--brand-soft`;
-- `--muted-foreground`;
-- `--primary-soft`;
-- `--radius`;
-- `--surface-muted`;
-- `--text`.
+Features vivem em `apps/web/src/features/`; estilos de página ficam em
+`apps/web/src/styles/pages/`. Permanecem ativos:
 
-Eles existem apenas para resolver consumidores legados que usavam variáveis
-sem definição. Código novo deve usar os tokens oficiais. Cada alias será
-removido quando seu último consumidor for migrado.
+- `ui.tsx`, como fachada de compatibilidade para exports oficiais;
+- `components.tsx`, com `Records`, `RecordForm`, `Lookup` e contratos legados
+  ainda consumidos;
+- `Operational.tsx`, que mantém `InternsPage` e `OperationalList`;
+- `MonthlyBenefitChart`;
+- `navigationGuard`, compartilhado por Cadastro de Pessoa, Edição de Pessoa,
+  Importações e Fazer pedido.
 
-## Decisão sobre o cadastro de Pessoa
+Não há implementações paralelas de `RecordForm`, `Lookup` ou dirty state.
 
-O cadastro principal de Pessoa não deve reintroduzir endereço apenas porque
-esse campo apareceu em mockups exploratórios. Quando o wizard for implementado,
-seus campos serão definidos pelas decisões funcionais aprovadas naquele momento
-e pelo domínio real do Duali.
+## Cascade e CSS
 
-## Componentes fundamentais
+A ordem de carregamento é preservada:
 
-Os componentes oficiais ficam em `apps/web/src/components/ui`. O arquivo
-`ui.tsx` é uma fachada temporária de compatibilidade, sem implementação
-paralela. Os estilos oficiais usam o prefixo `.ds-` em `styles/components/`.
+1. `style.css` de compatibilidade;
+2. foundations;
+3. shell;
+4. componentes;
+5. estilos de página.
 
-- `Button` possui `primary`, `secondary`, `danger` e `ghost`; `IconButton` é a única API oficial para ações somente com ícone.
-- Campos oficiais são opt-in e o `CurrencyInput` preserva seu contrato de string decimal e entrada brasileira.
-- `StatusBadge` usa registro explícito no frontend, sem dependência de Prisma.
-- `DataTable` permite `priority`, `expandable` ou `scroll`, escolhidos pelo consumidor, e prioridades declarativas por coluna.
-- `Dialog`, `ConfirmDialog` e `Sheet` usam Radix Dialog.
+Código novo usa tokens e classes oficiais. CSS global e seletores legados
+continuam somente onde existem consumidores reais. Os aliases de tokens
+legados permanecem para compatibilidade e não devem ser usados por código novo.
 
-## Política de exports
+## Rotas compatíveis
 
-- **official:** exports de `components/ui`;
-- **compatible:** fachada `ui.tsx` e caminho histórico de `Button`;
-- **deprecated:** variantes antigas de Button, `FormDialog`, `FormSheet`, propriedade `mobile` do DataTable e export de `Notice` por `components.tsx`.
+Três comportamentos históricos permanecem deliberadamente sem alteração:
 
-A migração é opt-in. Páginas, inputs e regras `nth-child` legadas permanecem até a respectiva Golden Reference. Nenhuma página deve ser redesenhada apenas para adotar a biblioteca.
+- `/app/beneficios/lote` continua alias de Fazer pedido;
+- `/app/estagiarios` mantém seu comportamento próprio e não foi unificada com
+  Pessoas;
+- `/app/beneficios/lancamentos?novo=1` mantém o matching histórico e segue como
+  decisão funcional pendente.
 
-## Golden Reference do Cadastro de Pessoa
+Esses contratos são cobertos por regressão. Sua manutenção não implica que
+sejam o destino recomendado para novos links.
 
-`/app/pessoas/nova` é uma página dedicada dentro do AppShell. A criação usa os componentes oficiais e um `Stepper` estritamente apresentacional; regras de vínculo e estágio pertencem ao fluxo, não ao componente.
+## Acessibilidade e estados
 
-O fluxo contém Dados pessoais, Vínculo, Dados do estágio quando o tipo final é Estágio, Revisão e Cadastro concluído. O vínculo inicial continua opcional. A aplicação não grava rascunhos: somente a confirmação final chama o endpoint correspondente.
+Os componentes oficiais preservam labels, mensagens de erro, nomes acessíveis,
+foco visível, teclado, focus trap, Escape e restauração de foco. Tabs,
+expansões e ações expõem os atributos ARIA correspondentes.
 
-O cadastro principal contém identificação, contato e observações. Nome social e endereço não fazem parte dessa experiência. A revisão usa blocos de leitura e não replica campos desabilitados.
+As páginas diferenciam, quando suportado pelo contrato existente, carregamento
+inicial, atualização com conteúdo anterior, vazio global, vazio filtrado, erro
+inicial, erro de atualização e erro de mutação. Erro financeiro ou de saldo não
+é apresentado como zero.
 
-Uma proteção genérica e opt-in pode bloquear a navegação de fluxos com alterações pendentes. O cadastro a utiliza em conjunto com `ConfirmDialog` e com o `beforeunload` nativo, sem acoplar regras da página ao AppShell. O formulário de edição existente permanece separado e não foi convertido em wizard.
+## Situação após as Fases 1–8
 
-## Golden Reference de Férias e Descansos
-
-A página de Férias estabelece o padrão para operações orientadas a pessoa e tempo. A listagem prioriza o saldo disponível para programar e mantém o saldo contábil separado dos dias já comprometidos. Os quatro indicadores contam vínculos únicos no ano selecionado e são calculados pelo backend sobre toda a população filtrada.
-
-O histórico apresenta somente datas sustentadas pelos registros. Mudanças de status sem timestamp próprio não são convertidas em eventos fictícios. A programação usa o Stepper oficial, grava apenas na confirmação e preserva os endpoints e regras existentes de períodos, consumos e ajustes.
-
-Decisão de domínio pendente: Aprendiz não recebe direito automático, embora a validação atual aceite `DESCANSO_ESTAGIO`. A Golden Reference não altera esse comportamento.
+A migração técnica está concluída. Permanecem dívidas de compatibilidade e
+decisões funcionais documentadas, sem bloquear o uso do Design System. Ajustes
+de densidade, espaçamento, proporção, alinhamento, shell, cards, tabelas,
+formulários, dialogs, mobile e microinterações pertencem à rodada de
+refinamento visual pós-Fase 9.
