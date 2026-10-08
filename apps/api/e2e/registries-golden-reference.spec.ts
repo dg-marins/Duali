@@ -231,8 +231,9 @@ test("cadastros simples e usuários usam a composição oficial", async ({
       .getByRole("button", { name: /Ações de Usuário Gerenciado/ })
       .click();
     await page.getByRole("menuitem", { name: "Editar" }).click();
-    const passwordInput = page.getByLabel("Nova senha (mínimo 12 caracteres)");
+    const passwordInput = page.getByLabel("Nova senha (mínimo 8 caracteres)");
     await expect(passwordInput).toHaveValue("");
+    await expect(passwordInput).toHaveAttribute("minlength", "8");
     await page.getByLabel("Nome").fill("Usuário Gerenciado Atualizado");
     const updateRequest = page.waitForRequest(
       (request) =>
@@ -306,10 +307,11 @@ test("cria e edita cada cadastro simples preservando seus campos", async ({
         await page.getByLabel("Nome").fill(`Usuário CRUD ${suffix}`);
         await page.getByLabel("E-mail").fill(`crud-${suffix}@example.test`);
         const passwordField = page.getByLabel(
-          "Nova senha (mínimo 12 caracteres)",
+          "Nova senha (mínimo 8 caracteres)",
         );
         await expect(passwordField).toHaveAttribute("required", "");
-        await passwordField.fill("UsuarioCrud!2026");
+        await expect(passwordField).toHaveAttribute("minlength", "8");
+        await passwordField.fill("Senha123");
       },
     },
   ];
@@ -350,7 +352,7 @@ test("cria e edita cada cadastro simples preservando seus campos", async ({
       await expect(page.getByRole("dialog")).toBeVisible();
       if (fixture.route === "usuarios")
         await expect(
-          page.getByLabel("Nova senha (mínimo 12 caracteres)"),
+          page.getByLabel("Nova senha (mínimo 8 caracteres)"),
         ).toHaveValue("");
       const update = page.waitForResponse(
         (response) =>

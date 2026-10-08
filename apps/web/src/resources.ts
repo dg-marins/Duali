@@ -142,7 +142,7 @@ export const screens: Screen[] = [
       { key: "email", label: "E-mail", type: "email", required: true },
       {
         key: "senha",
-        label: "Nova senha (mínimo 12 caracteres)",
+        label: "Nova senha (mínimo 8 caracteres)",
         type: "password",
       },
       { key: "ativo", label: "Acesso ativo", type: "checkbox", default: true },

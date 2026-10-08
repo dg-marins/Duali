@@ -177,7 +177,7 @@ export const resources: Resource[] = [
       if (!previous && !data.senha)
         throw new DomainError(
           422,
-          "Informe senha com pelo menos 12 caracteres.",
+          "Informe senha com pelo menos 8 caracteres.",
         );
       if (typeof data.senha === "string")
         data.senhaHash = await argon2.hash(data.senha, {

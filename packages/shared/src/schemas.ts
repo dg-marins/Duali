@@ -204,7 +204,7 @@ export const usuarioSchema = z
       .max(180)
       .transform((v) => v.trim().toLowerCase()),
     ativo: z.boolean().default(true),
-    senha: z.string().min(12).max(200).optional(),
+    senha: z.string().min(8).max(200).optional(),
   })
   .strict();
 export const listSchema = z

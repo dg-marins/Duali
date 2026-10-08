@@ -5,6 +5,7 @@ export default ts.config(
     ignores: [
       "**/dist/**",
       "**/node_modules/**",
+      "artifacts/**",
       "playwright-report/**",
       "test-results/**",
     ],

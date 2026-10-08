@@ -21,7 +21,7 @@ try {
   const email = await rl.question("E-mail: ");
   const nome =
     process.argv[2] === "reset" ? "Administrador" : await rl.question("Nome: ");
-  stdout.write("Senha (mínimo 12 caracteres, entrada oculta): ");
+  stdout.write("Senha (mínimo 8 caracteres, entrada oculta): ");
   hidden = true;
   const senha = await rl.question("");
   hidden = false;

@@ -1,6 +1,8 @@
 # Deploy Linux e recuperação
 
-Preparação: Node 22.12+, pnpm 9.15.4, PostgreSQL 17, Nginx e certificado HTTPS. Execute a aplicação com usuário de sistema dedicado, sem privilégios administrativos.
+Preparação: Node 22.12+, pnpm 10.34.5, PostgreSQL 17, Nginx e certificado HTTPS. Execute a aplicação com usuário de sistema dedicado, sem privilégios administrativos.
+
+Para a primeira publicação controlada, siga também o [runbook de homologação em VPS](vps-homologation.md).
 
 ## Instalação
 

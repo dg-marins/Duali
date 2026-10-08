@@ -4,9 +4,23 @@ import { fixture } from "./test-helper.js";
 test("edição de usuário preserva senha vazia e revoga sessões somente quando necessário", async () => {
   const f = await fixture();
   const email = `${f.suffix}@users-resource.test`;
-  const originalPassword = "SenhaOriginal!2026";
-  const newPassword = "SenhaAtualizada!2026";
+  const originalPassword = "Senha123";
+  const newPassword = "Nova1234";
   try {
+    const invalid = await f.app.inject({
+      method: "POST",
+      url: "/api/usuarios",
+      headers: f.headers,
+      payload: {
+        nome: "Usuário inválido",
+        email: `invalid-${email}`,
+        senha: "Senha12",
+        ativo: true,
+      },
+    });
+    expect(invalid.statusCode).toBe(422);
+    expect(invalid.json().error.fields.fieldErrors.senha).toBeDefined();
+
     const created = await f.app.inject({
       method: "POST",
       url: "/api/usuarios",
@@ -41,6 +55,20 @@ test("edição de usuário preserva senha vazia e revoga sessões somente quando
       },
     });
     expect(unchangedPassword.statusCode).toBe(200);
+    expect(await f.db.sessao.count({ where: { usuarioId: userId } })).toBe(1);
+
+    const rejectedPassword = await f.app.inject({
+      method: "PUT",
+      url: `/api/usuarios/${userId}`,
+      headers: f.headers,
+      payload: {
+        nome: "Usuário de regressão editado",
+        email,
+        senha: "Nova123",
+        ativo: true,
+      },
+    });
+    expect(rejectedPassword.statusCode).toBe(422);
     expect(await f.db.sessao.count({ where: { usuarioId: userId } })).toBe(1);
 
     const changedPassword = await f.app.inject({

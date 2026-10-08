@@ -425,6 +425,11 @@ export function RecordForm({
                   <Input
                     type={f.type ?? "text"}
                     step={f.type === "number" ? "0.01" : undefined}
+                    minLength={
+                      screen.path === "usuarios" && f.type === "password"
+                        ? 8
+                        : undefined
+                    }
                     autoComplete={
                       f.type === "password" ? "new-password" : undefined
                     }
