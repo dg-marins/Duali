@@ -6,10 +6,10 @@ Estado verificado em 2026-10-08. Este documento complementa [deploy.md](deploy.m
 
 - URL: `https://duali.habitaos.com.br` em virtual host próprio do Nginx. `habitaos.com.br` permanece em seus virtual hosts existentes.
 - Ubuntu 22.04, Node 22, pnpm 10.34.5 via Corepack e PostgreSQL 17 nativo. O PostgreSQL e a API escutam somente em `127.0.0.1:5432` e `127.0.0.1:3001`.
-- Serviço: `duali.service`, usuário de sistema `duali`, ambiente em `/etc/duali/duali.env` (`root:duali`, modo `640`). Nunca copie esse arquivo para o repositório.
+- Serviço: `duali.service`, usuário de sistema `duali`, ambiente em `/etc/duali/duali.env` (`root:duali`, modo `640`). O ambiente de migrations fica separado em `/etc/duali/duali-migrate.env`, com a mesma proteção. Nunca copie esses arquivos para o repositório.
 - Backend: `/opt/duali/releases/<commit>`; symlink ativo `/opt/duali/current`. Frontend: `/var/www/duali/releases/<commit>`; symlink ativo `/var/www/duali/current`. O primeiro release publicado é `075345d`.
 - Arquivos de configuração versionados: `deploy/vps/`. O certificado está em `/etc/letsencrypt/live/duali.habitaos.com.br`; o Certbot usa o webroot `/var/www/duali-acme` e recarrega o Nginx após renovar.
-- Banco `duali`, role `duali_app`. A migração inicial veio do banco local, com 87 pessoas e 26 migrations. As sessões da origem foram excluídas antes da publicação; a conta administrativa anterior foi preservada e uma conta individual foi criada para a usuária.
+- Banco `duali`: `duali_runtime` tem acesso de leitura e escrita aos dados da aplicação, sem permissão para criar objetos no schema; `duali_app` é dono dos objetos e executa migrations usando o ambiente separado. A migração inicial veio do banco local, com 87 pessoas e 26 migrations. As sessões da origem foram excluídas antes da publicação; a conta administrativa anterior foi preservada e uma conta individual foi criada para a usuária.
 
 ## Backup e verificação
 
@@ -31,7 +31,7 @@ Antes de trocar código, confirme o commit e os testes aplicáveis, faça backup
 
 1. Clone o commit aprovado em `/opt/duali/releases/<commit>` como usuário `duali`. Confira `git rev-parse HEAD` contra o commit planejado.
 2. Nesse diretório, execute `pnpm install --frozen-lockfile`, `pnpm db:generate` e `pnpm build` como `duali`.
-3. Avalie a compatibilidade das migrations com o release ainda ativo. Carregue `/etc/duali/duali.env` como `duali` e execute `pnpm db:migrate` somente após o backup. Para migration incompatível, programe janela de manutenção.
+3. Avalie a compatibilidade das migrations com o release ainda ativo. Carregue `/etc/duali/duali-migrate.env` como `duali` e execute `pnpm db:migrate` somente após o backup. Use `/etc/duali/duali.env` apenas para o serviço. Para migration incompatível, programe janela de manutenção.
 4. Copie `apps/web/dist` para `/var/www/duali/releases/<commit>`, com proprietário `root:www-data`, diretórios `750` e arquivos `640`.
 5. Troque atomicamente os dois symlinks `current` usando um symlink temporário e `mv -T`, reinicie apenas `duali.service` e confira `/health`, login e uma leitura autenticada. Verifique também `https://habitaos.com.br`.
 6. Mantenha o release anterior até a validação funcional. Atualize os arquivos em `deploy/vps/` com `nginx -t` antes de recarregar o Nginx.
