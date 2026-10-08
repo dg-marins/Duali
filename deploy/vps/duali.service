@@ -1,0 +1,26 @@
+[Unit]
+Description=Duali API
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=duali
+Group=duali
+WorkingDirectory=/opt/duali/current
+EnvironmentFile=/etc/duali/duali.env
+ExecStart=/usr/bin/node /opt/duali/current/apps/api/dist/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

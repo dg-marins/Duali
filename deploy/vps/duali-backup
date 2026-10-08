@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+base=/var/backups/duali
+mkdir -p "$base/daily" "$base/weekly"
+stamp=$(date +%Y%m%d-%H%M%S)
+tmp="$base/daily/.duali-$stamp.dump.tmp"
+trap 'rm -f "$tmp"' EXIT
+pg_dump --format=custom --file="$tmp" duali
+pg_restore --list "$tmp" >/dev/null
+mv "$tmp" "$base/daily/duali-$stamp.dump"
+if [ "$(date +%u)" = 7 ]; then cp "$base/daily/duali-$stamp.dump" "$base/weekly/duali-$stamp.dump"; fi
+find "$base/daily" -type f -name 'duali-*.dump' -mtime +6 -delete
+find "$base/weekly" -type f -name 'duali-*.dump' -mtime +27 -delete
+printf 'Duali backup verified: %s\n' "$stamp"

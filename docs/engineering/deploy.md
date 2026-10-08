@@ -4,6 +4,8 @@ Preparação: Node 22.12+, pnpm 10.34.5, PostgreSQL 17, Nginx e certificado HTTP
 
 Para a primeira publicação controlada, siga também o [runbook de homologação em VPS](vps-homologation.md).
 
+A instalação atual e o procedimento de atualização estão em [operação da VPS](operacao-vps-duali.md).
+
 ## Instalação
 
 1. Instale o release em /opt/duali. Configure o arquivo de ambiente protegido com permissão 600 e proprietário do serviço.
