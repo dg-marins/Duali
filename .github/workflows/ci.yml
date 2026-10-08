@@ -10,12 +10,12 @@ jobs:
           POSTGRES_USER: duali
           POSTGRES_PASSWORD: ci-only-password
           POSTGRES_DB: duali_test
-        ports: ["5432:5432"]
+        ports: ["55432:5432"]
         options: >-
           --health-cmd "pg_isready -U duali -d duali_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: postgresql://duali:ci-only-password@localhost:5432/duali_test
+      DATABASE_URL: postgresql://duali:ci-only-password@localhost:55432/duali_test
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
@@ -43,12 +43,12 @@ jobs:
             POSTGRES_PASSWORD: ci-only-password,
             POSTGRES_DB: duali_test,
           }
-        ports: ["5432:5432"]
+        ports: ["55432:5432"]
         options: >-
           --health-cmd "pg_isready -U duali -d duali_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: postgresql://duali:ci-only-password@localhost:5432/duali_test
+      DATABASE_URL: postgresql://duali:ci-only-password@localhost:55432/duali_test
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
